@@ -1,4 +1,16 @@
-import { bigint, boolean, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  bigserial,
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 /**
  * Пользователи сервиса. Из этой таблицы вырастет вход (#4).
@@ -47,7 +59,70 @@ export const loginNonces = pgTable("login_nonces", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
+/**
+ * Сессия приложения: строка в адресе `/s/<id>` и связь пользователя с durable
+ * сессией eve. Пока пользователь не отправил первое сообщение, `eve_session_id`
+ * пуст; `stream_cursor` — сколько событий потока eve уже сохранено, то есть
+ * номер, с которого читать дальше.
+ */
+export const appSessions = pgTable(
+  "app_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eveSessionId: text("eve_session_id").unique(),
+    title: text("title"),
+    streamCursor: integer("stream_cursor").notNull().default(0),
+    /** Когда пользователь начал создание сессии eve; окно привязки — 60 секунд. */
+    startRequestedAt: timestamp("start_requested_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
+    /**
+     * Миллисекундная точность: по этому столбцу #6 строит постраничную выдачу,
+     * а `Date` в JavaScript не хранит микросекунды.
+     */
+    updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("app_sessions_user_updated_idx").on(table.userId, table.updatedAt.desc()),
+  ],
+);
+
+/**
+ * События потока eve, сохранённые для показа истории. `seq` — абсолютный
+ * номер события в потоке (с нуля), поэтому таблица хранит непрерывный префикс
+ * потока, а `stream_cursor` сессии указывает, с какого номера читать дальше.
+ */
+export const sessionEvents = pgTable(
+  "session_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    appSessionId: uuid("app_session_id")
+      .notNull()
+      .references(() => appSessions.id, { onDelete: "cascade" }),
+    seq: integer("seq").notNull(),
+    /** `meta.id` события; у очень старых событий его может не быть. */
+    eventId: text("event_id"),
+    /** Событие целиком: `type`, `data`, `meta`, как приходит из потока. */
+    payload: jsonb("payload").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("session_events_app_session_seq_idx").on(table.appSessionId, table.seq),
+    uniqueIndex("session_events_app_session_event_idx").on(
+      table.appSessionId,
+      table.eventId,
+    ),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type AuthSession = typeof authSessions.$inferSelect;
 export type LoginNonce = typeof loginNonces.$inferSelect;
+export type AppSession = typeof appSessions.$inferSelect;
+export type NewAppSession = typeof appSessions.$inferInsert;
+export type SessionEvent = typeof sessionEvents.$inferSelect;

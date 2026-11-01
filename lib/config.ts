@@ -29,6 +29,19 @@ export class ConfigError extends Error {
   }
 }
 
+/** Уровни рассуждения, которые понимает AI SDK. */
+export const AGENT_REASONING_VALUES = [
+  "provider-default",
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+] as const;
+
+export type AgentReasoning = (typeof AGENT_REASONING_VALUES)[number];
+
 /** Типизированный объект конфигурации. */
 export interface AppConfig {
   /** Строка подключения к Postgres. */
@@ -65,6 +78,16 @@ export interface AppConfig {
   readonly sessionTtlDays: number;
   /** Вход без Telegram для локальной разработки. */
   readonly devLoginEnabled: boolean;
+  /** Имя модели агента; вне тестового режима обязательно. */
+  readonly agentModel: string | undefined;
+  /** Базовый URL OpenAI-совместимого провайдера. */
+  readonly agentModelBaseUrl: string | undefined;
+  /** Ключ OpenAI-совместимого провайдера. */
+  readonly agentModelApiKey: string | undefined;
+  /** Размер контекстного окна модели в токенах. */
+  readonly agentModelContextTokens: number | undefined;
+  /** Уровень рассуждения модели. */
+  readonly agentReasoning: AgentReasoning;
 }
 
 /** Значение из `.env.example`: в production не годится в качестве секрета. */
@@ -151,6 +174,20 @@ const envSchema = z.object({
     .optional()
     .default(30),
   DEV_LOGIN_ENABLED: envBoolean.optional().default(false),
+  AGENT_MODEL: envString.optional(),
+  AGENT_MODEL_BASE_URL: envUrl.optional(),
+  AGENT_MODEL_API_KEY: envString.optional(),
+  AGENT_MODEL_CONTEXT_TOKENS: z.coerce
+    .number({ error: "ожидается целое число не меньше 8000" })
+    .int("ожидается целое число не меньше 8000")
+    .min(8000, "ожидается целое число не меньше 8000")
+    .optional(),
+  AGENT_REASONING: z
+    .enum(AGENT_REASONING_VALUES, {
+      error: `ожидается одно из значений: ${AGENT_REASONING_VALUES.join(", ")}`,
+    })
+    .optional()
+    .default("high"),
 });
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -233,6 +270,19 @@ export function parseConfig(env: EnvRecord): AppConfig {
     if (!data.APP_TEST_MODE && !data.TELEGRAM_OIDC_ISSUER.startsWith("https://")) {
       addIssue("TELEGRAM_OIDC_ISSUER", "издатель должен работать по https://");
     }
+
+    if (!data.APP_TEST_MODE && data.AGENT_MODEL === undefined) {
+      addIssue("AGENT_MODEL", "обязательна вне APP_TEST_MODE=1");
+    }
+
+    if (data.AGENT_MODEL_BASE_URL !== undefined) {
+      if (data.AGENT_MODEL_API_KEY === undefined) {
+        addIssue("AGENT_MODEL_API_KEY", "нужна вместе с AGENT_MODEL_BASE_URL");
+      }
+      if (data.AGENT_MODEL_CONTEXT_TOKENS === undefined) {
+        addIssue("AGENT_MODEL_CONTEXT_TOKENS", "нужна вместе с AGENT_MODEL_BASE_URL");
+      }
+    }
   }
 
   const allIssues = [...issues, ...extra.values()];
@@ -257,6 +307,11 @@ export function parseConfig(env: EnvRecord): AppConfig {
     sessionSecret: data.SESSION_SECRET,
     sessionTtlDays: data.SESSION_TTL_DAYS,
     devLoginEnabled: data.DEV_LOGIN_ENABLED,
+    agentModel: data.AGENT_MODEL,
+    agentModelBaseUrl: data.AGENT_MODEL_BASE_URL,
+    agentModelApiKey: data.AGENT_MODEL_API_KEY,
+    agentModelContextTokens: data.AGENT_MODEL_CONTEXT_TOKENS,
+    agentReasoning: data.AGENT_REASONING,
   };
 }
 

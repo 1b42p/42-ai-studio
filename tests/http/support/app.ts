@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { inject } from "vitest";
 
@@ -63,6 +63,9 @@ interface InternalHandle extends AppHandle {
 
 const projectRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 
+/** Заглушка внешнего каталога моделей для дочернего процесса приложения. */
+const OFFLINE_GATEWAY_MODULE = path.join(projectRoot, "tests/http/support/offline-gateway.mjs");
+
 function nextBin(): string {
   return path.join(projectRoot, "node_modules", "next", "dist", "bin", "next");
 }
@@ -104,6 +107,10 @@ function buildChildEnv(
   // поднимается только в development.
   env.NODE_ENV = "development";
   env.NEXT_DIST_DIR = distDir;
+  // Внешний каталог моделей не должен влиять на время старта тестов.
+  const offlineGateway = `--import=${pathToFileURL(OFFLINE_GATEWAY_MODULE).href}`;
+  env.NODE_OPTIONS =
+    env.NODE_OPTIONS === undefined ? offlineGateway : `${env.NODE_OPTIONS} ${offlineGateway}`;
   return env;
 }
 
