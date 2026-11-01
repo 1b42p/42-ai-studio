@@ -88,4 +88,27 @@ describe("syncAppSession", () => {
     const [row] = await storedRows(appSessionId);
     expect((row?.payload as { data: { message: string } }).data.message).toBe("допосле");
   });
+
+  // Название считается из той же очищенной нагрузки: сырое событие в UPDATE
+  // с NUL откатывало бы транзакцию, и сессия не сохранялась бы больше никогда.
+  test("NUL в первом сообщении не откатывает синхронизацию и не попадает в название", async () => {
+    const { appSessionId } = await prepareSession();
+    const events = [
+      {
+        type: "message.received",
+        data: { message: "до\u0000после" },
+        meta: { id: "nul_received_evt_0", at: new Date().toISOString() },
+      },
+    ] as unknown as MessageStreamEvent[];
+
+    const result = await syncAppSession(appSessionId, readerOf(events));
+
+    expect(result).toEqual({ stored: 1, cursor: 1 });
+    const [row] = await storedRows(appSessionId);
+    expect((row?.payload as { data: { message: string } }).data.message).toBe("допосле");
+    const [session] = await db().select().from(appSessions).where(eq(appSessions.id, appSessionId));
+    expect(session?.title).toBe("Допосле");
+    expect(session?.titleSearch).toBe("допосле");
+    expect(session?.streamCursor).toBe(1);
+  });
 });

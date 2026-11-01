@@ -122,7 +122,9 @@ export async function syncAppSession(
         .insert(sessionEvents)
         .values(rows)
         .onConflictDoNothing({ target: [sessionEvents.appSessionId, sessionEvents.seq] });
-      await setTitleIfEmpty(tx, appSessionId, events);
+      // Название — из тех же очищенных нагрузок: `text` в Postgres, как и
+      // `jsonb`, не принимает NUL, и сырое событие откатывало бы транзакцию.
+      await setTitleIfEmpty(tx, appSessionId, rows.map((row) => row.payload));
       return true;
     });
 
