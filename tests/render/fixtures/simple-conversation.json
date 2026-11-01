@@ -1,0 +1,179 @@
+[
+  {
+    "data": {
+      "trace": {
+        "spanId": "758026cee0519270",
+        "traceId": "07368997a1b3bca44f229ccb19f22a0b",
+        "decision": {
+          "action": "record",
+          "recordInputs": true,
+          "recordOutputs": true
+        },
+        "traceFlags": 1
+      },
+      "runtime": {
+        "agentId": "42-ai-studio",
+        "agentName": "42-ai-studio",
+        "eveVersion": "0.83.0"
+      }
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:06.115Z",
+      "id": "evt_01M6A2KFK3WT3GN7Q5Y0DPSV2M",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "session.started"
+  },
+  {
+    "data": {
+      "trace": {
+        "spanId": "758026cee0519270",
+        "traceId": "07368997a1b3bca44f229ccb19f22a0b",
+        "decision": {
+          "action": "record",
+          "recordInputs": true,
+          "recordOutputs": true
+        },
+        "traceFlags": 1
+      },
+      "turnId": "turn_0",
+      "sequence": 0
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:06.943Z",
+      "id": "evt_01M6A2KGCZBQVPF03FGYNAP9VF",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "turn.started"
+  },
+  {
+    "data": {
+      "parts": [
+        {
+          "text": "привет",
+          "type": "text"
+        }
+      ],
+      "turnId": "turn_0",
+      "message": "привет",
+      "sequence": 0
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:06.956Z",
+      "id": "evt_01M6A2KGDC315XEE0X16GZGJA0",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "message.received"
+  },
+  {
+    "data": {
+      "turnId": "turn_0",
+      "modelId": "eve-mock/model",
+      "sequence": 0,
+      "stepIndex": 0
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:06.961Z",
+      "id": "evt_01M6A2KGDH1VAQQG84P5XGHDF4",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "step.started"
+  },
+  {
+    "data": {
+      "turnId": "turn_0",
+      "sequence": 0,
+      "stepIndex": 0,
+      "messageDelta": "Эхо: привет"
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:06.991Z",
+      "id": "evt_01M6A2KGEFPWJEJBCA5AGD27HT",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "message.appended"
+  },
+  {
+    "data": {
+      "turnId": "turn_0",
+      "message": "Эхо: привет",
+      "sequence": 0,
+      "stepIndex": 0,
+      "finishReason": "stop"
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:07.005Z",
+      "id": "evt_01M6A2KGEX3A4R2A4MQ7Z44M39",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "message.completed"
+  },
+  {
+    "data": {
+      "usage": {
+        "inputTokens": 480,
+        "outputTokens": 3,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "turnId": "turn_0",
+      "sequence": 0,
+      "stepIndex": 0,
+      "finishReason": "stop"
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:07.012Z",
+      "id": "evt_01M6A2KGF4C1H6EY3ZE1V6JARJ",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "step.completed"
+  },
+  {
+    "data": {
+      "turnId": "turn_0",
+      "sequence": 0
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:07.031Z",
+      "id": "evt_01M6A2KGFQ8Y0RQSP2B4KGBW68",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "turn.completed"
+  },
+  {
+    "data": {
+      "wait": "next-user-message",
+      "usage": {
+        "inputTokens": 480,
+        "outputTokens": 3,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0
+      },
+      "continuationToken": "wrun_01M6A2KFE7BK3PVGKB8Z44024X"
+    },
+    "meta": {
+      "at": "2026-10-31T22:52:07.087Z",
+      "id": "evt_01M6A2KGHFVV2NXF1B6Q8A29BK",
+      "deliveryIds": [
+        "fdbcc873-fe75-4271-a003-b5df9e0320c8"
+      ]
+    },
+    "type": "session.waiting"
+  }
+]

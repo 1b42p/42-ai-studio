@@ -95,7 +95,13 @@ describe("parseConfig", () => {
       false,
     );
     expect(parseConfig({ ...validEnv(), S3_FORCE_PATH_STYLE: "0" }).s3ForcePathStyle).toBe(false);
-    expect(parseConfig({ ...validEnv(), APP_TEST_MODE: "false" }).appTestMode).toBe(false);
+    expect(
+      parseConfig({
+        ...validEnv(),
+        APP_TEST_MODE: "false",
+        AGENT_MODEL: "openai/gpt-6-luna-fast",
+      }).appTestMode,
+    ).toBe(false);
   });
 
   test("некорректное логическое значение отвергается с именем переменной", () => {
@@ -125,7 +131,7 @@ describe("parseConfig", () => {
     delete env.TEST_APP_PORT;
     delete env.NEXT_DIST_DIR;
 
-    const config = parseConfig(env);
+    const config = parseConfig({ ...env, AGENT_MODEL: "openai/gpt-6-luna-fast" });
 
     expect(config.s3ForcePathStyle).toBe(false);
     expect(config.appTestMode).toBe(false);
@@ -152,8 +158,62 @@ function productionEnv(): EnvRecord {
     APP_URL: "https://studio.example.com",
     TELEGRAM_CLIENT_ID: "123456789",
     TELEGRAM_CLIENT_SECRET: "test-client-secret",
+    AGENT_MODEL: "openai/gpt-6-luna-fast",
   };
 }
+
+describe("parseConfig: модель агента", () => {
+  test("в тестовом режиме AGENT_MODEL не нужна, рассуждение по умолчанию high", () => {
+    const config = parseConfig(validEnv());
+
+    expect(config.agentModel).toBeUndefined();
+    expect(config.agentReasoning).toBe("high");
+  });
+
+  test("вне тестового режима без AGENT_MODEL ошибка называет переменную", () => {
+    const env = productionEnv();
+    delete env.AGENT_MODEL;
+
+    const issues = issuesOf(env);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("AGENT_MODEL");
+  });
+
+  test("AGENT_MODEL_BASE_URL требует ключ и окно контекста", () => {
+    const issues = issuesOf({
+      ...productionEnv(),
+      AGENT_MODEL_BASE_URL: "https://api.example.com/v1",
+    });
+
+    expect(issues).toHaveLength(2);
+    expect(issues.join("\n")).toContain("AGENT_MODEL_API_KEY");
+    expect(issues.join("\n")).toContain("AGENT_MODEL_CONTEXT_TOKENS");
+  });
+
+  test("окно контекста — целое число не меньше 8000", () => {
+    expect(issuesOf({ ...productionEnv(), AGENT_MODEL_CONTEXT_TOKENS: "7999" })[0]).toContain(
+      "AGENT_MODEL_CONTEXT_TOKENS",
+    );
+    expect(issuesOf({ ...productionEnv(), AGENT_MODEL_CONTEXT_TOKENS: "128000.5" })[0]).toContain(
+      "AGENT_MODEL_CONTEXT_TOKENS",
+    );
+    expect(
+      parseConfig({
+        ...productionEnv(),
+        AGENT_MODEL_BASE_URL: "https://api.example.com/v1",
+        AGENT_MODEL_API_KEY: "ключ",
+        AGENT_MODEL_CONTEXT_TOKENS: "128000",
+      }).agentModelContextTokens,
+    ).toBe(128000);
+  });
+
+  test("AGENT_REASONING принимает только известные уровни", () => {
+    expect(issuesOf({ ...validEnv(), AGENT_REASONING: "максимум" })[0]).toContain(
+      "AGENT_REASONING",
+    );
+    expect(parseConfig({ ...validEnv(), AGENT_REASONING: "xhigh" }).agentReasoning).toBe("xhigh");
+  });
+});
 
 describe("parseConfig: вход через Telegram", () => {
   test("по умолчанию издатель oauth.telegram.org, срок 30 дней, dev-вход выключен", () => {
@@ -233,7 +293,11 @@ describe("parseConfig: вход через Telegram", () => {
   test("издатель не на https:// запрещён без APP_TEST_MODE", () => {
     const env = validEnv();
     delete env.APP_TEST_MODE;
-    const issues = issuesOf({ ...env, TELEGRAM_OIDC_ISSUER: "http://localhost:59100" });
+    const issues = issuesOf({
+      ...env,
+      AGENT_MODEL: "openai/gpt-6-luna-fast",
+      TELEGRAM_OIDC_ISSUER: "http://localhost:59100",
+    });
 
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain("TELEGRAM_OIDC_ISSUER");
