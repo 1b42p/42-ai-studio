@@ -29,6 +29,13 @@
       "when": 1793523657555,
       "tag": "0003_app_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793542320700,
+      "tag": "0004_session_list",
+      "breakpoints": true
     }
   ]
 }

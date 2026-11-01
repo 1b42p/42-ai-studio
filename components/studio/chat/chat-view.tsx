@@ -17,7 +17,7 @@ import {
   VideoIcon,
   WrenchIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { ChatComposer } from "@/components/studio/chat/chat-composer";
 import type { ChatStatus } from "@/components/studio/chat/chat-status";
@@ -56,6 +56,7 @@ import {
   QuestionnaireTitle,
 } from "@/components/ui/questionnaire";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import {
   Trace,
   TraceCollapsible,
@@ -76,9 +77,14 @@ export interface ChatViewAgent {
 
 export interface ChatViewProps {
   agent: ChatViewAgent;
-  /** Название беседы в шапке; «Новая сессия», пока #6 не поставил своё. */
+  /** Название беседы в шапке. Пока названия нет — «Новая сессия». */
   title?: string;
-  /** Приглашение, пока сообщений нет. */
+  /**
+   * Список сессий под полем ввода, пока сообщений нет. Поле остаётся одним
+   * узлом и поднимается за счёт `order`, а не второго экземпляра.
+   */
+  sessions?: ReactNode;
+  /** Приглашение, пока сообщений нет и список сессий не показан. */
   emptyTitle?: string;
   emptyDescription?: string;
   /** Поле ввода заблокировано, пока грузится история. */
@@ -488,6 +494,7 @@ function isExpired(error: Error | undefined): boolean {
 export function ChatView({
   agent,
   title = "Новая сессия",
+  sessions,
   emptyTitle = "Опишите, какой ролик нужно сделать",
   emptyDescription,
   inputDisabled = false,
@@ -506,6 +513,7 @@ export function ChatView({
   const resuming = status === "resuming";
   const disabled = inputDisabled || resuming || finished;
   const thinking = status === "submitted";
+  const showSessions = sessions !== undefined && messages.length === 0;
 
   const lastMessageIndexByTurn = new Map<string, number>();
   messages.forEach((message, index) => {
@@ -524,7 +532,17 @@ export function ChatView({
         </Button>
       </header>
 
-      <MessageScrollerProvider autoScroll>
+      {/* `order` поднимает поле над списком, не размонтируя его. */}
+      <div
+        className={cn(
+          "flex min-h-0 flex-1 flex-col",
+          showSessions && "order-3 overflow-y-auto",
+        )}
+      >
+        {showSessions ? (
+          sessions
+        ) : (
+          <MessageScrollerProvider autoScroll>
         <MessageScroller className="min-h-0 flex-1">
           <MessageScrollerViewport>
             <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4 px-4 py-6 md:px-6">
@@ -622,9 +640,16 @@ export function ChatView({
           </MessageScrollerViewport>
           <MessageScrollerButton />
         </MessageScroller>
-      </MessageScrollerProvider>
+          </MessageScrollerProvider>
+        )}
+      </div>
 
-      <div className="shrink-0 border-t bg-background px-4 py-3 md:px-6">
+      <div
+        className={cn(
+          "shrink-0 bg-background px-4 py-3 md:px-6",
+          showSessions ? "order-2 border-b" : "border-t",
+        )}
+      >
         <div className="mx-auto w-full max-w-3xl">
           {finished || expired ? (
             <div className="flex items-center justify-between gap-3">

@@ -15,7 +15,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { getDb } from "../db/client";
 import { appSessions, sessionEvents } from "../db/schema";
 import { sleep } from "../sleep";
-import { findAppSessionById, hasSessionEvent } from "./service";
+import { findAppSessionById, hasSessionEvent, setTitleIfEmpty } from "./service";
 
 /** Чтение потока сессии с абсолютного номера события. */
 export type SessionEventReader = (
@@ -122,6 +122,7 @@ export async function syncAppSession(
         .insert(sessionEvents)
         .values(rows)
         .onConflictDoNothing({ target: [sessionEvents.appSessionId, sessionEvents.seq] });
+      await setTitleIfEmpty(tx, appSessionId, events);
       return true;
     });
 

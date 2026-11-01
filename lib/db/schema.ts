@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
@@ -74,6 +75,11 @@ export const appSessions = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     eveSessionId: text("eve_session_id").unique(),
     title: text("title"),
+    /**
+     * Название в нижнем регистре с «ё» → «е», посчитанное в приложении.
+     * `lower()` в Postgres зависит от LC_CTYPE и в локали C кириллицу не трогает.
+     */
+    titleSearch: text("title_search"),
     streamCursor: integer("stream_cursor").notNull().default(0),
     /** Когда пользователь начал создание сессии eve; окно привязки — 60 секунд. */
     startRequestedAt: timestamp("start_requested_at", { withTimezone: true }),
@@ -87,7 +93,9 @@ export const appSessions = pgTable(
       .defaultNow(),
   },
   (table) => [
-    index("app_sessions_user_updated_idx").on(table.userId, table.updatedAt.desc()),
+    index("app_sessions_user_list_idx")
+      .on(table.userId, table.updatedAt.desc(), table.id.desc())
+      .where(sql`${table.eveSessionId} is not null`),
   ],
 );
 

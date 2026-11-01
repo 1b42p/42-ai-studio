@@ -5,6 +5,11 @@ import { useRef, useState } from "react";
 
 import { isBusyStatus } from "@/components/studio/chat/chat-status";
 import { ChatPanel } from "@/components/studio/chat/chat-panel";
+import {
+  fetchSessionPage,
+  SessionList,
+  type SessionListPage,
+} from "@/components/studio/sessions/session-list";
 
 /**
  * Смена адреса без пересоздания чата: Next.js подменяет
@@ -20,9 +25,22 @@ function replaceSessionUrl(id: string): void {
   );
 }
 
-/** Новый чат `/s`: сессия приложения создаётся перед первой отправкой. */
-export function NewChat() {
+export interface NewChatProps {
+  initialPage: SessionListPage;
+  /** Уже обрезанный запрос из адреса. Пустая строка — без фильтра. */
+  initialQuery: string;
+  /** Адрес с некорректным `q`: показать ошибку, а не пустой список. */
+  initialError?: boolean;
+}
+
+/**
+ * Новый чат `/s`: сессия приложения создаётся перед первой отправкой.
+ * Идентификатор держится и в ref (заголовки хука запоминают первую функцию),
+ * и в состоянии (опрос названия должен увидеть id после создания).
+ */
+export function NewChat({ initialPage, initialQuery, initialError = false }: NewChatProps) {
   const appSessionId = useRef<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [startError, setStartError] = useState<Error>();
 
   const agent = useEveAgent({
@@ -44,6 +62,7 @@ export function NewChat() {
       }
       const body = (await response.json()) as { id: string };
       appSessionId.current = body.id;
+      setSessionId(body.id);
       replaceSessionUrl(body.id);
     }
 
@@ -51,5 +70,20 @@ export function NewChat() {
     await agent.send(text, busy ? { turnPolicy: "steer" } : undefined);
   };
 
-  return <ChatPanel agent={agent} errorOverride={startError} onSend={handleSend} />;
+  return (
+    <ChatPanel
+      agent={agent}
+      appSessionId={sessionId}
+      errorOverride={startError}
+      onSend={handleSend}
+      sessions={
+        <SessionList
+          initialError={initialError}
+          initialPage={initialPage}
+          initialQuery={initialQuery}
+          request={fetchSessionPage}
+        />
+      }
+    />
+  );
 }
