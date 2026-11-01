@@ -5,7 +5,8 @@
  */
 import { loadConfig } from "../../../lib/config";
 import { getDb, getSqlClient, type Database } from "../../../lib/db/client";
-import { users, type User } from "../../../lib/db/schema";
+import { daytonaKeys, users, type DaytonaKey, type NewDaytonaKey, type User } from "../../../lib/db/schema";
+import { DAYTONA_KEY_PURPOSE, encryptSecret } from "../../../lib/secrets";
 
 /** Клиент Drizzle к тестовой базе (клиент приложения, один на процесс воркера). */
 export function db(): Database {
@@ -71,6 +72,20 @@ export async function createUser(
       ...overrides,
     })
     .returning();
+  return inserted;
+}
+
+/** Добавляет зашифрованный ключ; открытый apiKey существует только при подготовке. */
+export async function createDaytonaKey(
+  overrides: Partial<Omit<NewDaytonaKey, "apiKeyEncrypted">> & { apiKey?: string } = {},
+): Promise<DaytonaKey> {
+  const { apiKey = "dtn_test_secret_value", ...values } = overrides;
+  const [inserted] = await db().insert(daytonaKeys).values({
+    label: "test",
+    enabled: true,
+    ...values,
+    apiKeyEncrypted: encryptSecret(apiKey, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
+  }).returning();
   return inserted;
 }
 

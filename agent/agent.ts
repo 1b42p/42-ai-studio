@@ -12,6 +12,7 @@ import { selectAgentModel } from "./lib/agent-model";
  * запущен с другим окружением.
  */
 export default defineAgent({
+  build: { externalDependencies: ["@daytona/sdk"] },
   // Встроенные инструменты подключают те тикеты, которым они нужны, явно.
   defaultTools: false,
   limits: {

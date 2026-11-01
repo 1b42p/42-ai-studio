@@ -7,9 +7,11 @@ import { afterAll } from "vitest";
 
 import { closeDb } from "../../lib/db/client";
 import { resetDatabase } from "./support/db";
+import { fakeSandbox } from "./support/fake-sandbox";
 import { s3 } from "./support/s3";
 
 await resetDatabase();
+await fakeSandbox.reset();
 await s3().deletePrefix("");
 
 afterAll(async () => {

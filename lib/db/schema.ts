@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  pgEnum,
   pgTable,
   text,
   timestamp,
@@ -134,3 +135,36 @@ export type LoginNonce = typeof loginNonces.$inferSelect;
 export type AppSession = typeof appSessions.$inferSelect;
 export type NewAppSession = typeof appSessions.$inferInsert;
 export type SessionEvent = typeof sessionEvents.$inferSelect;
+
+/** Ключи организации, не данные пользователя. Удаление ключа — мягкое. */
+export const daytonaKeys = pgTable("daytona_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  label: text("label").notNull(),
+  apiKeyEncrypted: text("api_key_encrypted").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  usage: jsonb("usage").$type<Record<string, unknown>>(),
+  usageCheckedAt: timestamp("usage_checked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sandboxState = pgEnum("sandbox_state", [
+  "starting", "started", "stopped", "archived", "gone",
+]);
+
+export const sandboxes = pgTable("sandboxes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appSessionId: uuid("app_session_id").notNull().unique()
+    .references(() => appSessions.id, { onDelete: "cascade" }),
+  daytonaKeyId: uuid("daytona_key_id").notNull().references(() => daytonaKeys.id),
+  daytonaSandboxId: text("daytona_sandbox_id").notNull(),
+  state: sandboxState("state").notNull(),
+  lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type DaytonaKey = typeof daytonaKeys.$inferSelect;
+export type NewDaytonaKey = typeof daytonaKeys.$inferInsert;
+export type Sandbox = typeof sandboxes.$inferSelect;
+export type NewSandbox = typeof sandboxes.$inferInsert;
+export type SandboxState = (typeof sandboxState.enumValues)[number];

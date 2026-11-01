@@ -10,11 +10,14 @@
  * `.env.example` и, если без неё сервер перестанет стартовать в тестах, в `.env.test`.
  */
 import * as nextEnv from "@next/env";
+import { resolve } from "node:path";
 import { z } from "zod";
 
-// `@next/env` — CommonJS без default-экспорта: именованный импорт ломается
-// в сборщике eve, а default-импорт — в Next.js. Пространство имён читают оба.
-const { loadEnvConfig } = nextEnv;
+import { isValidSecretsEncryptionKey } from "./secrets";
+
+// Node ESM exposes this CommonJS package through default; bundlers may expose
+// its named members directly. Normalize both module namespace shapes.
+const { loadEnvConfig } = (nextEnv as typeof nextEnv & { default?: typeof nextEnv }).default ?? nextEnv;
 
 /** Ошибка конфигурации: каждая строка списка — «ИМЯ: причина». */
 export class ConfigError extends Error {
@@ -88,6 +91,14 @@ export interface AppConfig {
   readonly agentModelContextTokens: number | undefined;
   /** Уровень рассуждения модели. */
   readonly agentReasoning: AgentReasoning;
+  /** Ключ шифрования секретов в базе: 32 байта в каноническом base64. */
+  readonly secretsEncryptionKey: string;
+  readonly daytonaApiUrl: string;
+  readonly sandboxCpu: number;
+  readonly sandboxMemoryGb: number;
+  readonly sandboxDiskGb: number;
+  /** Абсолютный путь; обязателен только в тестовом режиме. */
+  readonly fakeSandboxDir: string | undefined;
 }
 
 /** Значение из `.env.example`: в production не годится в качестве секрета. */
@@ -132,6 +143,17 @@ const envUrl = envString.refine((value) => {
 }, "ожидается корректный URL");
 
 const envSchema = z.object({
+  SECRETS_ENCRYPTION_KEY: envString.refine(
+    isValidSecretsEncryptionKey,
+    "ожидается 32 байта в каноническом base64",
+  ),
+  DAYTONA_API_URL: envUrl
+    .refine((value) => /^https?:\/\//.test(value), "ожидается URL с http:// или https://")
+    .optional().default("https://app.daytona.io/api"),
+  SANDBOX_CPU: z.coerce.number().int().min(1).max(4).optional().default(2),
+  SANDBOX_MEMORY_GB: z.coerce.number().int().min(3).max(8).optional().default(4),
+  SANDBOX_DISK_GB: z.coerce.number().int().min(1).max(10).optional().default(8),
+  FAKE_SANDBOX_DIR: envString.refine((value) => !value.includes("\0"), "некорректный путь").optional(),
   DATABASE_URL: envUrl,
   S3_ENDPOINT: envUrl,
   S3_REGION: envString,
@@ -235,6 +257,10 @@ export function parseConfig(env: EnvRecord): AppConfig {
     const data = result.data;
     const production = normalized.NODE_ENV === "production";
 
+    if (data.APP_TEST_MODE && data.FAKE_SANDBOX_DIR === undefined) {
+      addIssue("FAKE_SANDBOX_DIR", "обязательна при APP_TEST_MODE=1");
+    }
+
     if (data.APP_TEST_MODE && production) {
       addIssue("APP_TEST_MODE", "тестовые подмены запрещены при NODE_ENV=production");
     }
@@ -312,6 +338,12 @@ export function parseConfig(env: EnvRecord): AppConfig {
     agentModelApiKey: data.AGENT_MODEL_API_KEY,
     agentModelContextTokens: data.AGENT_MODEL_CONTEXT_TOKENS,
     agentReasoning: data.AGENT_REASONING,
+    secretsEncryptionKey: data.SECRETS_ENCRYPTION_KEY,
+    daytonaApiUrl: data.DAYTONA_API_URL,
+    sandboxCpu: data.SANDBOX_CPU,
+    sandboxMemoryGb: data.SANDBOX_MEMORY_GB,
+    sandboxDiskGb: data.SANDBOX_DISK_GB,
+    fakeSandboxDir: data.FAKE_SANDBOX_DIR === undefined ? undefined : resolve(data.FAKE_SANDBOX_DIR),
   };
 }
 
