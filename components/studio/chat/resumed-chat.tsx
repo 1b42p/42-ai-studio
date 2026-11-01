@@ -40,22 +40,30 @@ async function loadAllEvents(appSessionId: string): Promise<MessageStreamEvent[]
   }
 }
 
-function ChatWithSession({ appSessionId }: { appSessionId: string }) {
+function ChatWithSession({
+  appSessionId,
+  initialTitle,
+}: {
+  appSessionId: string;
+  initialTitle: string | null;
+}) {
   const agent = useEveAgent({
     headers: () => ({ "x-studio-session-id": appSessionId }),
   });
 
-  return <ChatPanel agent={agent} />;
+  return <ChatPanel agent={agent} appSessionId={appSessionId} initialTitle={initialTitle} />;
 }
 
 function ResumedChatSession({
   appSessionId,
   eveSessionId,
   initialEvents,
+  initialTitle,
 }: {
   appSessionId: string;
   eveSessionId: string;
   initialEvents: readonly MessageStreamEvent[];
+  initialTitle: string | null;
 }) {
   const agent = useEveAgent({
     headers: () => ({ "x-studio-session-id": appSessionId }),
@@ -64,7 +72,7 @@ function ResumedChatSession({
     resume: true,
   });
 
-  return <ChatPanel agent={agent} />;
+  return <ChatPanel agent={agent} appSessionId={appSessionId} initialTitle={initialTitle} />;
 }
 
 function StatusScreen({ text }: { text: string }) {
@@ -101,6 +109,8 @@ function LoadError({ text }: { text: string }) {
 export interface ResumedChatProps {
   appSessionId: string;
   initialEveSessionId: string | null;
+  /** Название с сервера. Пока пустое, шапка спросит его после первого сообщения. */
+  initialTitle: string | null;
   /** Создание сессии eve начато не дольше 60 секунд назад. */
   starting: boolean;
 }
@@ -110,7 +120,12 @@ export interface ResumedChatProps {
  * `useEveAgent` читает `initialEvents` и `initialSession` при создании
  * хранилища, то есть на первом рендере.
  */
-export function ResumedChat({ appSessionId, initialEveSessionId, starting }: ResumedChatProps) {
+export function ResumedChat({
+  appSessionId,
+  initialEveSessionId,
+  initialTitle,
+  starting,
+}: ResumedChatProps) {
   const [eveSessionId, setEveSessionId] = useState<string | null>(initialEveSessionId);
   const [phase, setPhase] = useState<Phase>(
     initialEveSessionId !== null ? "loading" : starting ? "starting" : "empty",
@@ -179,12 +194,15 @@ export function ResumedChat({ appSessionId, initialEveSessionId, starting }: Res
       {phase === "starting" ? <StatusScreen text="Сообщение отправляется…" /> : null}
       {phase === "loading" ? <StatusScreen text="Загружаем беседу…" /> : null}
       {phase === "error" ? <LoadError text={error ?? "Неизвестная ошибка."} /> : null}
-      {phase === "empty" ? <ChatWithSession appSessionId={appSessionId} /> : null}
+      {phase === "empty" ? (
+        <ChatWithSession appSessionId={appSessionId} initialTitle={initialTitle} />
+      ) : null}
       {phase === "ready" && eveSessionId !== null ? (
         <ResumedChatSession
           appSessionId={appSessionId}
           eveSessionId={eveSessionId}
           initialEvents={events}
+          initialTitle={initialTitle}
         />
       ) : null}
     </ChatFrame>

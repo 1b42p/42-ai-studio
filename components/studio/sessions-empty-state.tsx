@@ -8,7 +8,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 
-/** Пустое состояние списка сессий: содержимое добавят #5 и #6. */
+/** Пустой список на странице нового чата. */
 export function SessionsEmptyState() {
   return (
     <Empty className="flex-1 border border-dashed">
@@ -18,7 +18,7 @@ export function SessionsEmptyState() {
         </EmptyMedia>
         <EmptyTitle>Сессий пока нет</EmptyTitle>
         <EmptyDescription>
-          Первая сессия появится здесь, как только вы её создадите.
+          Опишите ролик в поле выше, и сессия появится здесь
         </EmptyDescription>
       </EmptyHeader>
     </Empty>

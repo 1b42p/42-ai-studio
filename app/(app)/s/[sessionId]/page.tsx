@@ -1,9 +1,30 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { ResumedChat } from "@/components/studio/chat/resumed-chat";
-import { requireUser } from "@/lib/auth/guard";
+import { getCurrentUser, requireUser } from "@/lib/auth/guard";
 import { isUuid } from "@/lib/sessions/access";
 import { findAppSessionForUser, SESSION_START_WINDOW_MS } from "@/lib/sessions/service";
+
+const UNTITLED_DOCUMENT = "Новая сессия · 42 AI Studio";
+
+/** Заголовок вкладки. Чужая сессия неотличима от отсутствующей. */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ sessionId: string }>;
+}): Promise<Metadata> {
+  const { sessionId } = await params;
+  const user = await getCurrentUser();
+  if (user === null || user.isBlocked || !isUuid(sessionId)) {
+    return { title: UNTITLED_DOCUMENT };
+  }
+  const session = await findAppSessionForUser(sessionId, user.id);
+  if (session === null || session.title === null || session.title === "") {
+    return { title: UNTITLED_DOCUMENT };
+  }
+  return { title: `${session.title} · 42 AI Studio` };
+}
 
 /**
  * Беседа `/s/[sessionId]`: история берётся из `session_events`, поток eve
@@ -30,6 +51,7 @@ export default async function SessionPage({
     <ResumedChat
       appSessionId={session.id}
       initialEveSessionId={session.eveSessionId}
+      initialTitle={session.title}
       starting={starting}
     />
   );

@@ -4,13 +4,14 @@
  */
 import { and, asc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 
-import { getDb } from "../db/client";
+import { getDb, type Database } from "../db/client";
 import {
   appSessions,
   sessionEvents,
   type AppSession,
   type SessionEvent,
 } from "../db/schema";
+import { titleFromEvents, titleSearchKey, type TitleSourceEvent } from "./title";
 
 /** Сколько секунд после начала создания сессии eve разрешено её привязать. */
 export const SESSION_START_WINDOW_MS = 60_000;
@@ -162,6 +163,23 @@ export async function readSessionEvents(
     },
     { isolationLevel: "repeatable read" },
   );
+}
+
+/**
+ * Ставит название один раз, в той же транзакции, что и курсор потока.
+ * Повторный вызов и уже заполненное название ничего не меняют.
+ */
+export async function setTitleIfEmpty(
+  tx: Pick<Database, "update">,
+  appSessionId: string,
+  events: readonly TitleSourceEvent[],
+): Promise<void> {
+  const title = titleFromEvents(events);
+  if (title === null) return;
+  await tx
+    .update(appSessions)
+    .set({ title, titleSearch: titleSearchKey(title) })
+    .where(and(eq(appSessions.id, appSessionId), isNull(appSessions.title)));
 }
 
 /** Сохранено ли событие с этим `meta.id`. */
