@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { User } from "../../lib/db/schema";
 import { fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
-import { createSessionAs, sendAndWait } from "./support/chat";
+import {
+  createSessionAs,
+  eveClientAs,
+  readStreamUntil,
+  sendAndWait,
+  waitForStoredEvents,
+} from "./support/chat";
 import { createUser, resetDatabase } from "./support/db";
 import { telegramStub } from "./support/telegram";
 
@@ -64,27 +70,47 @@ describe("чужие сессии eve", () => {
     }
   });
 
-  test("после отказов сессия владельца работает, ход не отменён", async () => {
+  test("чужой cancel не отменяет идущий ход владельца", async () => {
     const { user, appSessionId, eveSessionId } = await createBoundSession();
     const stranger = await createUser();
     const cookie = await loginAs(stranger);
+
+    const owner = await eveClientAs(user, appSessionId);
+    const response = await owner.sessions.attach(eveSessionId).send("/slow 5 долго");
+    const stream = readStreamUntil(response, "session.waiting", { timeoutMs: 15_000 });
+
+    await waitForStoredEvents(
+      user,
+      appSessionId,
+      (items) =>
+        items.some(
+          (item) =>
+            item.payload.type === "message.received" &&
+            (item.payload.data as { message?: string }).message === "/slow 5 долго",
+        ),
+    );
 
     for (const path of [
       `/eve/v1/session/${eveSessionId}/cancel`,
       `/eve/v1/session/${eveSessionId}/reset`,
       `/eve/v1/session/${eveSessionId}`,
     ]) {
-      const response = await fetchApp(path, {
+      const rejected = await fetchApp(path, {
         method: "POST",
         headers: { cookie, "content-type": "application/json" },
         body: JSON.stringify({ message: "чужое" }),
       });
-      expect(response.status).toBe(403);
+      expect(rejected.status).toBe(403);
     }
 
-    const events = await sendAndWait(user, appSessionId, "второе");
+    const events = await stream;
+    expect(events.filter((event) => event.type === "turn.cancelled")).toHaveLength(0);
     const completed = events.filter((event) => event.type === "message.completed").at(-1);
-    expect(completed?.data).toMatchObject({ message: "Эхо: второе" });
+    expect(completed?.data).toMatchObject({ message: "Эхо: долго" });
     expect(events.at(-1)?.type).toBe("session.waiting");
-  });
+
+    const next = await sendAndWait(user, appSessionId, "второе");
+    const nextCompleted = next.filter((event) => event.type === "message.completed").at(-1);
+    expect(nextCompleted?.data).toMatchObject({ message: "Эхо: второе" });
+  }, 30_000);
 });

@@ -125,6 +125,34 @@ describe("привязка сессии eve", () => {
     expect(body.eveSessionId).toBe(created.session.state.sessionId);
   });
 
+  test("создание сессии eve отвечает 202, поток — 200", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const cookie = await loginAs(user);
+
+    const created = await fetchApp("/eve/v1/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+        "x-studio-session-id": id,
+      },
+      body: JSON.stringify({ message: "привет" }),
+    });
+
+    expect(created.status).toBe(202);
+    const eveSessionId = created.headers.get("x-eve-session-id");
+    expect(eveSessionId).toBeTruthy();
+    if (eveSessionId === null) throw new Error("нет заголовка x-eve-session-id");
+    await created.body?.cancel();
+
+    const stream = await fetchApp(`/eve/v1/session/${eveSessionId}/stream?startIndex=0`, {
+      headers: { cookie },
+    });
+    expect(stream.status).toBe(200);
+    await stream.body?.cancel();
+  });
+
   test("без заголовка — 403 session_binding_required", async () => {
     const user = await createUser();
     const cookie = await loginAs(user);

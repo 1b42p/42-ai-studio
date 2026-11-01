@@ -133,30 +133,35 @@ export interface ReadSessionEventsResult {
 
 /**
  * Читает события после `after` по возрастанию `seq` и курсор потока на момент
- * чтения — одной транзакцией, чтобы ответ был согласован сам с собой.
- * `null` — сессии нет.
+ * чтения — одной транзакцией `repeatable read`, чтобы оба запроса видели один
+ * снимок и ответ был согласован сам с собой. `null` — сессии нет.
  */
 export async function readSessionEvents(
   appSessionId: string,
   options: { after: number; limit: number },
 ): Promise<ReadSessionEventsResult | null> {
-  return getDb().transaction(async (tx) => {
-    const [session] = await tx
-      .select({ streamCursor: appSessions.streamCursor })
-      .from(appSessions)
-      .where(eq(appSessions.id, appSessionId))
-      .limit(1);
-    if (session === undefined) return null;
+  return getDb().transaction(
+    async (tx) => {
+      const [session] = await tx
+        .select({ streamCursor: appSessions.streamCursor })
+        .from(appSessions)
+        .where(eq(appSessions.id, appSessionId))
+        .limit(1);
+      if (session === undefined) return null;
 
-    const events = await tx
-      .select({ seq: sessionEvents.seq, payload: sessionEvents.payload })
-      .from(sessionEvents)
-      .where(and(eq(sessionEvents.appSessionId, appSessionId), gt(sessionEvents.seq, options.after)))
-      .orderBy(asc(sessionEvents.seq))
-      .limit(options.limit);
+      const events = await tx
+        .select({ seq: sessionEvents.seq, payload: sessionEvents.payload })
+        .from(sessionEvents)
+        .where(
+          and(eq(sessionEvents.appSessionId, appSessionId), gt(sessionEvents.seq, options.after)),
+        )
+        .orderBy(asc(sessionEvents.seq))
+        .limit(options.limit);
 
-    return { events, cursor: session.streamCursor };
-  });
+      return { events, cursor: session.streamCursor };
+    },
+    { isolationLevel: "repeatable read" },
+  );
 }
 
 /** Сохранено ли событие с этим `meta.id`. */
