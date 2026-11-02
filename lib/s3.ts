@@ -129,6 +129,21 @@ export class Storage {
     }
   }
 
+  /** Размер и тип объекта из метаданных; `null` — объекта нет. */
+  async objectInfo(
+    key: string,
+  ): Promise<{ size: number; contentType: string | undefined } | null> {
+    try {
+      const response = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      return { size: response.ContentLength ?? 0, contentType: response.ContentType };
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
   /** Удаление объекта. */
   async deleteObject(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));

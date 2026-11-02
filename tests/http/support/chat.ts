@@ -4,12 +4,16 @@
  * `sendAndWait`.
  */
 import { Client, type MessageStreamEvent } from "eve/client";
+import type { UserContent } from "ai";
+import { inArray } from "drizzle-orm";
 import { inject } from "vitest";
 
-import type { User } from "../../../lib/db/schema";
+import { loadConfig } from "../../../lib/config";
+import { media, type User } from "../../../lib/db/schema";
 import { sleep } from "../../../lib/sleep";
 import { fetchApp } from "./app";
 import { loginAs } from "./auth";
+import { db } from "./db";
 
 /** Ответ приложения со списком сохранённых событий. */
 export interface StoredEventsResponse {
@@ -144,11 +148,25 @@ export async function sendAndWait(
   appSessionId: string,
   text: string,
 ): Promise<MessageStreamEvent[]> {
-  const client = await eveClientAs(user, appSessionId);
+  return sendContentAndWait(user, appSessionId, text);
+}
+
+/**
+ * Отправляет готовое содержимое (текст или текст с файловыми частями) и ждёт
+ * конца хода. Общий путь для `sendAndWait` и `sendWithFiles`.
+ */
+export async function sendContentAndWait(
+  user: User,
+  appSessionId: string,
+  content: string | UserContent,
+  options: { baseUrl?: string } = {},
+): Promise<MessageStreamEvent[]> {
+  const client = await eveClientAs(user, appSessionId, options);
   const cookie = await loginAs(user);
-  const stateResponse = await fetchApp(`/api/sessions/${appSessionId}`, {
-    headers: { cookie },
-  });
+  const stateResponse = await fetch(
+    new URL(`/api/sessions/${appSessionId}`, options.baseUrl ?? inject("appUrl")),
+    { headers: { cookie }, redirect: "manual" },
+  );
   if (stateResponse.status !== 200) {
     throw new Error(`GET /api/sessions/${appSessionId} вернул ${stateResponse.status}`);
   }
@@ -156,8 +174,46 @@ export async function sendAndWait(
 
   const response =
     state.eveSessionId === null
-      ? (await client.sessions.create({ message: text })).response
-      : await client.sessions.attach(state.eveSessionId).send(text);
+      ? (await client.sessions.create({ message: content })).response
+      : await client.sessions.attach(state.eveSessionId).send(content);
 
   return readStreamUntil(response, "session.waiting");
+}
+
+/**
+ * Отправляет сообщение с файлами (#9): файловые части собираются по строкам
+ * `media`, `data` — адрес `fileUrl` из ответа `POST /api/uploads`.
+ */
+export async function sendWithFiles(
+  user: User,
+  appSessionId: string,
+  text: string,
+  mediaIds: readonly string[],
+  options: { baseUrl?: string } = {},
+): Promise<MessageStreamEvent[]> {
+  const rows =
+    mediaIds.length === 0
+      ? []
+      : await db()
+          .select()
+          .from(media)
+          .where(inArray(media.id, [...mediaIds]));
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const appUrl = loadConfig().appUrl;
+
+  const content: UserContent = [
+    ...(text.length === 0 ? [] : [{ type: "text" as const, text }]),
+    ...mediaIds.map((id) => {
+      const row = byId.get(id);
+      if (row === undefined) throw new Error(`строки media ${id} нет`);
+      return {
+        type: "file" as const,
+        data: `${appUrl}/api/media/${id}`,
+        mediaType: row.contentType,
+        filename: row.originalName,
+      };
+    }),
+  ];
+
+  return sendContentAndWait(user, appSessionId, content, options);
 }

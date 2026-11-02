@@ -26,6 +26,22 @@ describe("отсутствующая переменная останавлива
   });
 });
 
+describe("предел загрузки больше 5 ГиБ останавливает запуск", () => {
+  let app: AppHandle;
+
+  beforeAll(async () => {
+    app = await startApp({ env: { UPLOAD_MAX_BYTES: "6000000000" }, expectExit: true });
+  });
+
+  test("процесс завершается с ненулевым кодом", async () => {
+    expect(await app.exited).not.toBe(0);
+  });
+
+  test("вывод называет переменную", () => {
+    expect(app.output()).toContain("UPLOAD_MAX_BYTES");
+  });
+});
+
 describe("таймаут готовности не оставляет процесс", () => {
   test("startApp({ readyTimeoutMs: 1000 }) отклоняется и освобождает порт", async () => {
     const port = Number(new URL(inject("appUrl")).port) + 50;

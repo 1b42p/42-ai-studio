@@ -1,21 +1,25 @@
 "use client";
 
+import type { UserContent } from "ai";
 import type { ConversationState, UseEveAgentHelpers } from "eve/react";
 
 import { isBusyStatus } from "@/components/studio/chat/chat-status";
 import { ChatView, type ChatViewProps } from "@/components/studio/chat/chat-view";
+import { useAttachments } from "@/components/studio/chat/use-attachments";
 import { useMessageFiles } from "@/components/studio/chat/use-message-files";
 import { useSessionTitle } from "@/components/studio/chat/use-session-title";
 
 export type ChatAgent = UseEveAgentHelpers<ConversationState>;
 
 export interface ChatPanelProps
-  extends Omit<ChatViewProps, "agent" | "onCancel" | "onRespond" | "onSend"> {
+  extends Omit<ChatViewProps, "agent" | "attachments" | "onCancel" | "onRespond" | "onSend"> {
   agent: ChatAgent;
   /** Ошибка подготовки сессии, показывается вместо ошибки хука. */
   errorOverride?: Error;
   /** Перекрывает отправку: например, перед первым сообщением создать сессию. */
-  onSend?: (text: string) => void | Promise<void>;
+  onSend?: (content: string | UserContent) => void | Promise<void>;
+  /** Создаёт сессию приложения перед первой загрузкой на странице `/s`. */
+  ensureSession?: () => Promise<string>;
   /** Сессия приложения. Без неё название в шапке не опрашивается. */
   appSessionId?: string | null;
   /** Название с сервера. Пока его нет — опрос после первого сообщения. */
@@ -30,6 +34,7 @@ export function ChatPanel({
   agent,
   errorOverride,
   onSend,
+  ensureSession,
   appSessionId = null,
   initialTitle = null,
   title: titleProp,
@@ -37,6 +42,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const busy = isBusyStatus(agent.status);
   const polled = useSessionTitle(appSessionId, agent.events, initialTitle);
+  const attachments = useAttachments({ appSessionId, ensureSession });
   const messageFiles = useMessageFiles({
     appSessionId,
     events: agent.events,
@@ -50,6 +56,7 @@ export function ChatPanel({
   return (
     <ChatView
       {...props}
+      attachments={attachments}
       messageFiles={props.messageFiles ?? messageFiles}
       agent={{
         data: agent.data,
@@ -65,8 +72,8 @@ export function ChatPanel({
       }}
       onSend={
         onSend ??
-        (async (text) => {
-          await agent.send(text, busy ? { turnPolicy: "steer" } : undefined);
+        (async (content) => {
+          await agent.send(content, busy ? { turnPolicy: "steer" } : undefined);
         })
       }
       title={title}

@@ -221,6 +221,25 @@ export function fileConversation(text: string): MessageStreamEvent[] {
   ];
 }
 
+/** Сообщение пользователя с файловыми частями (#9). */
+export function userFilesConversation(
+  parts: ReadonlyArray<{ filename?: string; mediaType: string; url?: string }>,
+): MessageStreamEvent[] {
+  return [
+    event("session.started", {}),
+    turnStarted("turn_0"),
+    event("message.received", {
+      message: "",
+      parts,
+      sequence: 0,
+      turnId: "turn_0",
+    }),
+    ...assistantText("turn_0", "Файлы получены."),
+    turnCompleted("turn_0"),
+    sessionWaiting(),
+  ];
+}
+
 /** Длинное слово, широкая таблица и длинный блок кода. */
 export function wideContentConversation(): MessageStreamEvent[] {
   const word = "оченьдлинноесловобезпробелов".repeat(12);

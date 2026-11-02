@@ -9,6 +9,7 @@ import {
 import { loadConfig } from "@/lib/config";
 import { getDb, getSqlClient } from "@/lib/db/client";
 import { appSessions, daytonaKeys, sandboxes, type DaytonaKey } from "@/lib/db/schema";
+import { findAppSessionById } from "@/lib/sessions/service";
 import { decryptSecret, DAYTONA_KEY_PURPOSE } from "@/lib/secrets";
 import { isMissingSandbox, sandboxFailure, StudioSandboxError } from "@/lib/sandbox/errors";
 import { abortable } from "@/lib/sandbox/abort";
@@ -35,7 +36,27 @@ export function sandboxState(state: string | undefined): StoredState {
   }
 }
 
-async function boundSession(eveSessionId: string) {
+async function boundSession(
+  eveSessionId: string,
+  auth?: SandboxSessionContext["session"]["auth"],
+) {
+  // Первое сообщение со вложениями: eve раскладывает файлы в песочницу до
+  // того, как хук сохранения запишет привязку. Идентификатор сессии приложения
+  // уже есть в аутентификаторе канала — берём строку по нему, но только если
+  // она ещё свободна или принадлежит этой же сессии eve.
+  const initiator = auth?.initiator ?? null;
+  const claimed = initiator?.attributes.appSessionId;
+  if (initiator !== null && typeof claimed === "string") {
+    const session = await findAppSessionById(claimed);
+    if (
+      session !== null &&
+      session.userId === initiator.principalId &&
+      (session.eveSessionId === null || session.eveSessionId === eveSessionId)
+    ) {
+      return session;
+    }
+  }
+
   const deadline = Date.now() + 10_000;
   do {
     const [session] = await getDb().select().from(appSessions).where(eq(appSessions.eveSessionId, eveSessionId));
@@ -194,7 +215,7 @@ export function createDaytonaLifecycle() {
       return { templateKey: ctx.templateKey({ dockerfile, version: 1 }), dockerfile, files };
     },
     async start(ctx: SandboxSessionContext, _options: undefined, artifact: Readonly<Artifact>) {
-      const session = await boundSession(ctx.session.id);
+      const session = await boundSession(ctx.session.id, ctx.session.auth);
       const sql = await getSqlClient().reserve();
       let locked = false;
       let opened: { machine: DaytonaMachine; state: State } | undefined;
@@ -243,7 +264,7 @@ export function createDaytonaLifecycle() {
     },
     async resume(ctx: SandboxSessionContext, _artifact: Readonly<Artifact>, state: Readonly<State>) {
       if (!state || typeof state !== "object" || typeof state.keyId !== "string" || typeof state.sandboxId !== "string") throw new SandboxSessionGoneError("Некорректное состояние песочницы.");
-      const session = await boundSession(ctx.session.id);
+      const session = await boundSession(ctx.session.id, ctx.session.auth);
       try {
         const backend = await backendFor(state.keyId);
         return await connected(await liveMachine(backend, state.sandboxId), session.id);

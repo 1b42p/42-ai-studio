@@ -7,6 +7,7 @@ import { loadConfig } from "../../../lib/config";
 import { getDb, getSqlClient, type Database } from "../../../lib/db/client";
 import { daytonaKeys, users, type DaytonaKey, type NewDaytonaKey, type User } from "../../../lib/db/schema";
 import { DAYTONA_KEY_PURPOSE, encryptSecret } from "../../../lib/secrets";
+import { sleep } from "../../../lib/sleep";
 
 /** Клиент Drizzle к тестовой базе (клиент приложения, один на процесс воркера). */
 export function db(): Database {
@@ -36,6 +37,11 @@ export function assertTestDatabaseName(databaseUrl: string): void {
  * `TRUNCATE … CASCADE` всех таблиц схемы `public`, кроме служебных таблиц
  * drizzle (журнал миграций живёт в схеме `drizzle` и не трогается). Вызывается
  * автоматически перед каждым тестовым файлом.
+ *
+ * Процесс eve продолжает писать события хода после того, как клиент получил
+ * `session.waiting`, поэтому `TRUNCATE` иногда оказывается жертвой взаимной
+ * блокировки с `INSERT INTO session_events`. Такой повтор безопасен: прерванный
+ * `TRUNCATE` не изменил ни одной таблицы.
  */
 export async function resetDatabase(): Promise<void> {
   assertTestDatabaseName(loadConfig().databaseUrl);
@@ -46,7 +52,16 @@ export async function resetDatabase(): Promise<void> {
   `) as Array<{ tablename: string }>;
   if (tables.length === 0) return;
   const names = tables.map((row) => `"${row.tablename}"`).join(", ");
-  await client.unsafe(`truncate table ${names} cascade`);
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await client.unsafe(`truncate table ${names} cascade`);
+      return;
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (code !== "40P01" || attempt >= 4) throw error;
+      await sleep(200);
+    }
+  }
 }
 
 let userSeq = 0;

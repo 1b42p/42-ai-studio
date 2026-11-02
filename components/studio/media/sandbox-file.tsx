@@ -3,15 +3,10 @@
 import {
   AlertCircleIcon,
   DownloadIcon,
-  FileAudioIcon,
-  FileIcon,
-  FileImageIcon,
-  FileTextIcon,
-  FileVideoIcon,
-  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { attachmentIcon } from "@/components/studio/chat/attachment-kind";
 import { StudioAudioPlayer } from "@/components/studio/media/studio-audio-player";
 import { useMediaRetry } from "@/components/studio/use-media-retry";
 import {
@@ -26,6 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatFileSize } from "@/lib/format-size";
 import type { MessageFileView } from "@/lib/media/types";
 
 /** Что известно о файле по паре «сообщение, путь». */
@@ -55,28 +51,6 @@ export interface SandboxFileProps {
 
 function downloadUrl(mediaId: string): string {
   return `/api/media/${mediaId}?download=1`;
-}
-
-function formatSize(bytes: number | null): string {
-  if (bytes === null) return "";
-  const units = ["Б", "КБ", "МБ", "ГБ"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const formatted = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(value);
-  return `${formatted} ${units[unit]}`;
-}
-
-function iconFor(contentType: string | null): LucideIcon {
-  if (contentType === null) return FileIcon;
-  if (contentType.startsWith("video/")) return FileVideoIcon;
-  if (contentType.startsWith("audio/")) return FileAudioIcon;
-  if (contentType.startsWith("image/")) return FileImageIcon;
-  if (contentType.startsWith("text/")) return FileTextIcon;
-  return FileIcon;
 }
 
 function missingTitle(reason: MessageFileView["reason"]): string {
@@ -142,8 +116,8 @@ function MissingFile({ title, name }: { title: string; name?: string }) {
 }
 
 function FileCard({ entry }: { entry: MessageFileView }) {
-  const Icon = iconFor(entry.contentType);
-  const size = formatSize(entry.sizeBytes);
+  const Icon = attachmentIcon(entry.contentType);
+  const size = formatFileSize(entry.sizeBytes);
   return (
     <Attachment className="w-full max-w-md">
       <AttachmentMedia variant="icon">

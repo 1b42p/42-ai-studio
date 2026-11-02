@@ -9,18 +9,22 @@ import {
   type EveMessage,
   type EveMessagePart,
 } from "eve/react";
+import type { UserContent } from "ai";
 import {
   AlertCircleIcon,
   BrainIcon,
   CircleCheckIcon,
+  PaperclipIcon,
   SquareIcon,
   VideoIcon,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 
 import { ChatComposer } from "@/components/studio/chat/chat-composer";
 import type { ChatStatus } from "@/components/studio/chat/chat-status";
 import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
+import type { AttachmentsController } from "@/components/studio/chat/attachments";
+import { MessageAttachments } from "@/components/studio/chat/message-attachments";
 import {
   buildFileLookup,
   type FileLookup,
@@ -99,7 +103,9 @@ export interface ChatViewProps {
   ended?: boolean;
   /** Файлы из ответов агента; без них ссылки показывают «Файл недоступен». */
   messageFiles?: MessageFilesState;
-  onSend: (text: string) => void | Promise<void>;
+  /** Загрузчик вложений поля ввода; без него скрепка неактивна. */
+  attachments?: AttachmentsController;
+  onSend: (content: string | UserContent) => void | Promise<void>;
   onRespond: (responses: readonly InputResponse[]) => void | Promise<void>;
   onCancel: () => void | Promise<void>;
 }
@@ -245,16 +251,20 @@ function AssistantContent({
 
 function MessageRow({ message, files }: { message: EveMessage; files: FileLookup }) {
   const align = message.role === "user" ? "end" : "start";
+  const text = textOfUserMessage(message);
 
   return (
     <Message align={align}>
       <MessageContent>
         {message.role === "user" ? (
-          <Bubble align="end" variant="muted">
-            <BubbleContent className="whitespace-pre-wrap">
-              {textOfUserMessage(message)}
-            </BubbleContent>
-          </Bubble>
+          <>
+            {text.trim().length === 0 ? null : (
+              <Bubble align="end" variant="muted">
+                <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
+              </Bubble>
+            )}
+            <MessageAttachments parts={message.parts} />
+          </>
         ) : (
           <AssistantContent
             files={files}
@@ -515,6 +525,7 @@ export function ChatView({
   inputDisabled = false,
   ended = false,
   messageFiles,
+  attachments,
   onSend,
   onRespond,
   onCancel,
@@ -531,6 +542,12 @@ export function ChatView({
   const disabled = inputDisabled || resuming || finished;
   const thinking = status === "submitted";
   const showSessions = sessions !== undefined && messages.length === 0;
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const canAttach = attachments !== undefined && !disabled;
+
+  const hasFiles = (event: DragEvent): boolean =>
+    event.dataTransfer.types.includes("Files");
 
   const lastMessageIndexByTurn = new Map<string, number>();
   messages.forEach((message, index) => {
@@ -541,7 +558,44 @@ export function ChatView({
   const renderedTurns = new Set<string>();
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className="relative flex h-full min-h-0 flex-col"
+      onDragEnter={(event) => {
+        if (!canAttach || !hasFiles(event)) return;
+        event.preventDefault();
+        dragDepth.current += 1;
+        setDragging(true);
+      }}
+      onDragLeave={() => {
+        if (!canAttach) return;
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDragOver={(event) => {
+        if (!canAttach || !hasFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(event) => {
+        if (!canAttach || !hasFiles(event)) return;
+        event.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        attachments.addFiles(Array.from(event.dataTransfer.files));
+      }}
+    >
+      {dragging ? (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-background/80 p-6">
+          <Empty className="border-dashed">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <PaperclipIcon />
+              </EmptyMedia>
+              <EmptyTitle>Отпустите файлы, чтобы прикрепить</EmptyTitle>
+            </EmptyHeader>
+          </Empty>
+        </div>
+      ) : null}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3 md:px-6">
         <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
         <Button nativeButton={false} size="sm" variant="outline" render={<a href="/s" />}>
@@ -679,6 +733,7 @@ export function ChatView({
             </div>
           ) : (
             <ChatComposer
+              attachments={attachments}
               disabled={disabled}
               onCancel={onCancel}
               onSend={onSend}
