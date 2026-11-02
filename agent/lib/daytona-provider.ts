@@ -134,6 +134,8 @@ function protectConnection(connection: SandboxConnection): SandboxConnection {
     try { return await operation(); }
     catch (error) {
       if (error instanceof Error && error.name === "AbortError") throw error;
+      // edit_file отличает каталог от прочих отказов по коду EISDIR.
+      if (error instanceof Error && "code" in error && error.code === "EISDIR") throw error;
       throw sandboxFailure(error, "sandbox_start_failed");
     }
   }
