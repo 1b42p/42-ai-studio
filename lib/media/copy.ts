@@ -13,7 +13,7 @@ import { getStorage, type Storage } from "@/lib/s3";
 
 import { contentTypeForPath, fileNameForPath } from "./files";
 import { mediaObjectKey } from "./keys";
-import { resolveSandboxPath } from "./sandbox-path";
+import { resolveSandboxFilePath } from "./sandbox-path";
 
 export type MediaCopyReason = "not_found" | "outside_workspace" | "too_large" | "copy_failed";
 
@@ -56,7 +56,7 @@ function shellQuote(value: string): string {
 }
 
 function insideWorkspace(path: string): string {
-  const resolved = resolveSandboxPath(path);
+  const resolved = resolveSandboxFilePath(path);
   if (resolved.kind !== "file") {
     throw new MediaCopyError("outside_workspace", "Путь вне рабочей области");
   }

@@ -46,9 +46,21 @@ const retryMedia: BrowserCommand<[string]> = async (context, pattern) => {
   });
 };
 
+/** Все запросы медиа — 404: вторая ошибка показывает карточку скачивания. */
+const failMedia: BrowserCommand<[string]> = async (context, pattern) => {
+  if (context.provider.name !== "playwright") {
+    throw new Error("Подмена медиа доступна только с провайдером Playwright");
+  }
+  await context.page.unroute(pattern);
+  await context.page.route(pattern, async (route) => {
+    await route.fulfill({ status: 404, contentType: "text/plain", body: "not found" });
+  });
+};
+
 declare module "vitest/browser" {
   interface BrowserCommands {
     emulateColorScheme: (colorScheme: "light" | "dark") => Promise<void>;
+    failMedia: (pattern: string) => Promise<void>;
     retryMedia: (pattern: string) => Promise<void>;
   }
 }
@@ -68,7 +80,7 @@ export default defineConfig({
       provider: playwright(),
       headless: true,
       instances: [{ browser: "chromium" }],
-      commands: { emulateColorScheme, retryMedia },
+      commands: { emulateColorScheme, failMedia, retryMedia },
     },
   },
 });

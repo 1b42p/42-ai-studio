@@ -85,10 +85,7 @@ const DefaultLink = defaultComponents.a!;
 const DefaultImage = defaultComponents.img!;
 
 function isSandboxFileUrl(url: string | undefined): boolean {
-  return (
-    url !== undefined &&
-    (url.startsWith(SANDBOX_FILE_PREFIX) || url === SANDBOX_FILE_REJECTED_URL)
-  );
+  return url === SANDBOX_FILE_REJECTED_URL || sandboxFilePath(url) !== null;
 }
 
 /**

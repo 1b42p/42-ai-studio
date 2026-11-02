@@ -51,6 +51,10 @@ export interface SandboxFileProps {
   readonly rejected?: boolean;
 }
 
+function downloadUrl(mediaId: string): string {
+  return `/api/media/${mediaId}?download=1`;
+}
+
 function formatSize(bytes: number | null): string {
   if (bytes === null) return "";
   const units = ["Б", "КБ", "МБ", "ГБ"];
@@ -91,11 +95,11 @@ function DownloadButton({ mediaId }: { mediaId: string }) {
   return (
     <Button
       nativeButton={false}
-      render={<a href={`/api/media/${mediaId}?download=1`} />}
+      render={<a href={downloadUrl(mediaId)} />}
       size="sm"
       variant="outline"
     >
-      <DownloadIcon />
+      <DownloadIcon data-icon="inline-start" />
       Скачать
     </Button>
   );
@@ -152,7 +156,7 @@ function FileCard({ entry }: { entry: MessageFileView }) {
           <AttachmentAction
             aria-label="Скачать"
             nativeButton={false}
-            render={<a href={`/api/media/${entry.mediaId}?download=1`} />}
+            render={<a href={downloadUrl(entry.mediaId)} />}
           >
             <DownloadIcon />
           </AttachmentAction>
@@ -179,7 +183,7 @@ function VideoFile({ entry, label }: { entry: MessageFileView; label?: string })
   return (
     <Card className="w-full max-w-xl gap-0 py-0">
       <video
-        className="max-h-[70vh] w-full bg-black object-contain"
+        className="max-h-[70vh] w-full bg-muted object-contain"
         controls
         onError={onError}
         preload="metadata"
@@ -223,7 +227,7 @@ function AudioFile({ entry, label }: { entry: MessageFileView; label?: string })
 
   return (
     <Attachment className="w-full max-w-md">
-      <AttachmentContent className="space-y-1">
+      <AttachmentContent className="flex flex-col gap-1">
         <Caption name={entry.name} text={label} />
         <StudioAudioPlayer onError={onError} src={src} />
       </AttachmentContent>
@@ -232,7 +236,7 @@ function AudioFile({ entry, label }: { entry: MessageFileView; label?: string })
           <AttachmentAction
             aria-label="Скачать"
             nativeButton={false}
-            render={<a href={`/api/media/${entry.mediaId}?download=1`} />}
+            render={<a href={downloadUrl(entry.mediaId)} />}
           >
             <DownloadIcon />
           </AttachmentAction>

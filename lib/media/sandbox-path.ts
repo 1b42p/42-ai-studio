@@ -14,6 +14,8 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
+import { walkMarkdown, type MarkdownNode } from "./mdast";
+
 /** Причина отказа: путь не является файлом внутри рабочей области. */
 export type SandboxPathReason = "outside_workspace";
 
@@ -57,11 +59,7 @@ const BROKEN_PERCENT = /%(?![0-9a-fA-F]{2})/;
 const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
 
 function hasUnsafeCharacters(value: string): boolean {
-  return (
-    value.includes("\0") ||
-    value.includes("\\") ||
-    CONTROL_CHARACTERS.test(value)
-  );
+  return value.includes("\\") || CONTROL_CHARACTERS.test(value);
 }
 
 /** Нормализация POSIX-пути без `node:path`: модуль работает и в браузере. */
@@ -80,6 +78,27 @@ function normalizePosix(input: string): string {
 
 function rejected(path: string): SandboxPathResult {
   return { kind: "rejected", path, reason: "outside_workspace" };
+}
+
+/** Уже раскодированный путь: относительно рабочей области или абсолютный. */
+function workspaceResult(path: string): SandboxPathResult {
+  const absolute = path.startsWith("/") ? path : `/workspace/${path}`;
+  const normalized = normalizePosix(absolute);
+  if (normalized === "/workspace" || !normalized.startsWith("/workspace/")) {
+    return rejected(normalized);
+  }
+  return { kind: "file", path: normalized };
+}
+
+/**
+ * Проверка файлового пути (вход инструмента, вывод `realpath`): запрос и
+ * фрагмент — часть имени, процентная кодировка не раскрывается. Так повторная
+ * проверка уже раскодированного пути не портит имя с `%`.
+ */
+export function resolveSandboxFilePath(path: string): SandboxPathResult {
+  if (path.length === 0) return { kind: "external" };
+  if (hasUnsafeCharacters(path)) return rejected(path);
+  return workspaceResult(path);
 }
 
 /**
@@ -110,24 +129,7 @@ export function resolveSandboxPath(rawUrl: string): SandboxPathResult {
   // Раскрытие один раз: `%25` даёт настоящий `%`, и это уже не ошибка.
   if (hasUnsafeCharacters(decoded)) return rejected(value);
 
-  const absolute = decoded.startsWith("/") ? decoded : `/workspace/${decoded}`;
-  const normalized = normalizePosix(absolute);
-  if (normalized === "/workspace" || !normalized.startsWith("/workspace/")) {
-    return rejected(normalized);
-  }
-  return { kind: "file", path: normalized };
-}
-
-interface MarkdownNode {
-  readonly type: string;
-  readonly url?: string;
-  readonly identifier?: string;
-  readonly children?: readonly MarkdownNode[];
-}
-
-function walk(node: MarkdownNode, visit: (node: MarkdownNode) => void): void {
-  visit(node);
-  for (const child of node.children ?? []) walk(child, visit);
+  return workspaceResult(decoded);
 }
 
 /**
@@ -139,7 +141,7 @@ export function parseSandboxLinks(markdown: string): SandboxLink[] {
   const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown) as Root;
 
   const definitions = new Map<string, string>();
-  walk(tree as unknown as MarkdownNode, (node) => {
+  walkMarkdown(tree as unknown as MarkdownNode, (node) => {
     if (node.type === "definition" && typeof node.url === "string") {
       definitions.set(node.identifier ?? "", node.url);
     }
@@ -155,7 +157,7 @@ export function parseSandboxLinks(markdown: string): SandboxLink[] {
     links.push(result);
   };
 
-  walk(tree as unknown as MarkdownNode, (node) => {
+  walkMarkdown(tree as unknown as MarkdownNode, (node) => {
     switch (node.type) {
       case "link":
       case "image":

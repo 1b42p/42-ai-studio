@@ -1,22 +1,12 @@
 /** Адреса файлов песочницы в Markdown → адреса компонентов Streamdown (#8). */
 import type { Root } from "mdast";
 
+import { walkMarkdown, type MarkdownNode } from "./mdast";
 import {
   resolveSandboxPath,
   SANDBOX_FILE_REJECTED_URL,
   sandboxFileUrl,
 } from "./sandbox-path";
-
-interface MarkdownNode {
-  type: string;
-  url?: string;
-  children?: readonly MarkdownNode[];
-}
-
-function walk(node: MarkdownNode, visit: (node: MarkdownNode) => void): void {
-  visit(node);
-  for (const child of node.children ?? []) walk(child, visit);
-}
 
 /**
  * Remark-плагин до `remark-rehype`: файл песочницы получает адрес
@@ -25,7 +15,7 @@ function walk(node: MarkdownNode, visit: (node: MarkdownNode) => void): void {
  */
 export function remarkSandboxFiles() {
   return (tree: Root) => {
-    walk(tree as unknown as MarkdownNode, (node) => {
+    walkMarkdown(tree as unknown as MarkdownNode, (node) => {
       if (
         (node.type === "link" || node.type === "image" || node.type === "definition") &&
         typeof node.url === "string"

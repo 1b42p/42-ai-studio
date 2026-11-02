@@ -18,7 +18,7 @@ import {
 } from "@/lib/db/schema";
 
 import { copySandboxFile, MediaCopyError } from "./copy";
-import { COPYING_STALE_MS, MAX_MESSAGE_LINKS } from "./files";
+import { COPYING_STALE_MS, isStaleCopying, MAX_MESSAGE_LINKS } from "./files";
 import type { SandboxLink } from "./sandbox-path";
 
 export interface CaptureMessageFilesOptions {
@@ -27,6 +27,8 @@ export interface CaptureMessageFilesOptions {
   messageId: string;
   links: readonly SandboxLink[];
   maxBytes: number;
+  /** Владелец сессии, если вызывающий уже прочитал его из `app_sessions`. */
+  userId?: string;
   /** Лениво открывает песочницу сессии: без файлов её не трогаем. */
   getSandbox: () => Promise<SandboxSession>;
 }
@@ -63,7 +65,7 @@ async function claimRow(
     .where(whereRow(appSessionId, messageId, sandboxPath))
     .limit(1);
   if (existing === undefined || existing.state !== "copying") return null;
-  if (existing.updatedAt > staleBefore) return null;
+  if (!isStaleCopying(existing.updatedAt)) return null;
 
   const [claimed] = await db
     .update(messageFiles)
@@ -92,17 +94,27 @@ async function markMissing(id: string, reason: MessageFileReason): Promise<void>
  */
 export async function captureMessageFiles(options: CaptureMessageFilesOptions): Promise<void> {
   const db = getDb();
-  const [session] = await db
-    .select({ userId: appSessions.userId })
-    .from(appSessions)
-    .where(eq(appSessions.id, options.appSessionId))
-    .limit(1);
-  if (session === undefined) return;
+  let userId = options.userId;
+  if (userId === undefined) {
+    const [session] = await db
+      .select({ userId: appSessions.userId })
+      .from(appSessions)
+      .where(eq(appSessions.id, options.appSessionId))
+      .limit(1);
+    if (session === undefined) return;
+    userId = session.userId;
+  }
+  if (userId === undefined) return;
+  const ownerId: string = userId;
 
   // Несколько текстовых блоков одного шага делят `message_id` и один предел
   // в 20 ссылок: уже записанные строки тоже считаются.
   const existing = await db
-    .select({ path: messageFiles.sandboxPath })
+    .select({
+      path: messageFiles.sandboxPath,
+      state: messageFiles.state,
+      updatedAt: messageFiles.updatedAt,
+    })
     .from(messageFiles)
     .where(
       and(
@@ -110,10 +122,22 @@ export async function captureMessageFiles(options: CaptureMessageFilesOptions): 
         eq(messageFiles.messageId, options.messageId),
       ),
     );
-  const known = new Set(existing.map((row) => row.path));
-  const fresh = options.links.filter((link) => !known.has(link.path));
-  const room = Math.max(0, MAX_MESSAGE_LINKS - known.size);
-  const accepted = fresh.slice(0, room);
+  const now = Date.now();
+  // Готовые и отсутствующие не пересчитываются; зависшая `copying` — да.
+  const known = new Set(
+    existing
+      .filter((row) => row.state !== "copying" || !isStaleCopying(row.updatedAt, now))
+      .map((row) => row.path),
+  );
+  const stale = new Set(
+    existing
+      .filter((row) => row.state === "copying" && isStaleCopying(row.updatedAt, now))
+      .map((row) => row.path),
+  );
+  const retry = options.links.filter((link) => stale.has(link.path));
+  const fresh = options.links.filter((link) => !known.has(link.path) && !stale.has(link.path));
+  const room = Math.max(0, MAX_MESSAGE_LINKS - existing.length);
+  const accepted = [...retry, ...fresh.slice(0, room)];
   const overflow = fresh.slice(room);
   for (const link of overflow) {
     await db
@@ -147,14 +171,14 @@ export async function captureMessageFiles(options: CaptureMessageFilesOptions): 
           sandbox,
           path: link.path,
           maxBytes: options.maxBytes,
-          userId: session.userId,
+          userId: ownerId,
           appSessionId: options.appSessionId,
           kind: "message_file",
         });
         const [created] = await db
           .insert(media)
           .values({
-            userId: session.userId,
+            userId: ownerId,
             appSessionId: options.appSessionId,
             kind: "message_file",
             objectKey: copied.objectKey,

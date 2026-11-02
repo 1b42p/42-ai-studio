@@ -10,11 +10,12 @@ import type { SandboxSession } from "eve/sandbox";
 
 import { loadConfig } from "@/lib/config";
 import { getDb } from "@/lib/db/client";
-import { appSessions, media, toolCallMedia } from "@/lib/db/schema";
+import { media, toolCallMedia } from "@/lib/db/schema";
 import { getStorage, type Storage } from "@/lib/s3";
+import { findAppSessionByEveId } from "@/lib/sessions/service";
 
 import { copySandboxFile, MediaCopyError, type MediaCopyReason } from "./copy";
-import { resolveSandboxPath } from "./sandbox-path";
+import { resolveSandboxFilePath } from "./sandbox-path";
 
 export type ToolMediaKind = "tool_media" | "preview";
 export type PublishToolMediaReason = "no_session" | MediaCopyReason;
@@ -51,15 +52,6 @@ export interface PublishToolMediaDependencies {
   readonly maxBytes?: number;
 }
 
-async function appSessionForEve(eveSessionId: string) {
-  const [session] = await getDb()
-    .select({ id: appSessions.id, userId: appSessions.userId })
-    .from(appSessions)
-    .where(eq(appSessions.eveSessionId, eveSessionId))
-    .limit(1);
-  return session ?? null;
-}
-
 async function existingMediaId(
   appSessionId: string,
   callId: string,
@@ -89,10 +81,10 @@ export async function publishToolMedia(
   dependencies: PublishToolMediaDependencies = {},
 ): Promise<{ mediaId: string }> {
   const eveSessionId = ctx.session.parent?.rootSessionId ?? ctx.session.id;
-  const session = await appSessionForEve(eveSessionId);
+  const session = await findAppSessionByEveId(eveSessionId);
   if (session === null) throw new PublishToolMediaError("no_session", "Сессия не найдена");
 
-  const path = resolveSandboxPath(options.path);
+  const path = resolveSandboxFilePath(options.path);
   if (path.kind !== "file") {
     throw new PublishToolMediaError("outside_workspace", "Путь вне рабочей области");
   }

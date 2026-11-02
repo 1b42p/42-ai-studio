@@ -61,6 +61,7 @@ import {
   QuestionnaireTitle,
 } from "@/components/ui/questionnaire";
 import { Spinner } from "@/components/ui/spinner";
+import { messageIdOf } from "@/lib/media/message-id";
 import { cn } from "@/lib/utils";
 import {
   Trace,
@@ -227,10 +228,7 @@ function AssistantContent({
         }
 
         // Идентификатор сообщения тот же, что у сервера: `<turnId>:<stepIndex>`.
-        const messageId =
-          turnId !== undefined && group.stepIndex !== undefined
-            ? `${turnId}:${group.stepIndex}`
-            : undefined;
+        const messageId = messageIdOf(turnId, group.stepIndex);
 
         return (
           <ChatMarkdown

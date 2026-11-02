@@ -11,6 +11,7 @@ import { defineHook } from "eve/hooks";
 import { loadConfig } from "@/lib/config";
 import { HOOK_COPY_BUDGET_MS } from "@/lib/media/files";
 import { captureMessageFiles } from "@/lib/media/message-files";
+import { messageIdOf } from "@/lib/media/message-id";
 import { parseSandboxLinks } from "@/lib/media/sandbox-path";
 import { findAppSessionByEveId } from "@/lib/sessions/service";
 
@@ -40,7 +41,8 @@ export default defineHook({
       if (typeof data.message !== "string" || data.message.length === 0) return;
       const links = parseSandboxLinks(data.message);
       if (links.length === 0) return;
-      if (data.turnId === undefined || data.stepIndex === undefined) {
+      const messageId = messageIdOf(data.turnId, data.stepIndex);
+      if (messageId === undefined) {
         console.warn("[media] у message.completed нет координат сообщения", {
           eveSessionId: ctx.session.id,
         });
@@ -53,10 +55,19 @@ export default defineHook({
 
         const work = captureMessageFiles({
           appSessionId: session.id,
-          messageId: `${data.turnId}:${data.stepIndex}`,
+          messageId,
           links,
           maxBytes: loadConfig().mediaCopyMaxBytes,
+          userId: session.userId,
           getSandbox: () => ctx.getSandbox(),
+        }).catch((error: unknown) => {
+          // Хук мог отпустить ход по бюджету: поздняя ошибка не должна
+          // остаться необработанным отказом в процессе eve.
+          console.error("[media] файлы сообщения не сохранены", {
+            eveSessionId: ctx.session.id,
+            messageId,
+            error,
+          });
         });
         const budget = copyBudget();
         try {

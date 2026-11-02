@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isBusyStatus, type ChatStatus } from "@/components/studio/chat/chat-status";
 import type { MessageFilesState } from "@/components/studio/chat/message-files";
+import { messageIdOf } from "@/lib/media/message-id";
 import type { MessageFileView, MessageFilesResponse } from "@/lib/media/types";
 
 const POLL_INTERVAL_MS = 1000;
@@ -25,9 +26,9 @@ export function messageIdsInTurn(
   for (const message of messages) {
     if (message.metadata?.turnId !== turnId) continue;
     for (const part of message.parts) {
-      if (part.type === "text" && part.stepIndex !== undefined) {
-        ids.push(`${turnId}:${part.stepIndex}`);
-      }
+      if (part.type !== "text") continue;
+      const id = messageIdOf(turnId, part.stepIndex);
+      if (id !== undefined) ids.push(id);
     }
   }
   return ids;
@@ -62,18 +63,26 @@ export function useMessageFiles({
   );
 
   const entriesRef = useRef(entries);
-  entriesRef.current = entries;
   const busyRef = useRef(busy);
-  busyRef.current = busy;
+  const filesUrl =
+    appSessionId === null ? null : `/api/sessions/${appSessionId}/files`;
+
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
 
   // Первое чтение при открытии страницы.
   useEffect(() => {
-    if (appSessionId === null) {
+    if (filesUrl === null) {
       setEntries([]);
       return;
     }
     const controller = new AbortController();
-    void fetch(`/api/sessions/${appSessionId}/files`, {
+    void fetch(filesUrl, {
       cache: "no-store",
       signal: controller.signal,
     })
@@ -84,11 +93,11 @@ export function useMessageFiles({
       })
       .catch(() => undefined);
     return () => controller.abort();
-  }, [appSessionId]);
+  }, [filesUrl]);
 
   // Повтор после завершения блока сообщения, пока копирование идёт.
   useEffect(() => {
-    if (appSessionId === null || completedCount === 0) return;
+    if (filesUrl === null || completedCount === 0) return;
 
     const controller = new AbortController();
     const startedAt = Date.now();
@@ -98,7 +107,7 @@ export function useMessageFiles({
 
     const load = async () => {
       try {
-        const response = await fetch(`/api/sessions/${appSessionId}/files`, {
+        const response = await fetch(filesUrl, {
           cache: "no-store",
           signal: controller.signal,
         });
@@ -125,7 +134,7 @@ export function useMessageFiles({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [appSessionId, completedCount]);
+  }, [filesUrl, completedCount]);
 
   // Во время хода строки может ещё не быть: это скелет, а не «не найдено».
   useEffect(() => {

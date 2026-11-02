@@ -277,6 +277,13 @@ describe("маршруты медиа", () => {
       } else {
         expect(disposition).toContain("attachment");
       }
+      if (row.contentType === "application/pdf") {
+        // Имя с кириллицей: ASCII-запасное и точное в filename*.
+        expect(disposition).toContain('filename="');
+        expect(disposition).toContain(
+          "filename*=UTF-8''%D0%B4%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82.pdf",
+        );
+      }
     }
   }, 30_000);
 

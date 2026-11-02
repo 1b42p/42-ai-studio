@@ -10,6 +10,11 @@ export const MAX_MESSAGE_LINKS = 20;
 /** Строка `copying` старше 15 минут считается неудачной копией. */
 export const COPYING_STALE_MS = 15 * 60 * 1000;
 
+/** Копирование уже не идёт: строка зависла дольше предела. */
+export function isStaleCopying(updatedAt: Date, now = Date.now()): boolean {
+  return now - updatedAt.getTime() > COPYING_STALE_MS;
+}
+
 /** Сколько хук ждёт копирования, прежде чем отпустить ход. */
 export const HOOK_COPY_BUDGET_MS = 30_000;
 

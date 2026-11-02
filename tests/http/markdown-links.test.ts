@@ -6,6 +6,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   parseSandboxLinks,
+  resolveSandboxFilePath,
   resolveSandboxPath,
   SANDBOX_FILE_PREFIX,
   SANDBOX_FILE_REJECTED_URL,
@@ -18,6 +19,8 @@ describe("адрес файла песочницы", () => {
     ["out/final.mp4", { kind: "file", path: "/workspace/out/final.mp4" }],
     ["./out/final.mp4", { kind: "file", path: "/workspace/out/final.mp4" }],
     ["out/my%20video.mp4", { kind: "file", path: "/workspace/out/my video.mp4" }],
+    ["out/100%25.mp4", { kind: "file", path: "/workspace/out/100%.mp4" }],
+    ["out/a%2541.txt", { kind: "file", path: "/workspace/out/a%41.txt" }],
     ["out/final.mp4?v=2", { kind: "file", path: "/workspace/out/final.mp4" }],
     ["out/final.mp4#t=5", { kind: "file", path: "/workspace/out/final.mp4" }],
     ["https://example.com/a.mp4", { kind: "external" }],
@@ -58,6 +61,22 @@ describe("адрес файла песочницы", () => {
     expect(resolveSandboxPath("out/./frames/../frame.png")).toEqual({
       kind: "file",
       path: "/workspace/out/frame.png",
+    });
+  });
+
+  test("файловый путь не раскодируется повторно", () => {
+    expect(resolveSandboxFilePath("/workspace/out/100%.mp4")).toEqual({
+      kind: "file",
+      path: "/workspace/out/100%.mp4",
+    });
+    expect(resolveSandboxFilePath("/workspace/out/a%41.txt")).toEqual({
+      kind: "file",
+      path: "/workspace/out/a%41.txt",
+    });
+    expect(resolveSandboxFilePath("../x")).toEqual({
+      kind: "rejected",
+      path: "/x",
+      reason: "outside_workspace",
     });
   });
 });

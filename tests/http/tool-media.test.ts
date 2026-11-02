@@ -2,21 +2,15 @@
  * Медиа вызова инструмента (#8): `publishToolMedia` копирует файл из песочницы
  * один раз на пару «вызов, путь», а ошибки не оставляют строк.
  */
-import { randomUUID } from "node:crypto";
-import type {
-  SandboxReadFileOptions,
-  SandboxRunOptions,
-  SandboxSession,
-} from "eve/sandbox";
+import type { SandboxSession } from "eve/sandbox";
 import { beforeEach, describe, expect, test } from "vitest";
 
-import { loadConfig } from "../../lib/config";
 import { appSessions, media, toolCallMedia } from "../../lib/db/schema";
 import { copySandboxFile } from "../../lib/media/copy";
 import { publishToolMedia } from "../../lib/media/publish-tool-media";
-import { getFakeBackend, type FakeMachine } from "../../lib/sandbox/fake";
 import { createUser, db, resetDatabase } from "./support/db";
 import { fakeSandbox } from "./support/fake-sandbox";
+import { fakeMachineFor, sandboxSessionFrom } from "./support/sandbox-session";
 import { s3 } from "./support/s3";
 import { telegramStub } from "./support/telegram";
 
@@ -27,28 +21,6 @@ beforeEach(async () => {
   await s3().deletePrefix("");
 });
 
-/** Минимальная сессия песочницы: публикации нужны `run` и `readFile`. */
-function sessionFrom(machine: FakeMachine): SandboxSession {
-  const connection = machine.connect({ onActivity: async () => {}, onStop: async () => {} });
-  return {
-    async run({ command, abortSignal }: SandboxRunOptions) {
-      const process = await connection.spawn({
-        command,
-        abortSignal,
-        env: {},
-        workingDirectory: "/workspace",
-      });
-      const [stdout, stderr, result] = await Promise.all([
-        new Response(process.stdout).text(),
-        new Response(process.stderr).text(),
-        process.wait(),
-      ]);
-      return { exitCode: result.exitCode, stderr, stdout };
-    },
-    readFile: (options: SandboxReadFileOptions) => connection.readFile(options),
-  } as unknown as SandboxSession;
-}
-
 async function bindSession(userId: string, eveSessionId: string): Promise<string> {
   const [session] = await db()
     .insert(appSessions)
@@ -57,22 +29,14 @@ async function bindSession(userId: string, eveSessionId: string): Promise<string
   return session!.id;
 }
 
-async function machineFor(appSessionId: string): Promise<FakeMachine> {
-  const backend = getFakeBackend(loadConfig().fakeSandboxDir!);
-  return backend.create({
-    name: `tool-media-${randomUUID()}`,
-    appSessionId,
-  });
-}
-
 describe("publishToolMedia", () => {
   test("повторный вызов с тем же callId и путём не создаёт вторую строку", async () => {
     const user = await createUser();
     const appSessionId = await bindSession(user.id, "evt_root");
     const bytes = new TextEncoder().encode("дорожка озвучки");
     await fakeSandbox.seed(appSessionId, { "out/voice.mp3": bytes });
-    const machine = await machineFor(appSessionId);
-    const sandbox = sessionFrom(machine);
+    const machine = await fakeMachineFor(appSessionId);
+    const sandbox = sandboxSessionFrom(machine);
     const ctx = {
       session: { id: "evt_root" },
       callId: "call_voice",
@@ -104,8 +68,8 @@ describe("publishToolMedia", () => {
     const user = await createUser();
     const appSessionId = await bindSession(user.id, "evt_empty");
     await fakeSandbox.seed(appSessionId, { "out/empty.txt": new Uint8Array() });
-    const machine = await machineFor(appSessionId);
-    const sandbox = sessionFrom(machine);
+    const machine = await fakeMachineFor(appSessionId);
+    const sandbox = sandboxSessionFrom(machine);
 
     await publishToolMedia(
       {
@@ -126,8 +90,8 @@ describe("publishToolMedia", () => {
     const user = await createUser();
     const appSessionId = await bindSession(user.id, "evt_quote");
     await fakeSandbox.seed(appSessionId, { "out/it's.txt": new Uint8Array([7]) });
-    const machine = await machineFor(appSessionId);
-    const sandbox = sessionFrom(machine);
+    const machine = await fakeMachineFor(appSessionId);
+    const sandbox = sandboxSessionFrom(machine);
 
     const result = await publishToolMedia(
       {
@@ -147,8 +111,8 @@ describe("publishToolMedia", () => {
     const user = await createUser();
     const appSessionId = await bindSession(user.id, "evt_errors");
     await fakeSandbox.seed(appSessionId, { "out/big.bin": new Uint8Array(10) });
-    const machine = await machineFor(appSessionId);
-    const sandbox = sessionFrom(machine);
+    const machine = await fakeMachineFor(appSessionId);
+    const sandbox = sandboxSessionFrom(machine);
     const ctx = {
       session: { id: "evt_errors" },
       callId: "call_error",
@@ -175,8 +139,8 @@ describe("publishToolMedia", () => {
     const user = await createUser();
     const appSessionId = await bindSession(user.id, "evt_parent_root");
     await fakeSandbox.seed(appSessionId, { "out/frame.png": new Uint8Array([1, 2, 3]) });
-    const machine = await machineFor(appSessionId);
-    const sandbox = sessionFrom(machine);
+    const machine = await fakeMachineFor(appSessionId);
+    const sandbox = sandboxSessionFrom(machine);
 
     const result = await publishToolMedia(
       {

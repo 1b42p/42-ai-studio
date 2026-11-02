@@ -111,6 +111,29 @@ describe("файлы в ответе", () => {
     expectNoHorizontalScroll();
   });
 
+  test("относительный, точечный и абсолютный пути дают один и тот же файл", async () => {
+    await renderOnDesktop(
+      view(
+        "Вот [a](out/final.mp4), [b](./out/final.mp4) и [c](/workspace/out/final.mp4)",
+        {
+          entries: [
+            entry("/workspace/out/final.mp4", {
+              contentType: "video/mp4",
+              name: "final.mp4",
+            }),
+          ],
+        },
+      ),
+    );
+
+    const videos = document.querySelectorAll("video");
+    expect(videos).toHaveLength(3);
+    for (const video of videos) {
+      expect(video.getAttribute("src")).toContain(`/api/media/${MEDIA_ID}`);
+    }
+    expect(document.body.textContent).not.toContain("[blocked]");
+  });
+
   test("ссылка-определение тоже доходит до файла", async () => {
     await renderOnDesktop(
       view("Вот [ролик][ref]\n\n[ref]: out/final.mp4", {
@@ -309,5 +332,26 @@ describe("файлы в ответе", () => {
     await vi.waitFor(() => {
       expect(document.querySelector("video")).not.toBeNull();
     });
+  });
+
+  test("повторная ошибка показывает карточку скачивания", async () => {
+    await commands.failMedia("**/api/media/**");
+    await renderOnDesktop(
+      view("![кадр](out/final.mp4)", {
+        entries: [
+          entry("/workspace/out/final.mp4", {
+            contentType: "video/mp4",
+            name: "final.mp4",
+          }),
+        ],
+      }),
+    );
+
+    // Первая ошибка оставила бы видео с адресом `?retry=1`; карточка
+    // появляется только после второй.
+    await vi.waitFor(() => {
+      expect(document.querySelector("video")).toBeNull();
+    });
+    await expect.element(page.getByRole("button", { name: "Скачать" })).toBeVisible();
   });
 });

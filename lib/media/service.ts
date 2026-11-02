@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { media, messageFiles, type Media } from "@/lib/db/schema";
 
-import { COPYING_STALE_MS, fileNameForPath } from "./files";
+import { fileNameForPath, isStaleCopying } from "./files";
 import type { MessageFileView } from "./types";
 
 /** Медиа пользователя; чужое и несуществующее неразличимы. */
@@ -41,8 +41,7 @@ export async function listSessionFiles(appSessionId: string): Promise<MessageFil
 
   const now = Date.now();
   return rows.map((row) => {
-    const stale =
-      row.state === "copying" && now - row.updatedAt.getTime() > COPYING_STALE_MS;
+    const stale = row.state === "copying" && isStaleCopying(row.updatedAt, now);
     return {
       messageId: row.messageId,
       path: row.path,
