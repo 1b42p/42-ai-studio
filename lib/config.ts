@@ -97,6 +97,8 @@ export interface AppConfig {
   readonly sandboxCpu: number;
   readonly sandboxMemoryGb: number;
   readonly sandboxDiskGb: number;
+  /** Предельный размер файла, который копируется из ответа агента в S3. */
+  readonly mediaCopyMaxBytes: number;
   /** Абсолютный путь; обязателен только в тестовом режиме. */
   readonly fakeSandboxDir: string | undefined;
 }
@@ -153,6 +155,13 @@ const envSchema = z.object({
   SANDBOX_CPU: z.coerce.number().int().min(1).max(4).optional().default(2),
   SANDBOX_MEMORY_GB: z.coerce.number().int().min(3).max(8).optional().default(4),
   SANDBOX_DISK_GB: z.coerce.number().int().min(1).max(10).optional().default(8),
+  MEDIA_COPY_MAX_BYTES: z.coerce
+    .number({ error: "ожидается целое число больше нуля" })
+    .int("ожидается целое число больше нуля")
+    .min(1, "ожидается целое число больше нуля")
+    .max(Number.MAX_SAFE_INTEGER, "слишком большой размер")
+    .optional()
+    .default(2_147_483_648),
   FAKE_SANDBOX_DIR: envString.refine((value) => !value.includes("\0"), "некорректный путь").optional(),
   DATABASE_URL: envUrl,
   S3_ENDPOINT: envUrl,
@@ -343,6 +352,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     sandboxCpu: data.SANDBOX_CPU,
     sandboxMemoryGb: data.SANDBOX_MEMORY_GB,
     sandboxDiskGb: data.SANDBOX_DISK_GB,
+    mediaCopyMaxBytes: data.MEDIA_COPY_MAX_BYTES,
     fakeSandboxDir: data.FAKE_SANDBOX_DIR === undefined ? undefined : resolve(data.FAKE_SANDBOX_DIR),
   };
 }

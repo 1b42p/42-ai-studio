@@ -157,7 +157,20 @@ describe("parseConfig: песочница и секреты", () => {
     expect(config.sandboxCpu).toBe(2);
     expect(config.sandboxMemoryGb).toBe(4);
     expect(config.sandboxDiskGb).toBe(8);
+    expect(config.mediaCopyMaxBytes).toBe(2_147_483_648);
     expect(config.fakeSandboxDir).toBe(resolve(".tmp/fake-sandbox"));
+  });
+
+  test("MEDIA_COPY_MAX_BYTES — целое больше нуля", () => {
+    expect(issuesOf({ ...validEnv(), MEDIA_COPY_MAX_BYTES: "0" })[0]).toContain(
+      "MEDIA_COPY_MAX_BYTES",
+    );
+    expect(issuesOf({ ...validEnv(), MEDIA_COPY_MAX_BYTES: "1.5" })[0]).toContain(
+      "MEDIA_COPY_MAX_BYTES",
+    );
+    expect(parseConfig({ ...validEnv(), MEDIA_COPY_MAX_BYTES: "1000" }).mediaCopyMaxBytes).toBe(
+      1000,
+    );
   });
 
   test.each([undefined, "", "AA==", "A".repeat(43), "A".repeat(42) + "B=", "A".repeat(43) + "=\n"])(

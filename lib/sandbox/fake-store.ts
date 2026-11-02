@@ -55,6 +55,12 @@ export function hasCode(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
 }
 
+/** Значение из одинарных кавычек нашей же команды; `'\''` — одна кавычка. */
+function unquoteShell(value: string): string | null {
+  if (value.length < 2 || !value.startsWith("'") || !value.endsWith("'")) return null;
+  return value.slice(1, -1).replaceAll("'\\''", "'");
+}
+
 export function fakeNotFound(): Error & { status: number } {
   return Object.assign(new Error("Fake Daytona: not found (dtn_test_secret_value)"), {
     status: 404,
@@ -166,6 +172,59 @@ export class FakeStore {
     );
     if (!record) throw fakeNotFound();
     return record;
+  }
+
+  /**
+   * Встроенные команды, которыми серверный код проверяет файл перед копией
+   * (#8): `realpath` и `stat`. Авторские правила проверяются раньше, поэтому
+   * особый случай (например, `realpath`, ведущий наружу) задаётся правилом.
+   */
+  async shellBuiltin(
+    root: string,
+    command: string,
+  ): Promise<Pick<StoredRule, "stdout" | "stderr" | "exitCode"> | null> {
+    const quoted = /'(?:[^']|'\\'')*'/;
+    const realpath = new RegExp(`^realpath -- (${quoted.source})$`).exec(command);
+    if (realpath !== null) {
+      const sandboxPath = unquoteShell(realpath[1]!);
+      if (sandboxPath === null) return null;
+      const absolute = path.posix.resolve("/workspace", sandboxPath);
+      const host = await this.filePath(root, sandboxPath);
+      try {
+        await fs.stat(path.dirname(host));
+      } catch (error) {
+        if (hasCode(error, "ENOENT") || hasCode(error, "ENOTDIR")) {
+          return { stderr: `realpath: ${absolute}: No such file or directory\n`, exitCode: 1 };
+        }
+        throw error;
+      }
+      return { stdout: `${absolute}\n`, exitCode: 0 };
+    }
+
+    const stat = new RegExp(`^LC_ALL=C stat -c '%F\\|%s' -- (${quoted.source})$`).exec(command);
+    if (stat !== null) {
+      const sandboxPath = unquoteShell(stat[1]!);
+      if (sandboxPath === null) return null;
+      let info;
+      try {
+        info = await fs.stat(await this.filePath(root, sandboxPath));
+      } catch (error) {
+        if (hasCode(error, "ENOENT") || hasCode(error, "ENOTDIR")) {
+          return { stderr: "stat: cannot stat: No such file or directory\n", exitCode: 1 };
+        }
+        throw error;
+      }
+      const kind = info.isDirectory()
+        ? "directory"
+        : info.isFile()
+          ? info.size === 0
+            ? "regular empty file"
+            : "regular file"
+          : "special file";
+      return { stdout: `${kind}|${info.size}\n`, exitCode: 0 };
+    }
+
+    return null;
   }
 
   /** Atomic rename makes a synchronous getter see a complete, current snapshot. */

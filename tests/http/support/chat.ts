@@ -18,11 +18,15 @@ export interface StoredEventsResponse {
 }
 
 /** Создаёт сессию приложения от имени пользователя. */
-export async function createSessionAs(user: User): Promise<{ id: string }> {
+export async function createSessionAs(
+  user: User,
+  options: { baseUrl?: string } = {},
+): Promise<{ id: string }> {
   const cookie = await loginAs(user);
-  const response = await fetchApp("/api/sessions", {
+  const response = await fetch(new URL("/api/sessions", options.baseUrl ?? inject("appUrl")), {
     method: "POST",
     headers: { cookie },
+    redirect: "manual",
   });
   if (response.status !== 201) {
     throw new Error(`POST /api/sessions вернул ${response.status}: ${await response.text()}`);
@@ -31,10 +35,14 @@ export async function createSessionAs(user: User): Promise<{ id: string }> {
 }
 
 /** Клиент eve с cookie пользователя и заголовком сессии приложения. */
-export async function eveClientAs(user: User, appSessionId: string): Promise<Client> {
+export async function eveClientAs(
+  user: User,
+  appSessionId: string,
+  options: { baseUrl?: string } = {},
+): Promise<Client> {
   const cookie = await loginAs(user);
   return new Client({
-    host: inject("appUrl"),
+    host: options.baseUrl ?? inject("appUrl"),
     redirect: "manual",
     headers: {
       cookie,

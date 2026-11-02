@@ -41,7 +41,7 @@ function stepCompleted(turnId: string, stepIndex = 0): MessageStreamEvent {
   });
 }
 
-function assistantText(turnId: string, text: string, stepIndex = 0): MessageStreamEvent[] {
+export function assistantText(turnId: string, text: string, stepIndex = 0): MessageStreamEvent[] {
   return [
     stepStarted(turnId, stepIndex),
     event("message.appended", {
@@ -206,6 +206,18 @@ export function completedConversation(): MessageStreamEvent[] {
     event("session.completed", {
       usage: { cacheReadTokens: 0, cacheWriteTokens: 0, inputTokens: 10, outputTokens: 2 },
     }),
+  ];
+}
+
+/** Ответ с файлами песочницы: пути разрешаются через `messageFiles`. */
+export function fileConversation(text: string): MessageStreamEvent[] {
+  return [
+    event("session.started", {}),
+    turnStarted("turn_0"),
+    userMessage("turn_0", "Покажи файлы"),
+    ...assistantText("turn_0", text),
+    turnCompleted("turn_0"),
+    sessionWaiting(),
   ];
 }
 

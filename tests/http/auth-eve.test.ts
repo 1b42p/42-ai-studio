@@ -49,6 +49,12 @@ describe("GET /eve/v1/info", () => {
     const operatorCookie = await loginAs(operator);
     const response = await fetchApp("/eve/v1/info", { headers: { cookie: operatorCookie } });
     expect(response.status).toBe(200);
+
+    // #8: правила вставки файлов видны в инструкциях агента.
+    const text = await response.text();
+    expect(text).toContain("Файлы в ответе");
+    expect(text).toContain("out/final.mp4");
+    expect(text).toContain("20 ссылок");
   });
 });
 
