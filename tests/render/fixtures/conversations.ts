@@ -109,14 +109,14 @@ export function toolConversation(): MessageStreamEvent[] {
     userMessage("turn_0", "Проверь папку"),
     stepStarted("turn_0"),
     event("actions.requested", {
-      actions: [{ callId: "call_1", input: { command: "ls" }, kind: "tool-call", toolName: "bash" }],
+      actions: [{ callId: "call_1", input: { command: "ls" }, kind: "tool-call", toolName: "inspect_directory" }],
       presentation: { call_1: { label: "Проверяет папку" } },
       sequence: 0,
       stepIndex: 0,
       turnId: "turn_0",
     }),
     event("action.result", {
-      result: { callId: "call_1", kind: "tool-result", output: "секретный-вывод", toolName: "bash" },
+      result: { callId: "call_1", kind: "tool-result", output: "секретный-вывод", toolName: "inspect_directory" },
       sequence: 0,
       status: "completed",
       stepIndex: 0,

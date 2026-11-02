@@ -2,6 +2,7 @@
  * Точечные тесты чистой функции проверки конфигурации: приложение не нужно.
  */
 import { describe, expect, test } from "vitest";
+import { resolve } from "node:path";
 
 import { ConfigError, parseConfig, type EnvRecord } from "../../lib/config";
 
@@ -20,6 +21,8 @@ function validEnv(): EnvRecord {
     TEST_APP_PORT: "3100",
     NEXT_DIST_DIR: ".next-test-3100",
     SESSION_SECRET: "test-session-secret-0123456789abcdef",
+    SECRETS_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    FAKE_SANDBOX_DIR: ".tmp/fake-sandbox",
     NODE_ENV: "test",
   };
 }
@@ -143,6 +146,42 @@ describe("parseConfig", () => {
     expect(issuesOf({ ...validEnv(), TEST_APP_PORT: "70000" })[0]).toContain("TEST_APP_PORT");
     expect(issuesOf({ ...validEnv(), TEST_APP_PORT: "port" })[0]).toContain("TEST_APP_PORT");
     expect(parseConfig({ ...validEnv(), TEST_APP_PORT: "3199" }).testAppPort).toBe(3199);
+  });
+});
+
+describe("parseConfig: песочница и секреты", () => {
+  test("параметры Daytona получают безопасные значения по умолчанию", () => {
+    const config = parseConfig(validEnv());
+    expect(config.secretsEncryptionKey).toBe("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+    expect(config.daytonaApiUrl).toBe("https://app.daytona.io/api");
+    expect(config.sandboxCpu).toBe(2);
+    expect(config.sandboxMemoryGb).toBe(4);
+    expect(config.sandboxDiskGb).toBe(8);
+    expect(config.fakeSandboxDir).toBe(resolve(".tmp/fake-sandbox"));
+  });
+
+  test.each([undefined, "", "AA==", "A".repeat(43), "A".repeat(42) + "B=", "A".repeat(43) + "=\n"])(
+    "неверный ключ шифрования отвергается без раскрытия значения: %s", (value) => {
+      const issues = issuesOf({ ...validEnv(), SECRETS_ENCRYPTION_KEY: value });
+      expect(issues).toHaveLength(1);
+      expect(issues[0]).toContain("SECRETS_ENCRYPTION_KEY");
+      if (value) expect(issues[0]).not.toContain(value);
+    },
+  );
+
+  test("каталог фиктивной песочницы обязателен только в тестовом режиме", () => {
+    expect(issuesOf({ ...validEnv(), FAKE_SANDBOX_DIR: undefined })[0]).toContain("FAKE_SANDBOX_DIR");
+    expect(parseConfig({ ...productionEnv(), FAKE_SANDBOX_DIR: undefined }).fakeSandboxDir).toBeUndefined();
+    expect(parseConfig({ ...validEnv(), FAKE_SANDBOX_DIR: "/tmp/custom-sandbox" }).fakeSandboxDir).toBe("/tmp/custom-sandbox");
+  });
+
+  test.each([
+    ["SANDBOX_CPU", "0"], ["SANDBOX_CPU", "5"], ["SANDBOX_CPU", "1.5"],
+    ["SANDBOX_MEMORY_GB", "2"], ["SANDBOX_MEMORY_GB", "9"],
+    ["SANDBOX_DISK_GB", "0"], ["SANDBOX_DISK_GB", "11"],
+    ["DAYTONA_API_URL", "not-url"], ["DAYTONA_API_URL", "ftp://example.com"],
+  ])("неверное ограничение %s=%s отвергается", (name, value) => {
+    expect(issuesOf({ ...validEnv(), [name]: value })[0]).toContain(name);
   });
 });
 

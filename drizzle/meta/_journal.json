@@ -36,6 +36,13 @@
       "when": 1793542320700,
       "tag": "0004_session_list",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793555796324,
+      "tag": "0005_smiling_bloodaxe",
+      "breakpoints": true
     }
   ]
 }

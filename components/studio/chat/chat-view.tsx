@@ -15,13 +15,13 @@ import {
   CircleCheckIcon,
   SquareIcon,
   VideoIcon,
-  WrenchIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { ChatComposer } from "@/components/studio/chat/chat-composer";
 import type { ChatStatus } from "@/components/studio/chat/chat-status";
 import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
+import { ToolCard } from "@/components/studio/chat/tool-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -164,23 +164,6 @@ function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[]
   return groups;
 }
 
-/** Состояния SDK переводятся в `status` здесь, а не передаются напрямую. */
-function toolStatus(part: EveDynamicToolPart): "error" | "running" | undefined {
-  switch (part.state) {
-    case "output-error":
-      return "error";
-    case "output-available":
-    case "output-denied":
-      return undefined;
-    default:
-      return "running";
-  }
-}
-
-function toolLabel(part: EveDynamicToolPart): string {
-  return part.toolMetadata?.eve?.label ?? "Инструмент";
-}
-
 function ReasoningRow({ text, running }: { text: string; running: boolean }) {
   return (
     <TraceCollapsible defaultOpen={false}>
@@ -215,12 +198,7 @@ function AssistantContent({ parts }: { parts: readonly EveMessagePart[] }) {
           return (
             <Trace key={group.id}>
               {group.parts.map((part) => (
-                <TraceLine key={part.toolCallId} status={toolStatus(part)}>
-                  <TraceIcon>
-                    <WrenchIcon />
-                  </TraceIcon>
-                  <TraceTitle>{toolLabel(part)}</TraceTitle>
-                </TraceLine>
+                <ToolCard key={part.toolCallId} part={part} />
               ))}
             </Trace>
           );
