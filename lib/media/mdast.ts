@@ -2,6 +2,8 @@
 export interface MarkdownNode {
   readonly type: string;
   url?: string;
+  /** Заголовок ссылки; для отвергнутого файла хранит исходный путь. */
+  title?: string;
   readonly identifier?: string;
   readonly children?: readonly MarkdownNode[];
 }

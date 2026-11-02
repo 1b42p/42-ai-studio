@@ -288,7 +288,7 @@ describe("файлы в ответе", () => {
 
   test("режим без файлов выводит путь текстом", async () => {
     await renderOnDesktop(
-      view("Вот [ролик](out/final.mp4) и ![кадр](out/frame.png)", {
+      view("Вот [ролик](out/final.mp4), ![кадр](out/frame.png) и [плохая](../x)", {
         entries: [],
         enabled: false,
       }),
@@ -296,6 +296,7 @@ describe("файлы в ответе", () => {
 
     await expect.element(page.getByText("/workspace/out/final.mp4")).toBeVisible();
     await expect.element(page.getByText("/workspace/out/frame.png")).toBeVisible();
+    await expect.element(page.getByText("/x")).toBeVisible();
     expect(document.querySelector("video")).toBeNull();
     expect(document.querySelector("img")).toBeNull();
   });

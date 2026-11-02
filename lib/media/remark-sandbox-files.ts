@@ -25,6 +25,9 @@ export function remarkSandboxFiles() {
           node.url = sandboxFileUrl(result.path);
         } else if (result.kind === "rejected") {
           node.url = SANDBOX_FILE_REJECTED_URL;
+          // Исходный путь сохраняется для режима «без файлов» (#12):
+          // `title` проходит санитайзер, в отличие от произвольного data-*.
+          node.title = result.path;
         }
       }
     });

@@ -96,14 +96,16 @@ function isSandboxFileUrl(url: string | undefined): boolean {
 const components: Components = {
   // Блочные карточки внутри `<p>` дали бы ошибку вложенности DOM.
   p: ({ children }) => <div className="my-2 first:mt-0 last:mb-0">{children}</div>,
-  a: ({ href, children, ...props }) => {
+  a: ({ href, children, title, ...props }) => {
     const resolver = useContext(SandboxFileContext);
     if (isSandboxFileUrl(href)) {
+      const rejected = href === SANDBOX_FILE_REJECTED_URL;
       return (
         <SandboxFile
           label={textOf(children)}
+          originalPath={rejected ? title : undefined}
           path={sandboxFilePath(href)}
-          rejected={href === SANDBOX_FILE_REJECTED_URL}
+          rejected={rejected}
           resolver={resolver}
         />
       );
@@ -111,24 +113,26 @@ const components: Components = {
     // Обычные и недописанные ссылки потока — штатный обработчик Streamdown
     // с подтверждением перехода.
     return (
-      <DefaultLink href={href} {...props}>
+      <DefaultLink href={href} title={title} {...props}>
         {children}
       </DefaultLink>
     );
   },
-  img: ({ src, alt, ...props }) => {
+  img: ({ src, alt, title, ...props }) => {
     const resolver = useContext(SandboxFileContext);
     if (typeof src === "string" && isSandboxFileUrl(src)) {
+      const rejected = src === SANDBOX_FILE_REJECTED_URL;
       return (
         <SandboxFile
           label={alt}
+          originalPath={rejected ? title : undefined}
           path={sandboxFilePath(src)}
-          rejected={src === SANDBOX_FILE_REJECTED_URL}
+          rejected={rejected}
           resolver={resolver}
         />
       );
     }
-    return <DefaultImage alt={alt} src={src} {...props} />;
+    return <DefaultImage alt={alt} src={src} title={title} {...props} />;
   },
   // Блоки кода рисует `CodeBlock` с кнопкой копирования, а не голый `<pre>`.
   pre: ({ children }) => {

@@ -46,6 +46,8 @@ export type SandboxFileResolver =
 export interface SandboxFileProps {
   readonly path: string | null;
   readonly label?: string;
+  /** Исходный путь отвергнутой ссылки: нужен режиму «без файлов». */
+  readonly originalPath?: string;
   readonly resolver: SandboxFileResolver;
   /** Адрес отвергнутой ссылки: файл заведомо не найден. */
   readonly rejected?: boolean;
@@ -258,10 +260,18 @@ function ReadyFile({ entry, label }: { entry: MessageFileView; label?: string })
  * плеер, изображение или карточка скачивания. В режиме копии агента файлы не
  * разрешаются — выводится путь текстом.
  */
-export function SandboxFile({ path, label, resolver, rejected = false }: SandboxFileProps) {
+export function SandboxFile({
+  path,
+  label,
+  originalPath,
+  resolver,
+  rejected = false,
+}: SandboxFileProps) {
   if (resolver.kind === "disabled") {
-    // Отвергнутый путь потерял адрес: остаётся текст ссылки или подпись.
-    const text = path ?? (label === undefined || label.trim().length === 0 ? "Файл" : label);
+    const text =
+      path ??
+      originalPath ??
+      (label === undefined || label.trim().length === 0 ? "Файл" : label);
     return (
       <span className="font-mono text-xs break-all text-muted-foreground">{text}</span>
     );
