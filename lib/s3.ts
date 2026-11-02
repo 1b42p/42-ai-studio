@@ -129,13 +129,15 @@ export class Storage {
     }
   }
 
-  /** Размер объекта из метаданных; `null` — объекта нет. */
-  async objectSize(key: string): Promise<number | null> {
+  /** Размер и тип объекта из метаданных; `null` — объекта нет. */
+  async objectInfo(
+    key: string,
+  ): Promise<{ size: number; contentType: string | undefined } | null> {
     try {
       const response = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
       );
-      return response.ContentLength ?? null;
+      return { size: response.ContentLength ?? 0, contentType: response.ContentType };
     } catch (error) {
       if (isNotFound(error)) return null;
       throw error;

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/attachment";
 import { Progress } from "@/components/ui/progress";
 import { formatFileSize } from "@/lib/format-size";
+import { UPLOAD_FAILED_MESSAGE } from "@/lib/uploads/limits";
 
 export interface AttachmentCardProps {
   item: PendingAttachment;
@@ -33,7 +34,7 @@ export function AttachmentCard({ item, onRemove, onRetry }: AttachmentCardProps)
   const uploading = item.state === "uploading";
   const description =
     item.state === "error"
-      ? (item.error ?? "Не удалось загрузить файл")
+      ? (item.error ?? UPLOAD_FAILED_MESSAGE)
       : uploading
         ? `${size} · ${item.progress}%`
         : size;

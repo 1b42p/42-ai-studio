@@ -53,13 +53,13 @@ export interface AttachSelection {
  * отправленные вложения; отказ по количеству важнее отказа по размеру.
  */
 export function selectAttachableFiles(
-  existingCount: number,
-  existingBytes: number,
+  existing: readonly { readonly sizeBytes: number }[],
   files: readonly File[],
 ): AttachSelection {
   const accepted: File[] = [];
-  let count = existingCount;
-  let bytes = existingBytes;
+  const bytesUsed = existing.reduce((sum, item) => sum + item.sizeBytes, 0);
+  let count = existing.length;
+  let bytes = bytesUsed;
   let tooMany = false;
   let tooLarge = false;
 

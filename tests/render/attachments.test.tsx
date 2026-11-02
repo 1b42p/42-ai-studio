@@ -329,7 +329,7 @@ test("одиннадцатый файл не добавляется, сообщ�
 
 test("суммарный предел 4 ГиБ объясняется", () => {
   const huge = { size: 5 * 1024 ** 3 } as File;
-  const selection = selectAttachableFiles(0, 0, [huge]);
+  const selection = selectAttachableFiles([], [huge]);
   expect(selection.accepted).toEqual([]);
   expect(selection.notice).toBe("Суммарный размер вложений не больше 4 ГиБ.");
 });

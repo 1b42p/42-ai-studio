@@ -13,7 +13,8 @@ export function isImageType(contentType: string): boolean {
   return contentType.toLowerCase().startsWith("image/");
 }
 
-export function attachmentIcon(contentType: string): LucideIcon {
+export function attachmentIcon(contentType: string | null): LucideIcon {
+  if (contentType === null) return FileIcon;
   const type = contentType.toLowerCase();
   if (type.startsWith("image/")) return FileImageIcon;
   if (type.startsWith("video/")) return FileVideoIcon;

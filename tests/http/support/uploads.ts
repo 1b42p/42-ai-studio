@@ -2,6 +2,7 @@
 import { inject } from "vitest";
 
 import type { User } from "../../../lib/db/schema";
+import type { UploadTicket } from "../../../lib/uploads/types";
 import { loginAs } from "./auth";
 
 export interface UploadTicketRequest {
@@ -9,16 +10,6 @@ export interface UploadTicketRequest {
   name: string;
   contentType: string;
   sizeBytes: number;
-}
-
-/** Ответ `POST /api/uploads`, когда он успешен. */
-export interface UploadTicket {
-  id: string;
-  uploadUrl: string;
-  method: string;
-  headers: Record<string, string>;
-  expiresAt: string;
-  fileUrl: string;
 }
 
 export interface UploadResponse {

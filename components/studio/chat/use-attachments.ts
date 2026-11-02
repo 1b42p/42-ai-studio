@@ -16,16 +16,10 @@ import {
 } from "@/components/studio/chat/attachments";
 import { isImageType } from "@/components/studio/chat/attachment-kind";
 import { UPLOAD_FAILED_MESSAGE } from "@/lib/uploads/limits";
+import { uploadOriginalName } from "@/lib/uploads/name";
+import type { UploadTicket } from "@/lib/uploads/types";
 
 const MAX_PARALLEL_UPLOADS = 3;
-
-interface UploadTicket {
-  id: string;
-  uploadUrl: string;
-  method: string;
-  headers: Record<string, string>;
-  fileUrl: string;
-}
 
 export interface UseAttachmentsOptions {
   /** Сессия приложения; `null` — её ещё нужно создать перед первую загрузку. */
@@ -184,6 +178,7 @@ export function useAttachments({
     [patch],
   );
 
+  /** Запускает загрузки из очереди, пока не набралось три одновременных. */
   const pump = useCallback(() => {
     if (pumpingRef.current) return;
     pumpingRef.current = true;
@@ -208,11 +203,7 @@ export function useAttachments({
     (files: readonly File[]) => {
       if (files.length === 0) return;
       const existing = itemsRef.current;
-      const selection = selectAttachableFiles(
-        existing.length,
-        existing.reduce((sum, item) => sum + item.sizeBytes, 0),
-        files,
-      );
+      const selection = selectAttachableFiles(existing, files);
       if (selection.notice !== undefined) setNotice(selection.notice);
       else setNotice(undefined);
 
@@ -227,7 +218,7 @@ export function useAttachments({
         filesRef.current.set(id, file);
         added.push({
           id,
-          name: attachmentName(file),
+          name: uploadOriginalName(attachmentName(file)),
           contentType,
           sizeBytes: file.size,
           state: "uploading",

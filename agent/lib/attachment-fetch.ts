@@ -49,9 +49,9 @@ export async function fetchUserAttachment(
   }
 
   const storage = getStorage();
-  const size = await storage.objectSize(record.objectKey);
-  if (size === null) throw attachmentError(ATTACHMENT_NOT_UPLOADED);
-  if (size !== record.sizeBytes || size > config.uploadMaxBytes) {
+  const info = await storage.objectInfo(record.objectKey);
+  if (info === null) throw attachmentError(ATTACHMENT_NOT_UPLOADED);
+  if (info.size !== record.sizeBytes || info.size > config.uploadMaxBytes) {
     throw attachmentError(ATTACHMENT_SIZE_MISMATCH);
   }
 

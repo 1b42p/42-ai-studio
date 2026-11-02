@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { MessageStreamEvent } from "eve/client";
 
 import { media } from "../../lib/db/schema";
+import { loadConfig } from "../../lib/config";
 import { uploadObjectKey } from "../../lib/uploads/keys";
 import { startApp } from "./support/app";
 import { createSessionAs, sendContentAndWait, sendWithFiles } from "./support/chat";
@@ -91,7 +92,7 @@ describe("доставка файла агенту", () => {
     expect(filePart(events)).toMatchObject({
       filename: "report.csv",
       mediaType: "text/csv",
-      url: `http://localhost:3100/api/media/${ticket.id}`,
+      url: `${loadConfig().appUrl}/api/media/${ticket.id}`,
     });
     expect(filePart(events)).not.toHaveProperty("size");
 

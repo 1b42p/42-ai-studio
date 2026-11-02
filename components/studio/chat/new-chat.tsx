@@ -42,6 +42,7 @@ export interface NewChatProps {
  */
 export function NewChat({ initialPage, initialQuery, initialError = false }: NewChatProps) {
   const appSessionId = useRef<string | null>(null);
+  const sessionCreation = useRef<Promise<string> | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [startError, setStartError] = useState<Error>();
 
@@ -52,22 +53,35 @@ export function NewChat({ initialPage, initialQuery, initialError = false }: New
     },
   });
 
-  /** Создаёт сессию приложения один раз; дальше отдаёт её же. */
+  /**
+   * Создаёт сессию приложения один раз; дальше отдаёт её же. Три параллельные
+   * загрузки на `/s` приходят сюда одновременно — запрос один на всех.
+   */
   const ensureSession = async (): Promise<string> => {
     if (appSessionId.current !== null) return appSessionId.current;
-    setStartError(undefined);
+    if (sessionCreation.current !== null) return sessionCreation.current;
 
-    const response = await fetch("/api/sessions", { method: "POST" });
-    if (!response.ok) {
-      const error = new Error("Не удалось создать сессию. Попробуйте ещё раз.");
-      setStartError(error);
-      throw error;
+    setStartError(undefined);
+    const creation = (async (): Promise<string> => {
+      const response = await fetch("/api/sessions", { method: "POST" });
+      if (!response.ok) {
+        const error = new Error("Не удалось создать сессию. Попробуйте ещё раз.");
+        setStartError(error);
+        throw error;
+      }
+      const body = (await response.json()) as { id: string };
+      appSessionId.current = body.id;
+      setSessionId(body.id);
+      replaceSessionUrl(body.id);
+      return body.id;
+    })();
+
+    sessionCreation.current = creation;
+    try {
+      return await creation;
+    } finally {
+      sessionCreation.current = null;
     }
-    const body = (await response.json()) as { id: string };
-    appSessionId.current = body.id;
-    setSessionId(body.id);
-    replaceSessionUrl(body.id);
-    return body.id;
   };
 
   const handleSend = async (content: string | UserContent) => {

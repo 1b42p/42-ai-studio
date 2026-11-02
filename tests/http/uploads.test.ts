@@ -51,7 +51,7 @@ describe("маршрут загрузки", () => {
 
     expect(ticket.method).toBe("PUT");
     expect(ticket.headers["Content-Type"]).toBe("text/csv");
-    expect(ticket.fileUrl).toBe(`http://localhost:3100/api/media/${ticket.id}`);
+    expect(ticket.fileUrl).toBe(`${loadConfig().appUrl}/api/media/${ticket.id}`);
     const expiresIn = new Date(ticket.expiresAt).getTime() - Date.now();
     expect(expiresIn).toBeGreaterThan(14 * 60 * 1000);
     expect(expiresIn).toBeLessThanOrEqual(15 * 60 * 1000);
@@ -70,6 +70,10 @@ describe("маршрут загрузки", () => {
     );
     expect(await s3().listKeys(`u/${user.id}/s/${id}/uploads/`)).toEqual([row!.objectKey]);
     expect(await s3().getBytes(row!.objectKey)).toEqual(bytes);
+    expect(await s3().info(row!.objectKey)).toEqual({
+      size: bytes.length,
+      contentType: "text/csv",
+    });
 
     const redirect = await fetchApp(`/api/media/${ticket.id}`, {
       headers: { cookie: await loginAs(user) },
@@ -248,7 +252,7 @@ describe("права доступа", () => {
 
     const own = await fetchApp("/api/uploads", {
       method: "POST",
-      headers: { cookie, "content-type": "application/json", origin: "http://localhost:3100" },
+      headers: { cookie, "content-type": "application/json", origin: loadConfig().appUrl },
       body,
     });
     expect(own.status).toBe(201);

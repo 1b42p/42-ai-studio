@@ -3,15 +3,10 @@
 import {
   AlertCircleIcon,
   DownloadIcon,
-  FileAudioIcon,
-  FileIcon,
-  FileImageIcon,
-  FileTextIcon,
-  FileVideoIcon,
-  type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
+import { attachmentIcon } from "@/components/studio/chat/attachment-kind";
 import { StudioAudioPlayer } from "@/components/studio/media/studio-audio-player";
 import { useMediaRetry } from "@/components/studio/use-media-retry";
 import {
@@ -56,15 +51,6 @@ export interface SandboxFileProps {
 
 function downloadUrl(mediaId: string): string {
   return `/api/media/${mediaId}?download=1`;
-}
-
-function iconFor(contentType: string | null): LucideIcon {
-  if (contentType === null) return FileIcon;
-  if (contentType.startsWith("video/")) return FileVideoIcon;
-  if (contentType.startsWith("audio/")) return FileAudioIcon;
-  if (contentType.startsWith("image/")) return FileImageIcon;
-  if (contentType.startsWith("text/")) return FileTextIcon;
-  return FileIcon;
 }
 
 function missingTitle(reason: MessageFileView["reason"]): string {
@@ -130,7 +116,7 @@ function MissingFile({ title, name }: { title: string; name?: string }) {
 }
 
 function FileCard({ entry }: { entry: MessageFileView }) {
-  const Icon = iconFor(entry.contentType);
+  const Icon = attachmentIcon(entry.contentType);
   const size = formatFileSize(entry.sizeBytes);
   return (
     <Attachment className="w-full max-w-md">
