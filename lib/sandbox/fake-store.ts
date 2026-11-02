@@ -4,6 +4,9 @@ import * as fs from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { emptyReading, JOB_TAIL_BYTES, type JobDirectoryReading } from "./job-directory";
+import { JOB_ID_PATTERN } from "./job-types";
+
 export type FakeCreateFailure = "build_failed" | "unavailable" | "error";
 export interface FakeRule {
   match: RegExp | string;
@@ -17,7 +20,7 @@ export interface StoredRule extends Omit<FakeRule, "match"> {
   flags: string;
 }
 export interface FakeCall {
-  op: "spawn" | "readFile" | "writeFiles" | "removePath" | "stop";
+  op: "spawn" | "readFile" | "writeFiles" | "removePath" | "stop" | "readJobDirectory";
   command?: string;
   path?: string;
   at: number;
@@ -29,6 +32,8 @@ export interface FakeRecord {
   state: string;
   recoverable?: boolean;
   calls: FakeCall[];
+  /** Задания, остановленные `fakeSandbox.killProcess`. */
+  killedJobs?: string[];
 }
 export interface FakeCounters {
   created: number;
@@ -312,6 +317,68 @@ export class FakeStore {
     });
   }
 
+  /**
+   * Каталог задания eve из фиктивной песочницы. Живость процесса здесь —
+   * отсутствие `exit` и `killProcess`; отсутствие `pid` ещё не остановка,
+   * как и в настоящем каталоге.
+   */
+  async readJobDirectory(machineId: string, jobId: string): Promise<JobDirectoryReading> {
+    if (!JOB_ID_PATTERN.test(jobId)) throw new Error("Invalid fake job id");
+    return this.transaction(async (data) => {
+      const machine = data.machines.find((record) => record.id === machineId);
+      if (machine === undefined || machine.state === "destroyed") throw fakeNotFound();
+      machine.calls.push({ op: "readJobDirectory", path: `/tmp/.eve/jobs/${jobId}`, at: Date.now() });
+
+      const directory = path.join(this.machineRoot(machine.id), "tmp", ".eve", "jobs", jobId);
+      try {
+        await fs.access(directory);
+      } catch (error) {
+        if (hasCode(error, "ENOENT")) return emptyReading();
+        throw error;
+      }
+
+      const file = async (name: string): Promise<Uint8Array | null> => {
+        try {
+          return await fs.readFile(path.join(directory, name));
+        } catch (error) {
+          if (hasCode(error, "ENOENT")) return null;
+          throw error;
+        }
+      };
+      const text = (value: Uint8Array | null): string =>
+        value === null ? "" : Buffer.from(value).toString("utf8").trim();
+
+      const exit = text(await file("exit"));
+      const killed = (machine.killedJobs ?? []).includes(jobId);
+      const exitCode = /^-?\d+$/.test(exit) ? Number(exit) : null;
+      // Каталог есть, а `pid` ещё нет — задание уже считается идущим.
+      const alive = exitCode === null && !killed && machine.state === "started";
+
+      const stdout = (await file("stdout")) ?? new Uint8Array();
+      const stderr = (await file("stderr")) ?? new Uint8Array();
+      return {
+        found: true,
+        exitCode,
+        alive,
+        stdoutTail: stdout.slice(Math.max(0, stdout.byteLength - JOB_TAIL_BYTES)),
+        stderrTail: stderr.slice(Math.max(0, stderr.byteLength - JOB_TAIL_BYTES)),
+        stdoutBytes: stdout.byteLength,
+        stderrBytes: stderr.byteLength,
+      };
+    });
+  }
+
+  /** Останавливает процесс задания, не создавая файла `exit`. */
+  async killProcess(appSessionId: string, jobId: string): Promise<void> {
+    if (!JOB_ID_PATTERN.test(jobId)) throw new Error("Invalid fake job id");
+    await this.transaction((data) => {
+      const machine = this.current(data, appSessionId);
+      if (machine === undefined) throw fakeNotFound();
+      machine.killedJobs ??= [];
+      if (!machine.killedJobs.includes(jobId)) machine.killedJobs.push(jobId);
+    });
+  }
+
   async calls(appSessionId: string): Promise<FakeCall[]> {
     return this.transaction((data) => data.machines
       .filter((machine) => machine.appSessionId === appSessionId)
@@ -350,7 +417,12 @@ export class FakeStore {
     await this.transaction(async (data) => {
       // Keep the lock itself: deleting the root would admit a concurrent writer.
       for (const entry of ["machines", "seeds"]) {
-        await fs.rm(path.join(this.directory, entry), { force: true, recursive: true });
+        // Фиктивная песочница живёт только в тестах; динамический путь не
+        // должен заставлять Turbopack трассировать весь проект.
+        await fs.rm(path.join(/* turbopackIgnore: true */ this.directory, entry), {
+          force: true,
+          recursive: true,
+        });
       }
       Object.assign(data, initialData());
       delete data.failNextCreate;

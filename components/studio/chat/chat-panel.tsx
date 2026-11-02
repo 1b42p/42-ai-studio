@@ -56,6 +56,7 @@ export function ChatPanel({
   return (
     <ChatView
       {...props}
+      appSessionId={appSessionId}
       attachments={attachments}
       messageFiles={props.messageFiles ?? messageFiles}
       agent={{

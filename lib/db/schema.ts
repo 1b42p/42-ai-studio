@@ -278,3 +278,43 @@ export type NewMessageFile = typeof messageFiles.$inferInsert;
 export type MessageFileState = (typeof messageFileState.enumValues)[number];
 export type MessageFileReason = (typeof messageFileReason.enumValues)[number];
 export type ToolCallMedia = typeof toolCallMedia.$inferSelect;
+
+/** Состояние фоновой команды `bash` из задания eve. */
+export const bashJobStatus = pgEnum("bash_job_status", [
+  "running",
+  "completed",
+  "interrupted",
+]);
+
+/**
+ * Фоновая команда `bash`, ушедшая в `/tmp/.eve/jobs/<job_id>/` (#11). Строка
+ * создаётся синхронизатором событий по результату вызова со статусом
+ * `running`; маршрут чтения задания обновляет её выводом из песочницы.
+ */
+export const bashJobs = pgTable(
+  "bash_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appSessionId: uuid("app_session_id")
+      .notNull()
+      .references(() => appSessions.id, { onDelete: "cascade" }),
+    jobId: text("job_id").notNull(),
+    status: bashJobStatus("status").notNull(),
+    exitCode: integer("exit_code"),
+    stdoutTail: text("stdout_tail").notNull().default(""),
+    stderrTail: text("stderr_tail").notNull().default(""),
+    stdoutBytes: bigint("stdout_bytes", { mode: "number" }).notNull().default(0),
+    stderrBytes: bigint("stderr_bytes", { mode: "number" }).notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("bash_jobs_app_session_job_idx").on(table.appSessionId, table.jobId),
+  ],
+);
+
+export type BashJob = typeof bashJobs.$inferSelect;
+export type NewBashJob = typeof bashJobs.$inferInsert;
+export type BashJobStatus = (typeof bashJobStatus.enumValues)[number];
