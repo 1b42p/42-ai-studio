@@ -168,3 +168,113 @@ export type NewDaytonaKey = typeof daytonaKeys.$inferInsert;
 export type Sandbox = typeof sandboxes.$inferSelect;
 export type NewSandbox = typeof sandboxes.$inferInsert;
 export type SandboxState = (typeof sandboxState.enumValues)[number];
+
+/** Вид медиа: загрузка, медиа инструмента, файл ответа, превью сессии. */
+export const mediaKind = pgEnum("media_kind", [
+  "upload",
+  "tool_media",
+  "message_file",
+  "preview",
+]);
+
+/**
+ * Объект в S3, принадлежащий пользователю и сессии. `object_key` — полный
+ * ключ вида `u/<user_id>/s/<app_session_id>/<вид>/<uuid>/<имя файла>`.
+ */
+export const media = pgTable("media", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  appSessionId: uuid("app_session_id")
+    .notNull()
+    .references(() => appSessions.id, { onDelete: "cascade" }),
+  kind: mediaKind("kind").notNull(),
+  objectKey: text("object_key").notNull(),
+  contentType: text("content_type").notNull(),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+  originalName: text("original_name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Состояние копирования файла из ответа агента в S3. */
+export const messageFileState = pgEnum("message_file_state", [
+  "copying",
+  "ready",
+  "missing",
+]);
+
+/** Причина, по которой файл ответа не сохранён. */
+export const messageFileReason = pgEnum("message_file_reason", [
+  "not_found",
+  "outside_workspace",
+  "too_large",
+  "too_many",
+  "copy_failed",
+]);
+
+/**
+ * Файл, на который сослался агент в сообщении. Строка создаётся в состоянии
+ * `copying` и становится `ready` после копии в S3 или `missing` с причиной.
+ * `message_id` — `<turnId>:<stepIndex>` из событий потока.
+ */
+export const messageFiles = pgTable(
+  "message_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appSessionId: uuid("app_session_id")
+      .notNull()
+      .references(() => appSessions.id, { onDelete: "cascade" }),
+    messageId: text("message_id").notNull(),
+    sandboxPath: text("sandbox_path").notNull(),
+    mediaId: uuid("media_id").references(() => media.id, { onDelete: "cascade" }),
+    state: messageFileState("state").notNull(),
+    reason: messageFileReason("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("message_files_message_path_idx").on(
+      table.appSessionId,
+      table.messageId,
+      table.sandboxPath,
+    ),
+  ],
+);
+
+/**
+ * Медиа, приложенное к вызову инструмента: карточка вызова показывает файл
+ * из песочницы. Повторный шаг с тем же `call_id` и путём не создаёт вторую
+ * строку.
+ */
+export const toolCallMedia = pgTable(
+  "tool_call_media",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appSessionId: uuid("app_session_id")
+      .notNull()
+      .references(() => appSessions.id, { onDelete: "cascade" }),
+    callId: text("call_id").notNull(),
+    sandboxPath: text("sandbox_path").notNull(),
+    mediaId: uuid("media_id")
+      .notNull()
+      .references(() => media.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("tool_call_media_call_path_idx").on(
+      table.appSessionId,
+      table.callId,
+      table.sandboxPath,
+    ),
+  ],
+);
+
+export type Media = typeof media.$inferSelect;
+export type NewMedia = typeof media.$inferInsert;
+export type MediaKind = (typeof mediaKind.enumValues)[number];
+export type MessageFile = typeof messageFiles.$inferSelect;
+export type NewMessageFile = typeof messageFiles.$inferInsert;
+export type MessageFileState = (typeof messageFileState.enumValues)[number];
+export type MessageFileReason = (typeof messageFileReason.enumValues)[number];
+export type ToolCallMedia = typeof toolCallMedia.$inferSelect;

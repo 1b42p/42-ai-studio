@@ -70,15 +70,19 @@ class FakeMachineHandle implements FakeMachine {
       workspaceRoot: "/workspace",
       spawn: async ({ command, abortSignal }) => {
         await activity(abortSignal);
-        const rule = await this.store.transaction((data) => {
+        const rule = await this.store.transaction(async (data) => {
           const machine = this.store.find(data, this.id);
           if (machine.state !== "started") throw new Error("Fake sandbox is not started");
           machine.calls.push({ op: "spawn", command, at: Date.now() });
           if (/^\s*(?:echo\s+["']?\$HOME["']?|printf\s+'%s\\n'\s+"\$HOME")\s*;?\s*$/.test(command)) {
             return { stdout: "/root\n", exitCode: 0 };
           }
-          return data.rules.find((candidate) => new RegExp(candidate.match, candidate.flags).test(command))
-            ?? { stderr: `command not found: ${command}`, exitCode: 127 };
+          const rule = data.rules.find((candidate) =>
+            new RegExp(candidate.match, candidate.flags).test(command),
+          );
+          if (rule !== undefined) return rule;
+          const builtin = await this.store.shellBuiltin(root, command);
+          return builtin ?? { stderr: `command not found: ${command}`, exitCode: 127 };
         }, abortSignal);
         return fakeProcess(rule, abortSignal);
       },

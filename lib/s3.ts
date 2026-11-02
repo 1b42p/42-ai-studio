@@ -17,7 +17,10 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { Readable } from "node:stream";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 
 import { loadConfig, type AppConfig } from "./config";
 
@@ -85,6 +88,27 @@ export class Storage {
         ContentType: contentType,
       }),
     );
+  }
+
+  /**
+   * Загрузка потоком: файл не читается в память целиком. Многочастная
+   * загрузка идёт через `@aws-sdk/lib-storage`.
+   */
+  async putStream(
+    key: string,
+    body: ReadableStream<Uint8Array>,
+    contentType: string,
+  ): Promise<void> {
+    const upload = new Upload({
+      client: this.client,
+      params: {
+        Bucket: this.bucket,
+        Key: key,
+        Body: Readable.fromWeb(body as unknown as NodeReadableStream<Uint8Array>),
+        ContentType: contentType,
+      },
+    });
+    await upload.done();
   }
 
   /** Чтение объекта целиком. */

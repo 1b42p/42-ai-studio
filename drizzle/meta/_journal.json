@@ -43,6 +43,13 @@
       "when": 1793555796324,
       "tag": "0005_smiling_bloodaxe",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793612302213,
+      "tag": "0006_conscious_impossible_man",
+      "breakpoints": true
     }
   ]
 }

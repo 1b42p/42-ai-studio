@@ -4,6 +4,7 @@ import type { ConversationState, UseEveAgentHelpers } from "eve/react";
 
 import { isBusyStatus } from "@/components/studio/chat/chat-status";
 import { ChatView, type ChatViewProps } from "@/components/studio/chat/chat-view";
+import { useMessageFiles } from "@/components/studio/chat/use-message-files";
 import { useSessionTitle } from "@/components/studio/chat/use-session-title";
 
 export type ChatAgent = UseEveAgentHelpers<ConversationState>;
@@ -36,12 +37,19 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const busy = isBusyStatus(agent.status);
   const polled = useSessionTitle(appSessionId, agent.events, initialTitle);
+  const messageFiles = useMessageFiles({
+    appSessionId,
+    events: agent.events,
+    messages: agent.data.messages,
+    status: agent.status,
+  });
   // `null` оставил бы пустую шапку: у ChatView значение по умолчанию только для `undefined`.
   const title = titleProp ?? (polled === null ? undefined : polled);
 
   return (
     <ChatView
       {...props}
+      messageFiles={props.messageFiles ?? messageFiles}
       agent={{
         data: agent.data,
         events: agent.events,

@@ -16,11 +16,16 @@ import {
   SquareIcon,
   VideoIcon,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { ChatComposer } from "@/components/studio/chat/chat-composer";
 import type { ChatStatus } from "@/components/studio/chat/chat-status";
 import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
+import {
+  buildFileLookup,
+  type FileLookup,
+  type MessageFilesState,
+} from "@/components/studio/chat/message-files";
 import { ToolCard } from "@/components/studio/chat/tool-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -91,6 +96,8 @@ export interface ChatViewProps {
   inputDisabled?: boolean;
   /** Сессия завершена снаружи (истёк поток, осиротела). */
   ended?: boolean;
+  /** Файлы из ответов агента; без них ссылки показывают «Файл недоступен». */
+  messageFiles?: MessageFilesState;
   onSend: (text: string) => void | Promise<void>;
   onRespond: (responses: readonly InputResponse[]) => void | Promise<void>;
   onCancel: () => void | Promise<void>;
@@ -98,7 +105,13 @@ export interface ChatViewProps {
 
 type AssistantGroup =
   | { readonly kind: "reasoning"; readonly id: string; readonly text: string; readonly running: boolean }
-  | { readonly kind: "text"; readonly id: string; readonly text: string; readonly streaming: boolean }
+  | {
+      readonly kind: "text";
+      readonly id: string;
+      readonly text: string;
+      readonly streaming: boolean;
+      readonly stepIndex?: number;
+    }
   | { readonly kind: "tools"; readonly id: string; readonly parts: EveDynamicToolPart[] };
 
 type Notice =
@@ -127,6 +140,7 @@ function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[]
         id: part.id ?? `text-${groups.length}`,
         text: part.text,
         streaming: part.state === "streaming",
+        stepIndex: part.stepIndex,
       });
       continue;
     }
@@ -180,7 +194,15 @@ function ReasoningRow({ text, running }: { text: string; running: boolean }) {
   );
 }
 
-function AssistantContent({ parts }: { parts: readonly EveMessagePart[] }) {
+function AssistantContent({
+  parts,
+  turnId,
+  files,
+}: {
+  parts: readonly EveMessagePart[];
+  turnId: string | undefined;
+  files: FileLookup;
+}) {
   const groups = groupAssistantParts(parts);
 
   return (
@@ -204,13 +226,26 @@ function AssistantContent({ parts }: { parts: readonly EveMessagePart[] }) {
           );
         }
 
-        return <ChatMarkdown key={group.id} streaming={group.streaming} text={group.text} />;
+        // Идентификатор сообщения тот же, что у сервера: `<turnId>:<stepIndex>`.
+        const messageId =
+          turnId !== undefined && group.stepIndex !== undefined
+            ? `${turnId}:${group.stepIndex}`
+            : undefined;
+
+        return (
+          <ChatMarkdown
+            key={group.id}
+            resolver={files.resolve(messageId)}
+            streaming={group.streaming}
+            text={group.text}
+          />
+        );
       })}
     </div>
   );
 }
 
-function MessageRow({ message }: { message: EveMessage }) {
+function MessageRow({ message, files }: { message: EveMessage; files: FileLookup }) {
   const align = message.role === "user" ? "end" : "start";
 
   return (
@@ -223,7 +258,11 @@ function MessageRow({ message }: { message: EveMessage }) {
             </BubbleContent>
           </Bubble>
         ) : (
-          <AssistantContent parts={message.parts} />
+          <AssistantContent
+            files={files}
+            parts={message.parts}
+            turnId={message.metadata?.turnId}
+          />
         )}
       </MessageContent>
     </Message>
@@ -477,11 +516,13 @@ export function ChatView({
   emptyDescription,
   inputDisabled = false,
   ended = false,
+  messageFiles,
   onSend,
   onRespond,
   onCancel,
 }: ChatViewProps) {
   const { data, events, status } = agent;
+  const files = useMemo(() => buildFileLookup(messageFiles), [messageFiles]);
   const messages = data.messages;
   const openInputs = openConversationInputs(data);
   const byTurn = collectNotices(events);
@@ -553,7 +594,7 @@ export function ChatView({
                     scrollAnchor={message.role === "user"}
                   >
                     <div className="flex w-full min-w-0 flex-col gap-3">
-                      <MessageRow message={message} />
+                      <MessageRow files={files} message={message} />
                       {notices.map((notice, noticeIndex) => (
                         <NoticeRow key={`${message.id}-notice-${noticeIndex}`} notice={notice} />
                       ))}

@@ -382,8 +382,10 @@ function agentOf(events: readonly MessageStreamEvent[]): ChatAgent {
 test("шапка берёт название после первого сообщения и не опрашивает его зря", async () => {
   const original = window.fetch;
   let calls = 0;
-  window.fetch = async () => {
-    calls += 1;
+  // Счёт только запросов названия: файлы беседы (#8) опрашиваются отдельно.
+  window.fetch = async (input) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    if (!new URL(url, window.location.origin).pathname.endsWith("/files")) calls += 1;
     return new Response(JSON.stringify({ title: "Сделай ролик про пингвинов" }), {
       status: 200,
       headers: { "content-type": "application/json" },

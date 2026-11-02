@@ -1,10 +1,12 @@
 "use client";
 
 import { harden } from "rehype-harden";
-import { isValidElement, type ReactNode } from "react";
-import { Streamdown, defaultRehypePlugins, type Components } from "streamdown";
+import remarkGfm from "remark-gfm";
+import { createContext, isValidElement, useContext, type ReactNode } from "react";
+import { Streamdown, defaultComponents, defaultRehypePlugins, type Components } from "streamdown";
 import type { PluggableList } from "unified";
 
+import { SandboxFile, type SandboxFileResolver } from "@/components/studio/media/sandbox-file";
 import {
   CodeBlock,
   CodeBlockActions,
@@ -13,6 +15,12 @@ import {
   CodeBlockHeader,
   CodeBlockTitle,
 } from "@/components/ui/code-block";
+import { remarkSandboxFiles } from "@/lib/media/remark-sandbox-files";
+import {
+  sandboxFilePath,
+  SANDBOX_FILE_PREFIX,
+  SANDBOX_FILE_REJECTED_URL,
+} from "@/lib/media/sandbox-path";
 
 /**
  * Ограничения Markdown ответа. Удалённые изображения блокируются: картинка
@@ -20,6 +28,8 @@ import {
  * настолько, насколько позволяет `rehype-harden`: его список только дополняет
  * встроенный набор (`https:`, `http:`, `irc:`, `ircs:`, `mailto:`, `xmpp:`,
  * `blob:`), поэтому `tel:` и `ftp:` закрыты, а `http:` и `blob:` — нет.
+ * Изображения разрешены только по адресам файлов песочницы; список конкретных
+ * префиксов требует `defaultOrigin`, хотя адреса относительные.
  */
 const rehypePlugins: PluggableList = [
   defaultRehypePlugins.raw as PluggableList[number],
@@ -28,11 +38,24 @@ const rehypePlugins: PluggableList = [
     harden,
     {
       allowedLinkPrefixes: ["*"],
-      allowedImagePrefixes: [],
+      allowedImagePrefixes: [SANDBOX_FILE_PREFIX, SANDBOX_FILE_REJECTED_URL],
+      defaultOrigin: "http://localhost",
       allowDataImages: false,
     },
   ],
 ];
+
+/**
+ * GFM и плагин файлов песочницы. Плагин стоит до `remark-rehype`, поэтому
+ * видит тот же сырой `url`, что и сервер.
+ */
+const remarkPlugins: PluggableList = [
+  remarkGfm as PluggableList[number],
+  remarkSandboxFiles as PluggableList[number],
+];
+
+/** Как разрешать файлы для конкретного текстового блока сообщения. */
+const SandboxFileContext = createContext<SandboxFileResolver>({ kind: "unavailable" });
 
 /** Текст из React-узла: нужен для копирования блока кода. */
 function textOf(node: ReactNode): string {
@@ -58,11 +81,59 @@ function languageOf(node: ReactNode): string | undefined {
   return languageOf(node.props.children);
 }
 
+const DefaultLink = defaultComponents.a!;
+const DefaultImage = defaultComponents.img!;
+
+function isSandboxFileUrl(url: string | undefined): boolean {
+  return (
+    url !== undefined &&
+    (url.startsWith(SANDBOX_FILE_PREFIX) || url === SANDBOX_FILE_REJECTED_URL)
+  );
+}
+
 /**
- * Блоки кода рисует `CodeBlock` с кнопкой копирования, а не голый `<pre>`
- * Streamdown. Инлайновый код остаётся на усмотрение Streamdown.
+ * Компоненты стабильны между рендерами (иначе React пересоздавал бы ссылки
+ * и плееры при каждом обновлении потока); разрешение файлов приходит
+ * контекстом.
  */
 const components: Components = {
+  // Блочные карточки внутри `<p>` дали бы ошибку вложенности DOM.
+  p: ({ children }) => <div className="my-2 first:mt-0 last:mb-0">{children}</div>,
+  a: ({ href, children, ...props }) => {
+    const resolver = useContext(SandboxFileContext);
+    if (isSandboxFileUrl(href)) {
+      return (
+        <SandboxFile
+          label={textOf(children)}
+          path={sandboxFilePath(href)}
+          rejected={href === SANDBOX_FILE_REJECTED_URL}
+          resolver={resolver}
+        />
+      );
+    }
+    // Обычные и недописанные ссылки потока — штатный обработчик Streamdown
+    // с подтверждением перехода.
+    return (
+      <DefaultLink href={href} {...props}>
+        {children}
+      </DefaultLink>
+    );
+  },
+  img: ({ src, alt, ...props }) => {
+    const resolver = useContext(SandboxFileContext);
+    if (typeof src === "string" && isSandboxFileUrl(src)) {
+      return (
+        <SandboxFile
+          label={alt}
+          path={sandboxFilePath(src)}
+          rejected={src === SANDBOX_FILE_REJECTED_URL}
+          resolver={resolver}
+        />
+      );
+    }
+    return <DefaultImage alt={alt} src={src} {...props} />;
+  },
+  // Блоки кода рисует `CodeBlock` с кнопкой копирования, а не голый `<pre>`.
   pre: ({ children }) => {
     const text = textOf(children);
     const language = languageOf(children);
@@ -84,19 +155,24 @@ const components: Components = {
 export function ChatMarkdown({
   text,
   streaming = false,
+  resolver = { kind: "unavailable" },
 }: {
   text: string;
   streaming?: boolean;
+  resolver?: SandboxFileResolver;
 }) {
   return (
-    <Streamdown
-      className="w-full min-w-0 text-sm leading-relaxed break-words"
-      components={components}
-      rehypePlugins={rehypePlugins}
-      caret={streaming ? "block" : undefined}
-      isAnimating={streaming}
-    >
-      {text}
-    </Streamdown>
+    <SandboxFileContext.Provider value={resolver}>
+      <Streamdown
+        className="w-full min-w-0 text-sm leading-relaxed break-words"
+        components={components}
+        rehypePlugins={rehypePlugins}
+        remarkPlugins={remarkPlugins}
+        caret={streaming ? "block" : undefined}
+        isAnimating={streaming}
+      >
+        {text}
+      </Streamdown>
+    </SandboxFileContext.Provider>
   );
 }

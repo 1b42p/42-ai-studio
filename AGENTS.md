@@ -217,6 +217,7 @@ Postgres, Drizzle ORM + drizzle-kit, драйвер `postgres` (postgres.js). С
 
 - `app_sessions` — сессия приложения: `id` в адресе `/s/<id>`, `user_id`, `eve_session_id` (пуст до первого сообщения, unique), `title`, `stream_cursor` (сколько событий потока сохранено), `start_requested_at` (окно привязки 60 секунд), `created_at` и `updated_at` с точностью до миллисекунд. `updated_at` меняется при сохранении `message.received` и `session.waiting`.
 - `session_events` — события потока eve: `id` (bigserial), `seq` — абсолютный номер события в потоке (с нуля), `event_id` — `meta.id`, `payload` — событие целиком. unique(`app_session_id`, `seq`) и unique(`app_session_id`, `event_id`); таблица хранит непрерывный префикс потока.
+- `media` — объект S3 пользователя и сессии (`kind`: `upload`, `tool_media`, `message_file`, `preview`); `message_files` — файл ответа агента с состоянием `copying`/`ready`/`missing` и причиной, unique(`app_session_id`, `message_id`, `sandbox_path`); `tool_call_media` — медиа вызова инструмента, unique(`app_session_id`, `call_id`, `sandbox_path`). Внешние ключи на `users`, `app_sessions` и `media` — с `ON DELETE CASCADE`.
 
 ## Хранилище S3
 
@@ -227,6 +228,15 @@ u/<user_id>/s/<app_session_id>/<вид>/<uuid>/<имя файла>
 ```
 
 `вид` — `uploads`, `tool-media`, `message-files`, `preview`. Удаление сессии или пользователя — это удаление по префиксу.
+
+## Файлы в ответе агента
+
+- Ссылку на файл агент вставляет путём без схемы (`[ролик](out/final.mp4)`); общая с браузером функция разбора — `lib/media/sandbox-path.ts`. Файлом считается только путь строго внутри `/workspace/`; относительные считаются от корня, запрос и фрагмент отбрасываются, процентное кодирование раскрывается один раз, обратная косая черта и управляющие символы отвергаются.
+- Хук `agent/hooks/message-files.ts` на `message.completed` копирует файлы в S3 (`message-files`), ждёт не дольше 30 секунд и доделывает остальное в фоне. Строки `message_files` идемпотентны по паре «сообщение, путь»; `message_id` — `<turnId>:<stepIndex>`, не больше 20 уникальных ссылок на сообщение. Предел размера — `MEDIA_COPY_MAX_BYTES`.
+- Копирование — `lib/media/copy.ts`: `realpath` и `LC_ALL=C stat -c '%F|%s'` в песочнице, затем поток в S3 через `@aws-sdk/lib-storage`. Путь символической ссылки проверяется повторно.
+- Маршруты: `GET /api/media/:id` (302 на подписанную ссылку S3 на 15 минут; `?download=1` и невстраиваемые типы — вложение) и `GET /api/sessions/:id/files`. Оба не запускают песочницу.
+- Streamdown: remark-плагин `lib/media/remark-sandbox-files.ts` заменяет путь на `/__sandbox-file/<закодированный путь>` (отвергнутый — `/__sandbox-file-rejected`) до `remark-rehype`; компоненты `a` и `img` в `components/studio/chat/chat-markdown.tsx` рисуют файл, остальные адреса отдают штатным компонентам. `rehype-harden` разрешает изображения только по этим адресам. Блочные карточки требует переопределённый `p`.
+- Медиа вызовов инструментов: `publishToolMedia` (`lib/media/publish-tool-media.ts`) и таблица `tool_call_media`; повторный шаг с тем же `callId` не создаёт вторую строку. Карточки перезапрашивают ссылку через `useMediaRetry` один раз (`?retry=1`), после второй ошибки — скачивание.
 
 ## HTTP-тесты
 
