@@ -113,27 +113,6 @@ export function ChatComposer({
         tabIndex={-1}
         type="file"
       />
-      {hasFiles || attachments?.notice !== undefined ? (
-        <div className="mb-2 flex flex-col gap-2">
-          {attachments !== undefined && attachments.items.length > 0 ? (
-            <AttachmentGroup>
-              {attachments.items.map((item) => (
-                <AttachmentCard
-                  item={item}
-                  key={item.id}
-                  onRemove={attachments.remove}
-                  onRetry={attachments.retry}
-                />
-              ))}
-            </AttachmentGroup>
-          ) : null}
-          {attachments?.notice === undefined ? null : (
-            <Alert variant="destructive">
-              <AlertDescription>{attachments.notice}</AlertDescription>
-            </Alert>
-          )}
-        </div>
-      ) : null}
 
       <InputGroup>
         <InputGroupTextarea
@@ -200,6 +179,27 @@ export function ChatComposer({
           </Tooltip>
         </InputGroupAddon>
       </InputGroup>
+      {hasFiles || attachments?.notice !== undefined ? (
+        <div className="mt-2 flex flex-col gap-2">
+          {attachments !== undefined && attachments.items.length > 0 ? (
+            <AttachmentGroup>
+              {attachments.items.map((item) => (
+                <AttachmentCard
+                  item={item}
+                  key={item.id}
+                  onRemove={attachments.remove}
+                  onRetry={attachments.retry}
+                />
+              ))}
+            </AttachmentGroup>
+          ) : null}
+          {attachments?.notice === undefined ? null : (
+            <Alert variant="destructive">
+              <AlertDescription>{attachments.notice}</AlertDescription>
+            </Alert>
+          )}
+        </div>
+      ) : null}
       {cancelError === undefined ? null : (
         <Alert className="mt-2" variant="destructive">
           <AlertDescription>{cancelError}</AlertDescription>
