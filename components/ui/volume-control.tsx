@@ -86,7 +86,7 @@ export const VolumeControlMute = ({
 }: VolumeControlMuteProps) => {
   const { disabled, level, muted, toggleMuted } =
     useVolumeControl("VolumeControlMute");
-  const label = muted ? "Unmute" : "Mute";
+  const label = muted ? "Включить звук" : "Выключить звук";
 
   return useRender({
     defaultTagName: "button",
@@ -183,11 +183,11 @@ export const VolumeControlSlider = ({
             data-slot="volume-control-range"
           />
           <SliderPrimitive.Thumb
-            aria-label="Volume"
+            aria-label="Громкость"
             className="bg-background ring-foreground/15 hover:ring-ring/30 focus-visible:ring-ring/40 block size-(--volume-thumb-size) shrink-0 rounded-full shadow-sm ring-1 outline-hidden transition-[box-shadow] hover:ring-4 focus-visible:ring-4"
             data-slot="volume-control-thumb"
             getAriaValueText={() =>
-              muted ? "Muted" : `${Math.round(volume * PERCENT)}%`
+              muted ? "Без звука" : `${Math.round(volume * PERCENT)}%`
             }
           />
         </SliderPrimitive.Track>

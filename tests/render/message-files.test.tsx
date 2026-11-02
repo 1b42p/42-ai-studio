@@ -60,11 +60,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  const nesting = errors.mock.calls.filter((args) =>
-    args.some((value) => String(value).includes("validateDOMNesting")),
+  // Предупреждение тестовой обвязки о script-теге не относится к компонентам.
+  const calls = errors.mock.calls.filter(
+    (args) => !args.some((value) => String(value).includes("Encountered a script tag")),
   );
   errors.mockRestore();
-  expect(nesting).toEqual([]);
+  expect(calls).toEqual([]);
 });
 
 describe("файлы в ответе", () => {

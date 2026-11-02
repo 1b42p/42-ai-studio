@@ -79,7 +79,7 @@ function testAppPort(): number {
  * передаются дочернему процессу явно, чтобы его собственный `.env.local`
  * их не перебил.
  */
-function testEnvValues(): Record<string, string> {
+export function testEnvValues(): Record<string, string> {
   const merged: Record<string, string> = {};
   // Порядок загрузки: .local важнее .env.test — накладываем в обратном.
   for (const file of [...loadDotenvFiles()].reverse()) {

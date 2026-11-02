@@ -7,8 +7,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadDotenvFiles } from "../../../lib/config";
 import { sleep } from "../../../lib/sleep";
+import { testEnvValues } from "./app";
 
 const projectRoot = path.resolve(fileURLToPath(new URL("../../../", import.meta.url)));
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g;
@@ -17,15 +17,6 @@ export interface EveDevServer {
   url: string;
   stop(): Promise<void>;
   output(): string;
-}
-
-function testEnvValues(): Record<string, string> {
-  const merged: Record<string, string> = {};
-  for (const file of [...loadDotenvFiles()].reverse()) {
-    const name = path.basename(file.path);
-    if (name === ".env.test" || name === ".env.test.local") Object.assign(merged, file.env);
-  }
-  return merged;
 }
 
 /**

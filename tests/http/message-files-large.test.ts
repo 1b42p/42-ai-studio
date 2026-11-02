@@ -2,18 +2,18 @@
  * Предел `MEDIA_COPY_MAX_BYTES` читает хук в процессе eve (#8). У основного
  * экземпляра окружение eve зафиксировано на старте, поэтому этот файл
  * поднимает свой сервер eve с пределом 1000 байт и приложение, которое
- * проксирует агент на него (`EVE_BASE_URL`).
+ * проксирует агент на него (`EVE_BASE_URL`). Основной экземпляр не
+ * останавливается: общий dev-сервер eve всё равно взял бы его окружение,
+ * а отдельный сервер даёт нужную изоляцию.
  */
-import { Client } from "eve/client";
 import { expect, test } from "vitest";
 
 import { startApp } from "./support/app";
-import { loginAs } from "./support/auth";
-import { readStreamUntil } from "./support/chat";
+import { createSessionAs, eveClientAs, readStreamUntil } from "./support/chat";
 import { createDaytonaKey, createUser, resetDatabase } from "./support/db";
 import { startEveDev } from "./support/eve-dev";
 import { fakeSandbox } from "./support/fake-sandbox";
-import { sleep } from "../../lib/sleep";
+import { waitForSessionFiles } from "./support/media";
 
 test("файл больше предела не копируется и остаётся too_large", async () => {
   await resetDatabase();
@@ -30,36 +30,20 @@ test("файл больше предела не копируется и оста
 
   try {
     const user = await createUser();
-    const cookie = await loginAs(user);
-    const created = await fetch(new URL("/api/sessions", app.url), {
-      method: "POST",
-      headers: { cookie },
-    });
-    expect(created.status).toBe(201);
-    const { id } = (await created.json()) as { id: string };
-
+    const { id } = await createSessionAs(user, { baseUrl: app.url });
     await fakeSandbox.seed(id, { "out/big.mp4": new Uint8Array(2000) });
-    const client = new Client({
-      host: app.url,
-      redirect: "manual",
-      headers: { cookie, "x-studio-session-id": id },
-    });
+
+    const client = await eveClientAs(user, id, { baseUrl: app.url });
     const response = (await client.sessions.create({ message: "Вот ![кадр](out/big.mp4)" }))
       .response;
     await readStreamUntil(response, "session.waiting");
 
-    const deadline = Date.now() + 20_000;
-    let files: Array<{ state: string; reason: string | null; path: string }> = [];
-    while (Date.now() < deadline) {
-      const list = await fetch(new URL(`/api/sessions/${id}/files`, app.url), {
-        headers: { cookie },
-      });
-      expect(list.status).toBe(200);
-      files = ((await list.json()) as { files: typeof files }).files;
-      if (files.length === 1 && files[0]?.state !== "copying") break;
-      await sleep(200);
-    }
-
+    const files = await waitForSessionFiles(
+      user,
+      id,
+      (items) => items.length === 1 && items[0]?.state !== "copying",
+      { baseUrl: app.url, timeoutMs: 20_000 },
+    );
     expect(files).toEqual([
       expect.objectContaining({
         path: "/workspace/out/big.mp4",

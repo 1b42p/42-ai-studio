@@ -42,6 +42,7 @@ export function ChatPanel({
     events: agent.events,
     messages: agent.data.messages,
     status: agent.status,
+    enabled: props.messageFiles === undefined,
   });
   // `null` оставил бы пустую шапку: у ChatView значение по умолчанию только для `undefined`.
   const title = titleProp ?? (polled === null ? undefined : polled);

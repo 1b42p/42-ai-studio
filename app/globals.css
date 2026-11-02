@@ -60,14 +60,6 @@
     --color-channel-mute-foreground: var(--channel-mute-foreground);
     --color-channel-solo-foreground: var(--channel-solo-foreground);
     --color-channel-monitor-foreground: var(--channel-monitor-foreground);
-    --channel-monitor-foreground: var(--channel-monitor-foreground);
-    --channel-solo-foreground: var(--channel-solo-foreground);
-    --channel-mute-foreground: var(--channel-mute-foreground);
-    --meter-clip-foreground: var(--meter-clip-foreground);
-    --meter-warn-foreground: var(--meter-warn-foreground);
-    --meter-ok-foreground: var(--meter-ok-foreground);
-    --channel-mute: var(--channel-mute);
-    --meter-clip: var(--meter-clip);
 }
 
 :root {

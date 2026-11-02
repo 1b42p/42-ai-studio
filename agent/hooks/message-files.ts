@@ -10,8 +10,8 @@ import { defineHook } from "eve/hooks";
 
 import { loadConfig } from "@/lib/config";
 import { HOOK_COPY_BUDGET_MS } from "@/lib/media/files";
-import { captureMessageFiles } from "@/lib/media/message-files";
 import { messageIdOf } from "@/lib/media/message-id";
+import { captureMessageFiles } from "@/lib/media/message-files";
 import { parseSandboxLinks } from "@/lib/media/sandbox-path";
 import { findAppSessionByEveId } from "@/lib/sessions/service";
 
@@ -49,18 +49,22 @@ export default defineHook({
         return;
       }
 
+      // Бюджет покрывает и поиск сессии, и копирование: хук целиком не
+      // задерживает ход дольше HOOK_COPY_BUDGET_MS.
+      const budget = copyBudget();
       try {
-        const session = await findAppSessionByEveId(ctx.session.id);
-        if (session === null) return;
-
-        const work = captureMessageFiles({
-          appSessionId: session.id,
-          messageId,
-          links,
-          maxBytes: loadConfig().mediaCopyMaxBytes,
-          userId: session.userId,
-          getSandbox: () => ctx.getSandbox(),
-        }).catch((error: unknown) => {
+        const work = (async () => {
+          const session = await findAppSessionByEveId(ctx.session.id);
+          if (session === null) return;
+          await captureMessageFiles({
+            appSessionId: session.id,
+            messageId,
+            links,
+            maxBytes: loadConfig().mediaCopyMaxBytes,
+            userId: session.userId,
+            getSandbox: () => ctx.getSandbox(),
+          });
+        })().catch((error: unknown) => {
           // Хук мог отпустить ход по бюджету: поздняя ошибка не должна
           // остаться необработанным отказом в процессе eve.
           console.error("[media] файлы сообщения не сохранены", {
@@ -69,18 +73,20 @@ export default defineHook({
             error,
           });
         });
-        const budget = copyBudget();
-        try {
-          await Promise.race([work, budget.promise]);
-        } finally {
-          budget.cancel();
+
+        const finishedInTime = await Promise.race([
+          work.then(() => true),
+          budget.promise.then(() => false),
+        ]);
+        if (!finishedInTime) {
+          console.warn("[media] копирование не уложилось в бюджет", {
+            eveSessionId: ctx.session.id,
+            messageId,
+            budgetMs: HOOK_COPY_BUDGET_MS,
+          });
         }
-      } catch (error) {
-        // Ошибка копирования не должна ронять ход агента.
-        console.error("[media] файлы сообщения не сохранены", {
-          eveSessionId: ctx.session.id,
-          error,
-        });
+      } finally {
+        budget.cancel();
       }
     },
   },

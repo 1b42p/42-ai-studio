@@ -1,18 +1,33 @@
 /** Помощники HTTP-тестов файлов ответа агента (#8). */
+import { inject } from "vitest";
+
 import type { User } from "../../../lib/db/schema";
 import type { MessageFileView, MessageFilesResponse } from "../../../lib/media/types";
 import { sleep } from "../../../lib/sleep";
-import { fetchApp } from "./app";
 import { loginAs } from "./auth";
+
+export interface FilesRequestOptions {
+  /** Экземпляр приложения; по умолчанию основной из глобальной подготовки. */
+  baseUrl?: string;
+}
+
+function filesUrl(appSessionId: string, options: FilesRequestOptions): URL {
+  return new URL(
+    `/api/sessions/${appSessionId}/files`,
+    options.baseUrl ?? inject("appUrl"),
+  );
+}
 
 /** Список файлов сессии. */
 export async function sessionFiles(
   user: User,
   appSessionId: string,
+  options: FilesRequestOptions = {},
 ): Promise<MessageFileView[]> {
   const cookie = await loginAs(user);
-  const response = await fetchApp(`/api/sessions/${appSessionId}/files`, {
+  const response = await fetch(filesUrl(appSessionId, options), {
     headers: { cookie },
+    redirect: "manual",
   });
   if (response.status !== 200) {
     throw new Error(`GET /api/sessions/:id/files вернул ${response.status}`);
@@ -25,14 +40,14 @@ export async function waitForSessionFiles(
   user: User,
   appSessionId: string,
   predicate: (files: readonly MessageFileView[]) => boolean,
-  options: { timeoutMs?: number } = {},
+  options: FilesRequestOptions & { timeoutMs?: number } = {},
 ): Promise<MessageFileView[]> {
   const timeoutMs = options.timeoutMs ?? 20_000;
   const deadline = Date.now() + timeoutMs;
   let last: MessageFileView[] = [];
 
   while (Date.now() < deadline) {
-    last = await sessionFiles(user, appSessionId);
+    last = await sessionFiles(user, appSessionId, options);
     if (predicate(last)) return last;
     await sleep(200);
   }
@@ -48,8 +63,9 @@ export async function mediaRedirect(
   query = "",
 ): Promise<{ status: number; location: string | null }> {
   const cookie = await loginAs(user);
-  const response = await fetchApp(`/api/media/${mediaId}${query}`, {
+  const response = await fetch(new URL(`/api/media/${mediaId}${query}`, inject("appUrl")), {
     headers: { cookie },
+    redirect: "manual",
   });
   return { status: response.status, location: response.headers.get("location") };
 }

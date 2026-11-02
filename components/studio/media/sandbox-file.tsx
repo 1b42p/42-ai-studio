@@ -10,7 +10,7 @@ import {
   FileVideoIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { StudioAudioPlayer } from "@/components/studio/media/studio-audio-player";
 import { useMediaRetry } from "@/components/studio/use-media-retry";
@@ -168,6 +168,29 @@ function FileCard({ entry }: { entry: MessageFileView }) {
   );
 }
 
+function MediaCard({
+  entry,
+  label,
+  children,
+}: {
+  entry: MessageFileView;
+  label?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Card className="w-full max-w-xl gap-0 py-0">
+      {children}
+      <CardFooter className="justify-between gap-3 py-3">
+        <div className="min-w-0">
+          <span className="block truncate text-sm font-medium">{entry.name}</span>
+          <Caption name={entry.name} text={label} />
+        </div>
+        {entry.mediaId === null ? null : <DownloadButton mediaId={entry.mediaId} />}
+      </CardFooter>
+    </Card>
+  );
+}
+
 function VideoFile({ entry, label }: { entry: MessageFileView; label?: string }) {
   const { src, failed, onError } = useMediaRetry(entry.mediaId);
   const video = useRef<HTMLVideoElement>(null);
@@ -183,7 +206,7 @@ function VideoFile({ entry, label }: { entry: MessageFileView; label?: string })
   if (failed || src === undefined) return <FileCard entry={entry} />;
 
   return (
-    <Card className="w-full max-w-xl gap-0 py-0">
+    <MediaCard entry={entry} label={label}>
       <video
         className="max-h-[70vh] w-full bg-muted object-contain"
         controls
@@ -192,14 +215,7 @@ function VideoFile({ entry, label }: { entry: MessageFileView; label?: string })
         ref={video}
         src={src}
       />
-      <CardFooter className="justify-between gap-3 py-3">
-        <div className="min-w-0">
-          <span className="block truncate text-sm font-medium">{entry.name}</span>
-          <Caption name={entry.name} text={label} />
-        </div>
-        {entry.mediaId === null ? null : <DownloadButton mediaId={entry.mediaId} />}
-      </CardFooter>
-    </Card>
+    </MediaCard>
   );
 }
 
@@ -208,18 +224,14 @@ function ImageFile({ entry, label }: { entry: MessageFileView; label?: string })
   if (failed || src === undefined) return <FileCard entry={entry} />;
 
   return (
-    <Card className="w-full max-w-xl gap-0 py-0">
+    <MediaCard entry={entry}>
       <img
         alt={label === undefined || label.trim().length === 0 ? entry.name : label}
         className="max-h-[70vh] w-full bg-muted object-contain"
         onError={onError}
         src={src}
       />
-      <CardFooter className="justify-between gap-3 py-3">
-        <span className="block min-w-0 truncate text-sm font-medium">{entry.name}</span>
-        {entry.mediaId === null ? null : <DownloadButton mediaId={entry.mediaId} />}
-      </CardFooter>
-    </Card>
+    </MediaCard>
   );
 }
 

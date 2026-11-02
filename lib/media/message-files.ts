@@ -16,6 +16,7 @@ import {
   messageFiles,
   type MessageFileReason,
 } from "@/lib/db/schema";
+import type { Storage } from "@/lib/s3";
 
 import { copySandboxFile, MediaCopyError } from "./copy";
 import { COPYING_STALE_MS, isStaleCopying, MAX_MESSAGE_LINKS } from "./files";
@@ -29,6 +30,8 @@ export interface CaptureMessageFilesOptions {
   maxBytes: number;
   /** Владелец сессии, если вызывающий уже прочитал его из `app_sessions`. */
   userId?: string;
+  /** Подмена хранилища в тестах отказа S3. */
+  storage?: Storage;
   /** Лениво открывает песочницу сессии: без файлов её не трогаем. */
   getSandbox: () => Promise<SandboxSession>;
 }
@@ -174,6 +177,7 @@ export async function captureMessageFiles(options: CaptureMessageFilesOptions): 
           userId: ownerId,
           appSessionId: options.appSessionId,
           kind: "message_file",
+          storage: options.storage,
         });
         const [created] = await db
           .insert(media)

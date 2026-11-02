@@ -2,7 +2,7 @@
 
 import type { MessageStreamEvent } from "eve/client";
 import type { ConversationState, EveMessage } from "eve/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { isBusyStatus, type ChatStatus } from "@/components/studio/chat/chat-status";
 import type { MessageFilesState } from "@/components/studio/chat/message-files";
@@ -12,7 +12,7 @@ import type { MessageFileView, MessageFilesResponse } from "@/lib/media/types";
 const POLL_INTERVAL_MS = 1000;
 /** Дольше 10 минут список не опрашивается. */
 const POLL_LIMIT_MS = 10 * 60 * 1000;
-/** При минимальном опросе после `message.completed`. */
+/** Минимальный опрос после `message.completed`. */
 const MIN_POLL_MS = 3000;
 /** Сколько сообщение считается «идущим» после конца хода. */
 const PENDING_AFTER_TURN_MS = 15_000;
@@ -39,6 +39,8 @@ export interface UseMessageFilesOptions {
   events: readonly MessageStreamEvent[];
   messages: ConversationState["messages"];
   status: ChatStatus;
+  /** `false` — вызывающий передал готовое состояние, сеть не нужна. */
+  enabled?: boolean;
 }
 
 /**
@@ -51,6 +53,7 @@ export function useMessageFiles({
   events,
   messages,
   status,
+  enabled = true,
 }: UseMessageFilesOptions): MessageFilesState {
   const [entries, setEntries] = useState<MessageFileView[]>([]);
   const [pendingTurnId, setPendingTurnId] = useState<string | null>(null);
@@ -75,29 +78,38 @@ export function useMessageFiles({
     busyRef.current = busy;
   }, [busy]);
 
+  const loadFiles = useCallback(
+    async (signal: AbortSignal): Promise<MessageFileView[] | null> => {
+      if (filesUrl === null) return null;
+      try {
+        const response = await fetch(filesUrl, { cache: "no-store", signal });
+        if (!response.ok) return null;
+        const body = (await response.json()) as MessageFilesResponse;
+        return Array.isArray(body.files) ? body.files : null;
+      } catch {
+        // Сеть пропала: следующий тик повторит.
+        return null;
+      }
+    },
+    [filesUrl],
+  );
+
   // Первое чтение при открытии страницы.
   useEffect(() => {
-    if (filesUrl === null) {
+    if (!enabled || filesUrl === null) {
       setEntries([]);
       return;
     }
     const controller = new AbortController();
-    void fetch(filesUrl, {
-      cache: "no-store",
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (!response.ok) return;
-        const body = (await response.json()) as MessageFilesResponse;
-        setEntries(body.files);
-      })
-      .catch(() => undefined);
+    void loadFiles(controller.signal).then((files) => {
+      if (files !== null) setEntries(files);
+    });
     return () => controller.abort();
-  }, [filesUrl]);
+  }, [enabled, filesUrl, loadFiles]);
 
   // Повтор после завершения блока сообщения, пока копирование идёт.
   useEffect(() => {
-    if (filesUrl === null || completedCount === 0) return;
+    if (!enabled || filesUrl === null || completedCount === 0) return;
 
     const controller = new AbortController();
     const startedAt = Date.now();
@@ -105,22 +117,9 @@ export function useMessageFiles({
     let timer: ReturnType<typeof setTimeout> | undefined;
     let cancelled = false;
 
-    const load = async () => {
-      try {
-        const response = await fetch(filesUrl, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) return;
-        const body = (await response.json()) as MessageFilesResponse;
-        if (!cancelled) setEntries(body.files);
-      } catch {
-        // Сеть пропала: следующий тик повторит.
-      }
-    };
-
     const tick = async () => {
-      await load();
+      const files = await loadFiles(controller.signal);
+      if (!cancelled && files !== null) setEntries(files);
       if (cancelled || Date.now() >= deadline) return;
       const copying = entriesRef.current.some((entry) => entry.state === "copying");
       const warm = Date.now() - startedAt < MIN_POLL_MS;
@@ -134,7 +133,7 @@ export function useMessageFiles({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [filesUrl, completedCount]);
+  }, [enabled, filesUrl, completedCount, loadFiles]);
 
   // Во время хода строки может ещё не быть: это скелет, а не «не найдено».
   useEffect(() => {
