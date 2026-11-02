@@ -81,10 +81,14 @@ async function resolveInitiatorSession(
     eveSessionId: ctx.session.id,
   });
   if (!bound) {
-    console.warn("[sessions] сессия приложения уже занята другой сессией eve", {
-      appSessionId,
-      eveSessionId: ctx.session.id,
-    });
+    // Повтор session.started или уже стоящая привязка к этой же сессии — не ошибка.
+    const current = await deps.findSessionByEveId(ctx.session.id);
+    if (current === null) {
+      console.warn("[sessions] сессия приложения уже занята другой сессией eve", {
+        appSessionId,
+        eveSessionId: ctx.session.id,
+      });
+    }
   }
 
   const session = await deps.findSessionByEveId(ctx.session.id);

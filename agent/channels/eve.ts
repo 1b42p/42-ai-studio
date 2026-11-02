@@ -10,8 +10,9 @@
 import { ForbiddenError, type AuthFn, type AuthResult } from "eve/channels/auth";
 import { eveChannel } from "eve/channels/eve";
 
+import { fetchUserAttachment } from "@/agent/lib/attachment-fetch";
 import { getUserFromRequest } from "@/lib/auth/request";
-import { loadConfig } from "@/lib/config";
+import { loadConfig, readUploadMaxBytes } from "@/lib/config";
 import type { User } from "@/lib/db/schema";
 import {
   APP_SESSION_HEADER,
@@ -100,4 +101,11 @@ export function studioAuth(): AuthFn<Request> {
   };
 }
 
-export default eveChannel({ auth: [studioAuth()], turnPolicy: "steer" });
+export default eveChannel({
+  auth: [studioAuth()],
+  turnPolicy: "steer",
+  // Предел читается при старте процесса eve, а не запекается при сборке:
+  // без `.env` сборка получает значение по умолчанию.
+  uploadPolicy: { maxBytes: readUploadMaxBytes() },
+  fetchFile: fetchUserAttachment,
+});

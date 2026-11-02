@@ -26,6 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatFileSize } from "@/lib/format-size";
 import type { MessageFileView } from "@/lib/media/types";
 
 /** Что известно о файле по паре «сообщение, путь». */
@@ -55,19 +56,6 @@ export interface SandboxFileProps {
 
 function downloadUrl(mediaId: string): string {
   return `/api/media/${mediaId}?download=1`;
-}
-
-function formatSize(bytes: number | null): string {
-  if (bytes === null) return "";
-  const units = ["Б", "КБ", "МБ", "ГБ"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  const formatted = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(value);
-  return `${formatted} ${units[unit]}`;
 }
 
 function iconFor(contentType: string | null): LucideIcon {
@@ -143,7 +131,7 @@ function MissingFile({ title, name }: { title: string; name?: string }) {
 
 function FileCard({ entry }: { entry: MessageFileView }) {
   const Icon = iconFor(entry.contentType);
-  const size = formatSize(entry.sizeBytes);
+  const size = formatFileSize(entry.sizeBytes);
   return (
     <Attachment className="w-full max-w-md">
       <AttachmentMedia variant="icon">

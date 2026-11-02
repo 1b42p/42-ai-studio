@@ -129,6 +129,19 @@ export class Storage {
     }
   }
 
+  /** Размер объекта из метаданных; `null` — объекта нет. */
+  async objectSize(key: string): Promise<number | null> {
+    try {
+      const response = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      return response.ContentLength ?? null;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  }
+
   /** Удаление объекта. */
   async deleteObject(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));

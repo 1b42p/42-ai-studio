@@ -51,7 +51,14 @@ function ChatWithSession({
     headers: () => ({ "x-studio-session-id": appSessionId }),
   });
 
-  return <ChatPanel agent={agent} appSessionId={appSessionId} initialTitle={initialTitle} />;
+  return (
+    <ChatPanel
+      agent={agent}
+      appSessionId={appSessionId}
+      ensureSession={async () => appSessionId}
+      initialTitle={initialTitle}
+    />
+  );
 }
 
 function ResumedChatSession({
@@ -72,7 +79,14 @@ function ResumedChatSession({
     resume: true,
   });
 
-  return <ChatPanel agent={agent} appSessionId={appSessionId} initialTitle={initialTitle} />;
+  return (
+    <ChatPanel
+      agent={agent}
+      appSessionId={appSessionId}
+      ensureSession={async () => appSessionId}
+      initialTitle={initialTitle}
+    />
+  );
 }
 
 function StatusScreen({ text }: { text: string }) {

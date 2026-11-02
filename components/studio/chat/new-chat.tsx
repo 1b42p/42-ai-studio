@@ -1,5 +1,6 @@
 "use client";
 
+import type { UserContent } from "ai";
 import { useEveAgent } from "eve/react";
 import { useRef, useState } from "react";
 
@@ -34,9 +35,10 @@ export interface NewChatProps {
 }
 
 /**
- * Новый чат `/s`: сессия приложения создаётся перед первой отправкой.
- * Идентификатор держится и в ref (заголовки хука запоминают первую функцию),
- * и в состоянии (опрос названия должен увидеть id после создания).
+ * Новый чат `/s`: сессия приложения создаётся перед первой отправкой или
+ * первой загрузкой файла. Идентификатор держится и в ref (заголовки хука
+ * запоминают первую функцию), и в состоянии (опрос названия должен увидеть id
+ * после создания).
  */
 export function NewChat({ initialPage, initialQuery, initialError = false }: NewChatProps) {
   const appSessionId = useRef<string | null>(null);
@@ -50,30 +52,35 @@ export function NewChat({ initialPage, initialQuery, initialError = false }: New
     },
   });
 
-  const handleSend = async (text: string) => {
+  /** Создаёт сессию приложения один раз; дальше отдаёт её же. */
+  const ensureSession = async (): Promise<string> => {
+    if (appSessionId.current !== null) return appSessionId.current;
     setStartError(undefined);
 
-    if (appSessionId.current === null) {
-      const response = await fetch("/api/sessions", { method: "POST" });
-      if (!response.ok) {
-        const error = new Error("Не удалось создать сессию. Попробуйте ещё раз.");
-        setStartError(error);
-        throw error;
-      }
-      const body = (await response.json()) as { id: string };
-      appSessionId.current = body.id;
-      setSessionId(body.id);
-      replaceSessionUrl(body.id);
+    const response = await fetch("/api/sessions", { method: "POST" });
+    if (!response.ok) {
+      const error = new Error("Не удалось создать сессию. Попробуйте ещё раз.");
+      setStartError(error);
+      throw error;
     }
+    const body = (await response.json()) as { id: string };
+    appSessionId.current = body.id;
+    setSessionId(body.id);
+    replaceSessionUrl(body.id);
+    return body.id;
+  };
 
+  const handleSend = async (content: string | UserContent) => {
+    await ensureSession();
     const busy = isBusyStatus(agent.status);
-    await agent.send(text, busy ? { turnPolicy: "steer" } : undefined);
+    await agent.send(content, busy ? { turnPolicy: "steer" } : undefined);
   };
 
   return (
     <ChatPanel
       agent={agent}
       appSessionId={sessionId}
+      ensureSession={ensureSession}
       errorOverride={startError}
       onSend={handleSend}
       sessions={

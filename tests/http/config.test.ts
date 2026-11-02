@@ -173,6 +173,22 @@ describe("parseConfig: песочница и секреты", () => {
     );
   });
 
+  test("UPLOAD_MAX_BYTES: по умолчанию 256 МиБ, не больше 5 ГиБ", () => {
+    expect(parseConfig(validEnv()).uploadMaxBytes).toBe(268_435_456);
+    expect(parseConfig({ ...validEnv(), UPLOAD_MAX_BYTES: "1048576" }).uploadMaxBytes).toBe(
+      1_048_576,
+    );
+    expect(
+      parseConfig({ ...validEnv(), UPLOAD_MAX_BYTES: "5368709120" }).uploadMaxBytes,
+    ).toBe(5_368_709_120);
+
+    for (const value of ["6000000000", "0", "1.5", "abc"]) {
+      expect(issuesOf({ ...validEnv(), UPLOAD_MAX_BYTES: value })[0]).toContain(
+        "UPLOAD_MAX_BYTES",
+      );
+    }
+  });
+
   test.each([undefined, "", "AA==", "A".repeat(43), "A".repeat(42) + "B=", "A".repeat(43) + "=\n"])(
     "неверный ключ шифрования отвергается без раскрытия значения: %s", (value) => {
       const issues = issuesOf({ ...validEnv(), SECRETS_ENCRYPTION_KEY: value });

@@ -99,12 +99,27 @@ export interface AppConfig {
   readonly sandboxDiskGb: number;
   /** Предельный размер файла, который копируется из ответа агента в S3. */
   readonly mediaCopyMaxBytes: number;
+  /** Предельный размер одного загружаемого файла, байты. */
+  readonly uploadMaxBytes: number;
   /** Абсолютный путь; обязателен только в тестовом режиме. */
   readonly fakeSandboxDir: string | undefined;
 }
 
 /** Значение из `.env.example`: в production не годится в качестве секрета. */
 const EXAMPLE_SESSION_SECRET = "dev-only-session-secret-change-me-0123456789abcd";
+
+/** Предел одного файла по умолчанию: 256 МиБ. */
+export const UPLOAD_MAX_BYTES_DEFAULT = 268_435_456;
+/** Больше 5 ГБ одиночный PUT в S3 не принимает. */
+export const UPLOAD_MAX_BYTES_LIMIT = 5_368_709_120;
+
+const uploadMaxBytesSchema = z.coerce
+  .number({ error: "ожидается целое число больше нуля" })
+  .int("ожидается целое число больше нуля")
+  .min(1, "ожидается целое число больше нуля")
+  .max(UPLOAD_MAX_BYTES_LIMIT, `не больше ${UPLOAD_MAX_BYTES_LIMIT} (5 ГБ)`)
+  .optional()
+  .default(UPLOAD_MAX_BYTES_DEFAULT);
 
 /**
  * Один помощник для логических значений: `1`, `0`, `true`, `false`.
@@ -162,6 +177,7 @@ const envSchema = z.object({
     .max(Number.MAX_SAFE_INTEGER, "слишком большой размер")
     .optional()
     .default(2_147_483_648),
+  UPLOAD_MAX_BYTES: uploadMaxBytesSchema,
   FAKE_SANDBOX_DIR: envString.refine((value) => !value.includes("\0"), "некорректный путь").optional(),
   DATABASE_URL: envUrl,
   S3_ENDPOINT: envUrl,
@@ -353,6 +369,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     sandboxMemoryGb: data.SANDBOX_MEMORY_GB,
     sandboxDiskGb: data.SANDBOX_DISK_GB,
     mediaCopyMaxBytes: data.MEDIA_COPY_MAX_BYTES,
+    uploadMaxBytes: data.UPLOAD_MAX_BYTES,
     fakeSandboxDir: data.FAKE_SANDBOX_DIR === undefined ? undefined : resolve(data.FAKE_SANDBOX_DIR),
   };
 }
@@ -400,4 +417,21 @@ export function readNextDistDir(): string {
   loadDotenvFiles();
   const value = process.env.NEXT_DIST_DIR?.trim();
   return value === undefined || value === "" ? ".next" : value;
+}
+
+/**
+ * Предел одного файла для канала eve. Канал исполняется и при `eve build`,
+ * когда `.env` может не быть, поэтому читается только эта переменная: пустая
+ * или отсутствующая даёт значение по умолчанию, а некорректная — ошибку с её
+ * именем и без значения.
+ */
+export function readUploadMaxBytes(): number {
+  loadDotenvFiles();
+  const raw = process.env.UPLOAD_MAX_BYTES?.trim();
+  const parsed = uploadMaxBytesSchema.safeParse(raw === undefined || raw === "" ? undefined : raw);
+  if (!parsed.success) {
+    const reason = parsed.error.issues[0]?.message ?? "некорректное значение";
+    throw new ConfigError([`UPLOAD_MAX_BYTES: ${reason}`]);
+  }
+  return parsed.data;
 }
