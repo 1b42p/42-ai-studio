@@ -399,4 +399,23 @@ describe("parseConfig: вход через Telegram", () => {
     expect(parseConfig({ ...validEnv(), SESSION_TTL_DAYS: "1" }).sessionTtlDays).toBe(1);
     expect(parseConfig({ ...validEnv(), SESSION_TTL_DAYS: "365" }).sessionTtlDays).toBe(365);
   });
+
+  test("адреса Edge TTS необязательны и принимают тестовый сервер", () => {
+    expect(parseConfig(validEnv()).edgeTtsWssUrl).toBeUndefined();
+    expect(parseConfig(validEnv()).edgeTtsVoicesUrl).toBeUndefined();
+    expect(parseConfig({ ...validEnv(), EDGE_TTS_WSS_URL: "" }).edgeTtsWssUrl).toBeUndefined();
+    expect(
+      parseConfig({
+        ...validEnv(),
+        EDGE_TTS_WSS_URL: "ws://127.0.0.1:59101/tts",
+        EDGE_TTS_VOICES_URL: "http://127.0.0.1:59101/voices",
+      }),
+    ).toMatchObject({
+      edgeTtsWssUrl: "ws://127.0.0.1:59101/tts",
+      edgeTtsVoicesUrl: "http://127.0.0.1:59101/voices",
+    });
+    expect(issuesOf({ ...validEnv(), EDGE_TTS_WSS_URL: "http://127.0.0.1:59101/tts" })[0]).toContain(
+      "EDGE_TTS_WSS_URL",
+    );
+  });
 });
