@@ -154,14 +154,15 @@ export async function assertEveSessionAccess(
 ): Promise<void> {
   const root = await findAppSessionByEveId(eveSessionId);
   if (root !== null) {
-    if (root.userId === user.id) return;
-    throw forbiddenSession();
+    assertOwner(root.userId, user);
+    return;
   }
 
   const copy = await findAgentSessionByEveId(eveSessionId);
   if (copy !== null) {
-    if (copy.userId === user.id && action === "stream") return;
-    throw forbiddenSession();
+    if (action !== "stream") throw forbiddenSession();
+    assertOwner(copy.userId, user);
+    return;
   }
 
   if (action === "stream") {
@@ -169,8 +170,8 @@ export async function assertEveSessionAccess(
     if (starting !== null) {
       const bound = await waitForRootBinding(eveSessionId);
       if (bound !== null) {
-        if (bound.userId === user.id) return;
-        throw forbiddenSession();
+        assertOwner(bound.userId, user);
+        return;
       }
     }
 
@@ -180,13 +181,18 @@ export async function assertEveSessionAccess(
         pollMs: COPY_BINDING_POLL_MS,
       });
       if (opened !== null) {
-        if (opened.userId === user.id) return;
-        throw forbiddenSession();
+        assertOwner(opened.userId, user);
+        return;
       }
     }
   }
 
   throw forbiddenSession();
+}
+
+/** Владелец проходит, чужой получает отказ без уточнений. */
+function assertOwner(ownerId: string, user: User): void {
+  if (ownerId !== user.id) throw forbiddenSession();
 }
 
 function forbiddenSession(): SessionAccessError {

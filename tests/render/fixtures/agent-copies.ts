@@ -47,6 +47,8 @@ export function reduceEvents(events: readonly MessageStreamEvent[]): Conversatio
 /** Поток копии: последний блок её последнего сообщения виден в поле «Сейчас». */
 export function copyStream(parts: {
   readonly tool?: { readonly name: string; readonly input?: unknown; readonly label?: string };
+  /** Результат вызова: карточка показывает его вместо «выполняется». */
+  readonly result?: unknown;
   readonly text?: string;
   /** Ход копии ещё идёт: незавершённый вызов остаётся в ленте. */
   readonly open?: boolean;
@@ -77,6 +79,23 @@ export function copyStream(parts: {
         presentation:
           parts.tool.label === undefined ? {} : { call_copy_step: { label: parts.tool.label } },
         sequence: 0,
+        stepIndex: 0,
+        turnId: "turn_0",
+      }),
+    );
+  }
+
+  if (parts.tool !== undefined && parts.result !== undefined) {
+    events.push(
+      event("action.result", {
+        result: {
+          callId: "call_copy_step",
+          kind: "tool-result",
+          output: parts.result,
+          toolName: parts.tool.name,
+        },
+        sequence: 0,
+        status: "completed",
         stepIndex: 0,
         turnId: "turn_0",
       }),

@@ -228,6 +228,34 @@ test("без слежения за копией панель тоже говор
   await expect.element(dialog.getByText("Работает")).toBeVisible();
 });
 
+test("в панели правка файла показана карточкой с diff", async () => {
+  await renderAt(
+    copyConversation({
+      status: "working",
+      copy: copyStream({
+        result: {
+          path: "/workspace/out/scene.py",
+          created: false,
+          replacements: 1,
+          oldContent: "a\nb\nc\n",
+          newContent: "a\nB\nc\n",
+          linesAdded: 1,
+          linesRemoved: 1,
+        },
+        tool: { name: "edit_file", input: { filePath: "out/scene.py", oldString: "b", newString: "B" } },
+      }),
+    }),
+  );
+
+  await expect.element(page.getByText("Сейчас: Правка scene.py")).toBeVisible();
+  await page.getByRole("button", { name: /Копия агента/ }).click();
+
+  const dialog = page.getByRole("dialog");
+  await expect.element(dialog.getByText("scene.py", { exact: true })).toBeVisible();
+  await expect.element(dialog.getByText("Изменён", { exact: true })).toBeVisible();
+  await expect.element(dialog.getByText("+1 −1", { exact: true })).toBeVisible();
+});
+
 test("в панели ссылка на файл песочницы выведена текстом пути", async () => {
   await renderAt(
     copyConversation({

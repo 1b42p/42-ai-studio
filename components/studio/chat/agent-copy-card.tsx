@@ -1,6 +1,6 @@
 "use client";
 
-import { CopyIcon } from "lucide-react";
+import { ChevronRightIcon, CopyIcon } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -15,6 +15,7 @@ import { buildFileLookup } from "@/components/studio/chat/message-files";
 import { MessageRow } from "@/components/studio/chat/message-row";
 import type { ToolCardProps } from "@/components/studio/chat/tool-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -23,6 +24,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -45,11 +47,6 @@ import { useIsMobile } from "@/hooks/use-mobile";
  * Файлы показывает корневой агент (#8, режим «без файлов»).
  */
 const COPY_FILES = buildFileLookup({ enabled: false, entries: [] });
-
-/** Первые две строки задания: остальное — в панели. */
-function taskPreview(task: string): string {
-  return task.split("\n").slice(0, 2).join("\n");
-}
 
 function CopySkeleton() {
   return (
@@ -77,15 +74,8 @@ function CopyBody({ copy, appSessionId }: { copy: CopyCall; appSessionId?: strin
     );
   }
 
-  const conversation =
-    copy.observation?.status === "following" ||
-    copy.observation?.status === "idle" ||
-    copy.observation?.status === "unavailable"
-      ? copy.observation.conversation
-      : undefined;
-
-  if (conversation === undefined || state === "loading") return <CopySkeleton />;
-  if (conversation.messages.length === 0) return <CopySkeleton />;
+  const conversation = copy.conversation;
+  if (conversation === null || conversation.messages.length === 0) return <CopySkeleton />;
 
   return (
     <MessageScrollerProvider autoScroll>
@@ -128,7 +118,7 @@ export function AgentCopyCard({ part, data, appSessionId, onCopyPanelChange }: T
   const mobile = useIsMobile();
   const description = copyDescription(copy);
   const lineStatus =
-    copy.status === "running" || copy.status === "starting"
+    (copy.status === "running" || copy.status === "starting") && !copy.awaitingInput
       ? "running"
       : copy.status === "failed"
         ? "error"
@@ -155,20 +145,30 @@ export function AgentCopyCard({ part, data, appSessionId, onCopyPanelChange }: T
           {description === null ? null : (
             <TraceDescription className="truncate basis-0 grow">{description}</TraceDescription>
           )}
+          <TraceIcon>
+            <ChevronRightIcon />
+          </TraceIcon>
         </TraceLine>
       </SheetTrigger>
       <SheetContent overlay={mobile} size="panel" className="overflow-hidden">
-        <SheetHeader className="gap-1 border-b">
-          <SheetTitle>Копия агента</SheetTitle>
-          <SheetDescription>{copyStatusText(copy)}</SheetDescription>
-        </SheetHeader>
+        <div className="flex flex-col gap-2">
+          <SheetHeader className="gap-1">
+            <SheetTitle>Копия агента</SheetTitle>
+            <SheetDescription>{copyStatusText(copy)}</SheetDescription>
+          </SheetHeader>
+          <Separator />
+        </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-4">
           {copy.task.trim().length === 0 ? null : (
-            <div className="flex shrink-0 flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Задача</span>
-              <p className="text-sm whitespace-pre-line">{taskPreview(copy.task)}</p>
-            </div>
+            <ItemGroup className="shrink-0">
+              <Item className="flex-col items-start" size="sm" variant="muted">
+                <ItemContent>
+                  <ItemTitle>Задача</ItemTitle>
+                  <ItemDescription>{copy.task}</ItemDescription>
+                </ItemContent>
+              </Item>
+            </ItemGroup>
           )}
 
           {copy.status === "failed" && copy.error.trim().length > 0 ? (
