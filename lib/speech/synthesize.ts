@@ -74,7 +74,7 @@ export async function synthesizeSpeech(request: SynthesizeRequest): Promise<Synt
           logSpeechFailure(error);
           throw error;
         }
-        if (textCoverage(request.text, timings.words.map((word) => word.text)) === "unreadable") {
+        if (textCoverage(request.text, result.wordBoundaries.map((word) => word.text)) === "unreadable") {
           throw speechError("speak_text_not_readable");
         }
         return { audio: result.audio, timings, durationMs };

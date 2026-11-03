@@ -84,6 +84,10 @@ describe("тайминги и путь", () => {
       basePath: "/workspace/voiceover/speech-abcdef12",
     });
     expect(resolveSpeechOutputPath("voice/hello.mp3", "id").ok).toBe(false);
+    expect(resolveSpeechOutputPath("v1.0/scene", "id")).toEqual({
+      ok: true,
+      basePath: "/workspace/v1.0/scene",
+    });
     expect(resolveSpeechOutputPath("../../etc/x", "id").ok).toBe(false);
     expect(resolveSpeechOutputPath("/etc/passwd", "id").ok).toBe(false);
     expect(resolveSpeechOutputPath("", "id").ok).toBe(false);
@@ -146,6 +150,7 @@ describe("голоса и повтор", () => {
 
   test("доля букв и отсутствие границ", () => {
     expect(textCoverage("Привет", ["Привет"])).toBe("ok");
+    expect(textCoverage("Привет мир", ["Привет"])).toBe("unreadable");
     expect(textCoverage("Привет мир", ["123"])).toBe("unreadable");
     expect(textCoverage("2026", ["2026"])).toBe("skipped");
     expect(textCoverage("2026", [])).toBe("unreadable");

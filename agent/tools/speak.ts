@@ -1,7 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { PublishToolMediaError, publishToolMedia } from "@/lib/media/publish-tool-media";
+import { publishToolMedia } from "@/lib/media/publish-tool-media";
 import { findAppSessionByEveId } from "@/lib/sessions/service";
 import { edgeTtsClient } from "@/lib/speech/client";
 import {
@@ -156,9 +156,7 @@ export default defineTool({
       });
       audioId = published.mediaId;
     } catch (error) {
-      if (error instanceof PublishToolMediaError && error.reason === "no_session") {
-        throw speechError("speak_no_session");
-      }
+      if (error instanceof Error && error.name === "AbortError") throw error;
       throw speechError("speak_publish_failed");
     }
 

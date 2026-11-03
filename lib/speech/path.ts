@@ -21,10 +21,10 @@ export function resolveSpeechOutputPath(
   if (CONTROL_CHARACTERS.test(input) || input.includes("\\")) {
     return { ok: false, path: input };
   }
-  const hasExtension = input.split("/").some((segment) => {
-    return segment.includes(".") && segment !== "." && segment !== "..";
-  });
-  if (hasExtension) return { ok: false, path: input };
+  const fileName = input.split("/").findLast((segment) => segment.length > 0) ?? "";
+  if (fileName.includes(".") && fileName !== "." && fileName !== "..") {
+    return { ok: false, path: input };
+  }
 
   const resolved = resolveSandboxFilePath(input);
   if (resolved.kind !== "file") return { ok: false, path: input };

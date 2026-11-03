@@ -6,7 +6,7 @@ import { ChatView } from "@/components/studio/chat/chat-view";
 
 import { expectNoHorizontalScroll, renderOnDesktop, renderOnPhone } from "./support/render";
 
-const spoken = "Слово ролика ".repeat(120).trim();
+const spoken = "Слово ролика ".repeat(200).slice(0, 2000);
 const longVoice = `ru-RU-${"СветланаОченьДлинноеИмя".repeat(8)}Neural`;
 
 const call = {
