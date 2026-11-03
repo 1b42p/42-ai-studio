@@ -228,6 +228,17 @@ test("без слежения за копией панель тоже говор
   await expect.element(dialog.getByText("Работает")).toBeVisible();
 });
 
+test("пустой остановленный ход копии не остаётся скелетом", async () => {
+  await renderAt(
+    copyConversation({ status: "cancelled", observation: "idle", copy: [] }),
+  );
+
+  await page.getByRole("button", { name: /Копия остановлена/ }).click();
+  const dialog = page.getByRole("dialog");
+  await expect.element(dialog.getByText("Ход копии недоступен")).toBeVisible();
+  expect(document.body.textContent).not.toContain("Ход копии загружается");
+});
+
 test("в панели правка файла показана карточкой с diff", async () => {
   await renderAt(
     copyConversation({

@@ -263,6 +263,10 @@ export function copyStatusText(call: CopyCall): string {
 /**
  * Готова ли беседа копии к показу. Пока `agent.started` не пришёл, копия
  * запускается; если вызов уже завершился без сессии копии, показывать нечего.
+ *
+ * `idle` с пустой беседой — не загрузка: eve уже догнал поток и больше ничего
+ * не пришлёт (так бывает у остановленной копии), поэтому это недоступный ход,
+ * а не вечный скелет.
  */
 export function copyConversationState(call: CopyCall): "loading" | "ready" | "unavailable" {
   if (call.status === "starting") return "loading";
@@ -270,5 +274,8 @@ export function copyConversationState(call: CopyCall): "loading" | "ready" | "un
     return call.status === "running" ? "loading" : "unavailable";
   }
   if (call.conversation === null) return "unavailable";
+  if (call.observation.status === "idle" && call.conversation.messages.length === 0) {
+    return "unavailable";
+  }
   return "ready";
 }
