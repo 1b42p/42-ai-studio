@@ -198,7 +198,7 @@ describe("connectDaytona", () => {
     sdk.fs.getFileDetails.mockRejectedValueOnce(new DaytonaFileNotFoundError("missing"));
     expect(await connection.readFile({ path: "/missing" })).toBeNull();
     sdk.fs.getFileDetails.mockResolvedValueOnce({ isDir: true });
-    await expect(connection.readFile({ path: "/directory" })).rejects.toThrow("daytona_unavailable:");
+    await expect(connection.readFile({ path: "/directory" })).rejects.toMatchObject({ code: "EISDIR" });
     sdk.fs.getFileDetails.mockRejectedValueOnce(new Error("Authorization: secret"));
     await expect(connection.readFile({ path: "/denied" })).rejects.not.toThrow("secret");
   });

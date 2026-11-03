@@ -207,7 +207,9 @@ export function connectDaytona(sandbox: Sandbox, callbacks: Callbacks): SandboxC
       try {
         await activity(abortSignal);
         const info = await abortable(() => sandbox.fs.getFileDetails(path), abortSignal);
-        if (info.isDir) throw failure();
+        if (info.isDir) {
+          throw Object.assign(new Error("EISDIR: path is a directory"), { code: "EISDIR" });
+        }
         const source = await sandbox.fs.downloadFileStream(path, { signal: abortSignal });
         // The consumer may not request its first chunk immediately.
         source.on("error", () => {});
@@ -225,6 +227,7 @@ export function connectDaytona(sandbox: Sandbox, callbacks: Callbacks): SandboxC
       } catch (error) {
         checkAbort(abortSignal);
         if (error instanceof DaytonaNotFoundError) return null;
+        if (error instanceof Error && "code" in error && error.code === "EISDIR") throw error;
         throw failure();
       }
     },

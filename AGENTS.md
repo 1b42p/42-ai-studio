@@ -174,6 +174,7 @@ npx shadcn@latest mcp init --client claude   # подключить MCP-серв
 - `APP_TEST_MODE=1` включает фикстурную модель `agent/lib/fixture-model.ts`: `/tool <имя> <JSON>` вызывает инструмент (после результата — «готово», неверный JSON — «Ошибка фикстуры: неверный JSON»), `/slow <секунды> <текст>` отвечает `Эхо: <текст>` через 1–120 секунд, иначе — `Эхо: <текст>`.
 - `defaultTools: false` отключает встроенные инструменты; подключать их явно командой `eve add tool/<имя>`. `limits.sessionTimeoutMs: false` отключает завершение сессии по простою. Канал eve задаёт `turnPolicy: "steer"` явно.
 - Инструкции, инструменты, навыки и субагенты живут в `agent/`.
+- Правки файлов — серверный инструмент `agent/tools/edit_file.ts` (`edit_file`): точная замена UTF-8 или создание без `oldString`, предел 256 КиБ, выход `{ path, created, replacements, oldContent, newContent, linesAdded, linesRemoved }` в поток; модели — `toModelOutput` без содержимого. `write_file` не подключается. Карточка — `components/studio/chat/edit-file-card.tsx`; подсчёт строк и diff — `lib/edit-file/` (`diff` 9.x). Фиктивный `readFile` на каталоге бросает `EISDIR`.
 - Навыки в `agent/skills/` ставить из официальных источников (https://www.remotion.dev/docs/ai/skills, https://skills.sh) командой `npx skills add`, а не копировать из локальных каталогов.
 - Daytona — authored-провайдер песочницы; своя песочница у агента и сессии.
 - Файлы пользователя — напрямую в S3 по presigned URL; тип файла не ограничен.

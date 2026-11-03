@@ -131,7 +131,7 @@ test("оператор видит bash и read_file, но не write_file", asyn
   const client = await eveClientAs(operator, id);
   const info = await client.info();
   const names = info.tools.static.map((tool) => tool.name);
-  expect(names).toEqual(expect.arrayContaining(["bash", "read_file"]));
+  expect(names).toEqual(expect.arrayContaining(["bash", "read_file", "edit_file"]));
   expect(names).not.toContain("write_file");
   expect(JSON.stringify(info)).not.toContain(SECRET);
 });

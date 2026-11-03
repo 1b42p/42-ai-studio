@@ -38,6 +38,7 @@
     "ai": "^7.0.137",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.1",
+    "diff": "9.0.0",
     "drizzle-orm": "^0.45.4",
     "eve": "^0.83.0",
     "jose": "^6.2.14",

@@ -105,7 +105,12 @@ class FakeMachineHandle implements FakeMachine {
             throw error;
           }
           try {
-            if (!(await handle.stat()).isFile()) throw new Error("Sandbox path is not a regular file");
+            const stat = await handle.stat();
+            // Слой обязан отличать отсутствие (null) от каталога (EISDIR).
+            if (stat.isDirectory()) {
+              throw Object.assign(new Error("EISDIR: path is a directory"), { code: "EISDIR" });
+            }
+            if (!stat.isFile()) throw new Error("Sandbox path is not a regular file");
             abortSignal?.throwIfAborted();
             const stream = handle.createReadStream({ highWaterMark: 64 * 1024, signal: abortSignal });
             return Readable.toWeb(stream, {
