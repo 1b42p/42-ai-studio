@@ -36,11 +36,10 @@ function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
   )
 }
 
-/** Ширина панели: обычная, во весь экран и узкая боковая с пределом 480 px. */
-const SHEET_WIDTH: Record<"default" | "full" | "panel", string> = {
+/** Ширина панели: обычная и узкая боковая с пределом 480 px. */
+const SHEET_WIDTH: Record<"default" | "panel", string> = {
   default:
     "data-[side=left]:w-3/4 data-[side=right]:w-3/4 data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm",
-  full: "data-[side=left]:w-full data-[side=right]:w-full",
   panel:
     "data-[side=left]:w-full data-[side=right]:w-full data-[side=left]:sm:max-w-[480px] data-[side=right]:sm:max-w-[480px]",
 }
@@ -58,8 +57,8 @@ function SheetContent({
   showCloseButton?: boolean
   /** Панель без затемнения: основной экран должен оставаться рабочим (#12). */
   overlay?: boolean
-  /** `full` — во всю ширину окна, `panel` — во всю ширину на телефоне и до 480 px на компьютере. */
-  size?: "default" | "full" | "panel"
+  /** `panel` — во всю ширину на телефоне и до 480 px на компьютере. */
+  size?: "default" | "panel"
 }) {
   return (
     <SheetPortal>

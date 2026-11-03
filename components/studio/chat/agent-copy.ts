@@ -36,6 +36,8 @@ export interface CopyCall {
   readonly sessionId: string | null;
   /** Наблюдение за ходом копии; `null` без `followSubagents` и до `agent.started`. */
   readonly observation: AgentObservation | null;
+  /** Беседа копии, пока за ней следят; `null` — ход недоступен. */
+  readonly conversation: ConversationState | null;
   /** Копия задала вопрос и ждёт ответа в основном чате. */
   readonly awaitingInput: boolean;
   /** Краткое описание последнего действия копии. */
@@ -155,13 +157,15 @@ function describeToolPart(part: EveMessagePart & { type: "dynamic-tool" }): stri
   return label === undefined || label.trim().length === 0 ? null : label;
 }
 
-/** Беседа копии, если наблюдение за ней ведётся. */
+/**
+ * Беседа копии, пока за ней следят. `not-followed` и `unavailable` её не
+ * показывают: тогда в панели написано «Ход копии недоступен».
+ */
 function copyConversation(observation: AgentObservation | null): ConversationState | null {
   if (observation === null) return null;
   if (observation.status === "following" || observation.status === "idle") {
     return observation.conversation;
   }
-  if (observation.status === "unavailable") return observation.conversation ?? null;
   return null;
 }
 
@@ -169,8 +173,7 @@ function copyConversation(observation: AgentObservation | null): ConversationSta
  * Краткое описание последнего действия копии: последний блок последнего
  * сообщения копии. Пока копия ничего не написала, описания нет.
  */
-export function copyAction(observation: AgentObservation | null): string | null {
-  const conversation = copyConversation(observation);
+export function copyAction(conversation: ConversationState | null): string | null {
   if (conversation === null) return null;
 
   const message = conversation.messages.findLast((item) => item.role === "assistant");
@@ -190,6 +193,7 @@ export function readCopyCall(data: ConversationState, part: EveDynamicToolPart):
   const call = found === null ? undefined : found.task.calls[part.toolCallId];
   const session = found === null ? null : findCopySession(data, found.taskId);
   const observation = session?.observation ?? null;
+  const conversation = copyConversation(observation);
 
   const status = call === undefined ? statusOfPart(data, part) : statusOfCall(call);
   const awaitingInput =
@@ -205,66 +209,66 @@ export function readCopyCall(data: ConversationState, part: EveDynamicToolPart):
     task: taskOfPart(part),
     sessionId: session?.sessionId ?? null,
     observation,
+    conversation,
     awaitingInput,
-    action: copyAction(observation),
+    action: copyAction(conversation),
   };
 }
 
+/** Что написано в заголовке карточки для каждого состояния копии. */
+const COPY_TITLES: Record<CopyStatus, string> = {
+  starting: "Копия агента",
+  running: "Копия агента",
+  completed: "Копия завершила работу",
+  failed: "Копия завершилась ошибкой",
+  cancelled: "Копия остановлена",
+};
+
+/** Состояние копии одним словом для шапки панели. */
+const COPY_STATUS_WORDS: Record<CopyStatus, string> = {
+  starting: "Запускается…",
+  running: "Работает",
+  completed: "Завершила работу",
+  failed: "Завершилась ошибкой",
+  cancelled: "Остановлена",
+};
+
 /** Заголовок карточки: что делает или сделала копия. */
 export function copyTitle(call: CopyCall): string {
-  switch (call.status) {
-    case "starting":
-    case "running":
-      return "Копия агента";
-    case "completed":
-      return "Копия завершила работу";
-    case "failed":
-      return "Копия завершилась ошибкой";
-    case "cancelled":
-      return "Копия остановлена";
-  }
+  return COPY_TITLES[call.status];
 }
 
 /** Строка после заголовка: действие, ожидание ответа или начало итога. */
 export function copyDescription(call: CopyCall): string | null {
-  switch (call.status) {
-    case "starting":
-      return "Запускается…";
-    case "running":
-      if (call.awaitingInput) return "Ждёт ответа";
-      return call.action === null ? "Работает" : `Сейчас: ${call.action}`;
-    case "completed":
-      return call.output.trim().length === 0
-        ? null
-        : shorten(call.output, COPY_OUTPUT_PREVIEW);
-    case "failed":
-      return call.error.trim().length === 0 ? null : shorten(call.error, COPY_OUTPUT_PREVIEW);
-    case "cancelled":
-      return null;
+  if (call.status === "starting") return "Запускается…";
+  if (call.status === "running") {
+    if (call.awaitingInput) return "Ждёт ответа";
+    return call.action === null ? "Работает" : `Сейчас: ${call.action}`;
   }
+  if (call.status === "completed") {
+    return call.output.trim().length === 0 ? null : shorten(call.output, COPY_OUTPUT_PREVIEW);
+  }
+  if (call.status === "failed") {
+    return call.error.trim().length === 0 ? null : shorten(call.error, COPY_OUTPUT_PREVIEW);
+  }
+  return null;
 }
 
 /** Слово состояния копии в шапке панели. */
 export function copyStatusText(call: CopyCall): string {
-  switch (call.status) {
-    case "starting":
-      return "Запускается…";
-    case "running":
-      return call.awaitingInput ? "Ждёт ответа" : "Работает";
-    case "completed":
-      return "Завершила работу";
-    case "failed":
-      return "Завершилась ошибкой";
-    case "cancelled":
-      return "Остановлена";
-  }
+  if (call.status === "running" && call.awaitingInput) return "Ждёт ответа";
+  return COPY_STATUS_WORDS[call.status];
 }
 
-/** Готова ли беседа копии к показу, или ход недоступен. */
+/**
+ * Готова ли беседа копии к показу. Пока `agent.started` не пришёл, копия
+ * запускается; если вызов уже завершился без сессии копии, показывать нечего.
+ */
 export function copyConversationState(call: CopyCall): "loading" | "ready" | "unavailable" {
-  if (call.status === "starting" || call.sessionId === null) return "loading";
-  if (call.observation === null) return "unavailable";
-  if (call.observation.status === "not-followed") return "unavailable";
-  if (call.observation.status === "unavailable") return "unavailable";
+  if (call.status === "starting") return "loading";
+  if (call.sessionId === null || call.observation === null) {
+    return call.status === "running" ? "loading" : "unavailable";
+  }
+  if (call.conversation === null) return "unavailable";
   return "ready";
 }
