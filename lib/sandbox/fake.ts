@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { SandboxConnection } from "eve/sandbox/provider";
 
 import { FakeStore, hasCode, type FakeRecord, type StoredRule } from "./fake-store";
+import type { JobDirectoryReading } from "./job-directory";
 
 interface ConnectionCallbacks {
   onStop(): Promise<void>;
@@ -20,6 +21,7 @@ export interface FakeMachine {
   recover(): Promise<void>;
   delete(): Promise<void>;
   connect(callbacks: ConnectionCallbacks): SandboxConnection;
+  readJobDirectory(jobId: string): Promise<JobDirectoryReading>;
 }
 
 /** A process-local handle; state getters read an atomically published snapshot. */
@@ -57,6 +59,10 @@ class FakeMachineHandle implements FakeMachine {
     } catch (error) {
       if (!(error instanceof Error && "status" in error && error.status === 404)) throw error;
     }
+  }
+
+  async readJobDirectory(jobId: string): Promise<JobDirectoryReading> {
+    return this.store.readJobDirectory(this.id, jobId);
   }
 
   connect(callbacks: ConnectionCallbacks): SandboxConnection {

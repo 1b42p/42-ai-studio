@@ -9,6 +9,8 @@ import { TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 
 export interface ToolCardProps {
   part: EveDynamicToolPart;
+  /** Сессия приложения: карточка фоновой команды опрашивает её задание. */
+  appSessionId?: string | null;
 }
 
 const toolCards: ReadonlyMap<string, ComponentType<ToolCardProps>> = new Map([
@@ -31,7 +33,7 @@ function FallbackToolCard({ part }: ToolCardProps) {
 }
 
 /** Новые карточки добавляются в сопоставление, неизвестные инструменты сохраняют подпись eve. */
-export function ToolCard({ part }: ToolCardProps) {
+export function ToolCard({ part, appSessionId }: ToolCardProps) {
   const Card = toolCards.get(part.toolName) ?? FallbackToolCard;
-  return <Card part={part} />;
+  return <Card part={part} appSessionId={appSessionId} />;
 }

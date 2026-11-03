@@ -12,8 +12,9 @@ import type { MessageStreamEvent } from "eve/client";
 import { sessions } from "eve/server";
 import { and, eq, sql } from "drizzle-orm";
 
+import { runningBashJob } from "../sandbox/bash-jobs";
 import { getDb } from "../db/client";
-import { appSessions, sessionEvents } from "../db/schema";
+import { appSessions, bashJobs, sessionEvents } from "../db/schema";
 import { sleep } from "../sleep";
 import { findAppSessionById, hasSessionEvent, setTitleIfEmpty } from "./service";
 
@@ -125,6 +126,29 @@ export async function syncAppSession(
       // Название — из тех же очищенных нагрузок: `text` в Postgres, как и
       // `jsonb`, не принимает NUL, и сырое событие откатывало бы транзакцию.
       await setTitleIfEmpty(tx, appSessionId, rows.map((row) => row.payload));
+      // Задание `bash`, ушедшее в фон, существует в базе независимо от того,
+      // открыта ли вкладка: строка создаётся здесь же, идемпотентно.
+      const jobs = rows.flatMap((row) => {
+        const job = runningBashJob(row.payload);
+        if (job === null) return [];
+        const stdout = stripNullCharacters(job.stdout);
+        const stderr = stripNullCharacters(job.stderr);
+        return [{
+          appSessionId,
+          jobId: job.jobId,
+          status: "running" as const,
+          stdoutTail: stdout,
+          stderrTail: stderr,
+          stdoutBytes: Buffer.byteLength(stdout),
+          stderrBytes: Buffer.byteLength(stderr),
+        }];
+      });
+      if (jobs.length > 0) {
+        await tx
+          .insert(bashJobs)
+          .values(jobs)
+          .onConflictDoNothing({ target: [bashJobs.appSessionId, bashJobs.jobId] });
+      }
       return true;
     });
 

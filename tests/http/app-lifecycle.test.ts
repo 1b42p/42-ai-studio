@@ -43,10 +43,12 @@ describe("предел загрузки больше 5 ГиБ останавли
 });
 
 describe("таймаут готовности не оставляет процесс", () => {
-  test("startApp({ readyTimeoutMs: 1000 }) отклоняется и освобождает порт", async () => {
+  test("startApp с нулевым таймаутом отклоняется и освобождает порт", async () => {
     const port = Number(new URL(inject("appUrl")).port) + 50;
 
-    await expect(startApp({ port, readyTimeoutMs: 1000 })).rejects.toThrow(/1000 мс/);
+    // Ноль не зависит от скорости машины: с одним секундным пределом тёплый
+    // `next dev` успевает ответить и проверка становится ложноположительной.
+    await expect(startApp({ port, readyTimeoutMs: 0 })).rejects.toThrow(/0 мс/);
 
     const leftover = spawnSync("pgrep", ["-f", `dev --port ${port}`], { encoding: "utf8" });
     expect(leftover.stdout.trim()).toBe("");

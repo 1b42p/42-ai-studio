@@ -6,6 +6,7 @@ import { Daytona, Image, type Sandbox } from "@daytona/sdk";
 import { SANDBOX_AGENT_ENV, type SandboxConnection } from "eve/sandbox/provider";
 import { loadConfig } from "@/lib/config";
 import { getFakeBackend } from "@/lib/sandbox/fake";
+import { readDaytonaJobDirectory, type JobDirectoryReading } from "@/lib/sandbox/job-directory";
 import { connectDaytona } from "./daytona-connection";
 
 export interface ConnectionCallbacks {
@@ -22,6 +23,7 @@ export interface DaytonaMachine {
   ready(): Promise<void>;
   delete(): Promise<void>;
   connect(callbacks: ConnectionCallbacks): SandboxConnection;
+  readJobDirectory(jobId: string): Promise<JobDirectoryReading>;
 }
 
 export interface DaytonaBackend {
@@ -41,6 +43,7 @@ function wrap(sandbox: Sandbox): DaytonaMachine {
     ready: () => sandbox.waitUntilStarted(300),
     delete: () => sandbox.delete(300, true),
     connect: (callbacks) => connectDaytona(sandbox, callbacks),
+    readJobDirectory: (jobId) => readDaytonaJobDirectory(sandbox, jobId),
   };
 }
 

@@ -23,6 +23,7 @@ export const fakeSandbox = {
   },
   calls: (appSessionId: string) => store().calls(appSessionId),
   stop: (appSessionId: string) => store().stop(appSessionId),
+  killProcess: (appSessionId: string, jobId: string) => store().killProcess(appSessionId, jobId),
   failNextCreate: (kind: FakeCreateFailure) => store().failNextCreate(kind),
   counters: () => store().counters(),
   reset: () => store().reset(),

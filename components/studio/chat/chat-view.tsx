@@ -101,6 +101,8 @@ export interface ChatViewProps {
   inputDisabled?: boolean;
   /** Сессия завершена снаружи (истёк поток, осиротела). */
   ended?: boolean;
+  /** Сессия приложения: карточки команд опрашивают задания из неё. */
+  appSessionId?: string | null;
   /** Файлы из ответов агента; без них ссылки показывают «Файл недоступен». */
   messageFiles?: MessageFilesState;
   /** Загрузчик вложений поля ввода; без него скрепка неактивна. */
@@ -205,10 +207,12 @@ function AssistantContent({
   parts,
   turnId,
   files,
+  appSessionId,
 }: {
   parts: readonly EveMessagePart[];
   turnId: string | undefined;
   files: FileLookup;
+  appSessionId?: string | null;
 }) {
   const groups = groupAssistantParts(parts);
 
@@ -227,7 +231,7 @@ function AssistantContent({
           return (
             <Trace key={group.id}>
               {group.parts.map((part) => (
-                <ToolCard key={part.toolCallId} part={part} />
+                <ToolCard appSessionId={appSessionId} key={part.toolCallId} part={part} />
               ))}
             </Trace>
           );
@@ -249,7 +253,15 @@ function AssistantContent({
   );
 }
 
-function MessageRow({ message, files }: { message: EveMessage; files: FileLookup }) {
+function MessageRow({
+  message,
+  files,
+  appSessionId,
+}: {
+  message: EveMessage;
+  files: FileLookup;
+  appSessionId?: string | null;
+}) {
   const align = message.role === "user" ? "end" : "start";
   const text = textOfUserMessage(message);
 
@@ -267,6 +279,7 @@ function MessageRow({ message, files }: { message: EveMessage; files: FileLookup
           </>
         ) : (
           <AssistantContent
+            appSessionId={appSessionId}
             files={files}
             parts={message.parts}
             turnId={message.metadata?.turnId}
@@ -524,6 +537,7 @@ export function ChatView({
   emptyDescription,
   inputDisabled = false,
   ended = false,
+  appSessionId = null,
   messageFiles,
   attachments,
   onSend,
@@ -646,7 +660,7 @@ export function ChatView({
                     scrollAnchor={message.role === "user"}
                   >
                     <div className="flex w-full min-w-0 flex-col gap-3">
-                      <MessageRow files={files} message={message} />
+                      <MessageRow appSessionId={appSessionId} files={files} message={message} />
                       {notices.map((notice, noticeIndex) => (
                         <NoticeRow key={`${message.id}-notice-${noticeIndex}`} notice={notice} />
                       ))}
