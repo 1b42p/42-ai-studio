@@ -14,8 +14,9 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { runningBashJob } from "../sandbox/bash-jobs";
 import { getDb } from "../db/client";
-import { appSessions, bashJobs, sessionEvents } from "../db/schema";
+import { agentSessions, appSessions, bashJobs, sessionEvents } from "../db/schema";
 import { sleep } from "../sleep";
+import { copySessionFromEvent } from "./agent-sessions";
 import { findAppSessionById, hasSessionEvent, setTitleIfEmpty } from "./service";
 
 /** Чтение потока сессии с абсолютного номера события. */
@@ -123,6 +124,16 @@ export async function syncAppSession(
         .insert(sessionEvents)
         .values(rows)
         .onConflictDoNothing({ target: [sessionEvents.appSessionId, sessionEvents.seq] });
+      // Сессия копии агента появляется в базе вместе с событием `agent.started`:
+      // по ней канал проверяет владельца потока копии. `ON CONFLICT DO NOTHING`
+      // делает вставку идемпотентной при повторных синхронизациях.
+      const copies = rows.flatMap((row) => {
+        const copy = copySessionFromEvent(row.payload, appSessionId);
+        return copy === null ? [] : [copy];
+      });
+      if (copies.length > 0) {
+        await tx.insert(agentSessions).values(copies).onConflictDoNothing();
+      }
       // Название — из тех же очищенных нагрузок: `text` в Postgres, как и
       // `jsonb`, не принимает NUL, и сырое событие откатывало бы транзакцию.
       await setTitleIfEmpty(tx, appSessionId, rows.map((row) => row.payload));

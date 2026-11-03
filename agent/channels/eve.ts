@@ -91,7 +91,7 @@ export function studioAuth(): AuthFn<Request> {
       }
     } else if (route.kind === "session") {
       try {
-        await assertEveSessionAccess(user, route.sessionId);
+        await assertEveSessionAccess(user, route.sessionId, route.action);
       } catch (error) {
         forbidden(error);
       }
