@@ -5,34 +5,20 @@ import {
   openConversationInputs,
   type ConversationInput,
   type ConversationState,
-  type EveDynamicToolPart,
-  type EveMessage,
-  type EveMessagePart,
 } from "eve/react";
 import type { UserContent } from "ai";
-import {
-  AlertCircleIcon,
-  BrainIcon,
-  CircleCheckIcon,
-  PaperclipIcon,
-  SquareIcon,
-  VideoIcon,
-} from "lucide-react";
+import { AlertCircleIcon, PaperclipIcon, SquareIcon, VideoIcon } from "lucide-react";
 import { useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 
 import { ChatComposer } from "@/components/studio/chat/chat-composer";
 import type { ChatStatus } from "@/components/studio/chat/chat-status";
-import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
 import type { AttachmentsController } from "@/components/studio/chat/attachments";
-import { MessageAttachments } from "@/components/studio/chat/message-attachments";
 import {
   buildFileLookup,
-  type FileLookup,
   type MessageFilesState,
 } from "@/components/studio/chat/message-files";
-import { ToolCard } from "@/components/studio/chat/tool-card";
+import { MessageRow } from "@/components/studio/chat/message-row";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -44,7 +30,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
-import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -65,17 +50,7 @@ import {
   QuestionnaireTitle,
 } from "@/components/ui/questionnaire";
 import { Spinner } from "@/components/ui/spinner";
-import { messageIdOf } from "@/lib/media/message-id";
 import { cn } from "@/lib/utils";
-import {
-  Trace,
-  TraceCollapsible,
-  TraceCollapsibleContent,
-  TraceCollapsibleTrigger,
-  TraceIcon,
-  TraceLine,
-  TraceTitle,
-} from "@/components/ui/trace";
 
 /** Готовое состояние беседы: компонент не вызывает хук сам. */
 export interface ChatViewAgent {
@@ -112,183 +87,9 @@ export interface ChatViewProps {
   onCancel: () => void | Promise<void>;
 }
 
-type AssistantGroup =
-  | { readonly kind: "reasoning"; readonly id: string; readonly text: string; readonly running: boolean }
-  | {
-      readonly kind: "text";
-      readonly id: string;
-      readonly text: string;
-      readonly streaming: boolean;
-      readonly stepIndex?: number;
-    }
-  | { readonly kind: "tools"; readonly id: string; readonly parts: EveDynamicToolPart[] };
-
 type Notice =
   | { readonly kind: "cancelled" }
   | { readonly kind: "failed"; readonly text: string };
-
-function textOfUserMessage(message: EveMessage): string {
-  return message.parts
-    .filter((part): part is Extract<EveMessagePart, { type: "text" }> => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-}
-
-/**
- * Подряд идущие размышления сливаются в одну строку, подряд идущие вызовы —
- * в один `Trace`. Пустые размышления не показываются.
- */
-function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[] {
-  const groups: AssistantGroup[] = [];
-
-  for (const part of parts) {
-    if (part.type === "text") {
-      if (part.text.trim().length === 0) continue;
-      groups.push({
-        kind: "text",
-        id: part.id ?? `text-${groups.length}`,
-        text: part.text,
-        streaming: part.state === "streaming",
-        stepIndex: part.stepIndex,
-      });
-      continue;
-    }
-
-    if (part.type === "reasoning") {
-      if (part.text.trim().length === 0) continue;
-      const last = groups.at(-1);
-      if (last?.kind === "reasoning") {
-        groups[groups.length - 1] = {
-          ...last,
-          text: last.text + part.text,
-          running: last.running || part.state === "streaming",
-        };
-      } else {
-        groups.push({
-          kind: "reasoning",
-          id: part.id ?? `reasoning-${groups.length}`,
-          text: part.text,
-          running: part.state === "streaming",
-        });
-      }
-      continue;
-    }
-
-    if (part.type === "dynamic-tool") {
-      const last = groups.at(-1);
-      if (last?.kind === "tools") {
-        last.parts.push(part);
-      } else {
-        groups.push({ kind: "tools", id: part.toolCallId, parts: [part] });
-      }
-    }
-  }
-
-  return groups;
-}
-
-function ReasoningRow({ text, running }: { text: string; running: boolean }) {
-  return (
-    <TraceCollapsible defaultOpen={false}>
-      <TraceCollapsibleTrigger>
-        <TraceLine status={running ? "running" : undefined}>
-          <TraceIcon>
-            <BrainIcon />
-          </TraceIcon>
-          <TraceTitle>Размышление</TraceTitle>
-        </TraceLine>
-      </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent className="whitespace-pre-wrap">{text}</TraceCollapsibleContent>
-    </TraceCollapsible>
-  );
-}
-
-function AssistantContent({
-  parts,
-  turnId,
-  files,
-  appSessionId,
-}: {
-  parts: readonly EveMessagePart[];
-  turnId: string | undefined;
-  files: FileLookup;
-  appSessionId?: string | null;
-}) {
-  const groups = groupAssistantParts(parts);
-
-  return (
-    <div className="flex w-full min-w-0 flex-col gap-3">
-      {groups.map((group) => {
-        if (group.kind === "reasoning") {
-          return (
-            <Trace key={group.id}>
-              <ReasoningRow running={group.running} text={group.text} />
-            </Trace>
-          );
-        }
-
-        if (group.kind === "tools") {
-          return (
-            <Trace key={group.id}>
-              {group.parts.map((part) => (
-                <ToolCard appSessionId={appSessionId} key={part.toolCallId} part={part} />
-              ))}
-            </Trace>
-          );
-        }
-
-        // Идентификатор сообщения тот же, что у сервера: `<turnId>:<stepIndex>`.
-        const messageId = messageIdOf(turnId, group.stepIndex);
-
-        return (
-          <ChatMarkdown
-            key={group.id}
-            resolver={files.resolve(messageId)}
-            streaming={group.streaming}
-            text={group.text}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function MessageRow({
-  message,
-  files,
-  appSessionId,
-}: {
-  message: EveMessage;
-  files: FileLookup;
-  appSessionId?: string | null;
-}) {
-  const align = message.role === "user" ? "end" : "start";
-  const text = textOfUserMessage(message);
-
-  return (
-    <Message align={align}>
-      <MessageContent>
-        {message.role === "user" ? (
-          <>
-            {text.trim().length === 0 ? null : (
-              <Bubble align="end" variant="muted">
-                <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
-              </Bubble>
-            )}
-            <MessageAttachments parts={message.parts} />
-          </>
-        ) : (
-          <AssistantContent
-            appSessionId={appSessionId}
-            files={files}
-            parts={message.parts}
-            turnId={message.metadata?.turnId}
-          />
-        )}
-      </MessageContent>
-    </Message>
-  );
-}
 
 function NoticeRow({ notice }: { notice: Notice }) {
   if (notice.kind === "cancelled") {
@@ -559,6 +360,18 @@ export function ChatView({
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
   const canAttach = attachments !== undefined && !disabled;
+  // Панель копии рисуется поверх окна справа: пока она открыта, лента и поле
+  // ввода освобождают её ширину, чтобы прямоугольники не пересекались.
+  const [openCopies, setOpenCopies] = useState<ReadonlySet<string>>(new Set());
+  const copyPanelOpen = openCopies.size > 0;
+  const handleCopyPanelChange = (callId: string, open: boolean) => {
+    setOpenCopies((previous) => {
+      const next = new Set(previous);
+      if (open) next.add(callId);
+      else next.delete(callId);
+      return next;
+    });
+  };
 
   const hasFiles = (event: DragEvent): boolean =>
     event.dataTransfer.types.includes("Files");
@@ -573,7 +386,10 @@ export function ChatView({
 
   return (
     <div
-      className="relative flex h-full min-h-0 flex-col"
+      className={cn(
+        "relative flex h-full min-h-0 flex-col transition-[padding] duration-200",
+        copyPanelOpen && "md:pr-[480px]",
+      )}
       onDragEnter={(event) => {
         if (!canAttach || !hasFiles(event)) return;
         event.preventDefault();
@@ -660,7 +476,13 @@ export function ChatView({
                     scrollAnchor={message.role === "user"}
                   >
                     <div className="flex w-full min-w-0 flex-col gap-3">
-                      <MessageRow appSessionId={appSessionId} files={files} message={message} />
+                      <MessageRow
+                        appSessionId={appSessionId}
+                        data={data}
+                        files={files}
+                        message={message}
+                        onCopyPanelChange={handleCopyPanelChange}
+                      />
                       {notices.map((notice, noticeIndex) => (
                         <NoticeRow key={`${message.id}-notice-${noticeIndex}`} notice={notice} />
                       ))}

@@ -57,6 +57,13 @@
       "when": 1793649503137,
       "tag": "0007_thick_lady_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793729688870,
+      "tag": "0008_dashing_husk",
+      "breakpoints": true
     }
   ]
 }

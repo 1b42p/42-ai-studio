@@ -49,6 +49,7 @@ function ChatWithSession({
 }) {
   const agent = useEveAgent({
     headers: () => ({ "x-studio-session-id": appSessionId }),
+    followSubagents: true,
   });
 
   return (
@@ -77,6 +78,7 @@ function ResumedChatSession({
     initialEvents,
     initialSession: { sessionId: eveSessionId, streamIndex: initialEvents.length },
     resume: true,
+    followSubagents: true,
   });
 
   return (

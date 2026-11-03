@@ -136,6 +136,34 @@ export type AppSession = typeof appSessions.$inferSelect;
 export type NewAppSession = typeof appSessions.$inferInsert;
 export type SessionEvent = typeof sessionEvents.$inferSelect;
 
+/**
+ * Сессия копии агента (#12): встроенный инструмент `agent` открывает дочернюю
+ * сессию eve, и её поток читается теми же учётными данными, что поток корня.
+ * eve владельца не сверяет, поэтому строка нужна проверке доступа в канале.
+ * Появляется синхронизатором событий вместе с `agent.started`.
+ */
+export const agentSessions = pgTable(
+  "agent_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    appSessionId: uuid("app_session_id")
+      .notNull()
+      .references(() => appSessions.id, { onDelete: "cascade" }),
+    /** Идентификатор сессии копии в eve: по нему открывается поток. */
+    eveSessionId: text("eve_session_id").notNull().unique(),
+    /** Задача копии; пусто, если `agent.started` пришёл без неё. */
+    taskId: text("task_id"),
+    /** Вызов, открывший сессию копии. */
+    callId: text("call_id").notNull(),
+    /** Имя агента из `agent.started`. */
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("agent_sessions_app_session_idx").on(table.appSessionId)],
+);
+
+export type AgentSession = typeof agentSessions.$inferSelect;
+
 /** Ключи организации, не данные пользователя. Удаление ключа — мягкое. */
 export const daytonaKeys = pgTable("daytona_keys", {
   id: uuid("id").primaryKey().defaultRandom(),

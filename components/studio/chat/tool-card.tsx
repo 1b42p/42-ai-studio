@@ -1,9 +1,10 @@
 "use client";
 
-import type { EveDynamicToolPart } from "eve/react";
+import type { ConversationState, EveDynamicToolPart } from "eve/react";
 import { WrenchIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
+import { AgentCopyCard } from "@/components/studio/chat/agent-copy-card";
 import { EditFileCard } from "@/components/studio/chat/edit-file-card";
 import { SpeakCard } from "@/components/studio/chat/speak-card";
 import { TerminalCard } from "@/components/studio/chat/terminal-card";
@@ -11,14 +12,21 @@ import { TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 
 export interface ToolCardProps {
   part: EveDynamicToolPart;
+  /** Беседа: карточка копии читает задачи и сессии копий из неё. */
+  data: ConversationState;
   /** Сессия приложения: карточка фоновой команды опрашивает её задание. */
   appSessionId?: string | null;
+  /** Панель копии открыта/закрыта: по этому чат освобождает место справа. */
+  onCopyPanelChange?: (callId: string, open: boolean) => void;
 }
 
 const toolCards: ReadonlyMap<string, ComponentType<ToolCardProps>> = new Map([
   ["bash", TerminalCard],
   ["edit_file", EditFileCard],
   ["speak", SpeakCard],
+  // Встроенная копия корня приходит с `toolName: "eve:subagent:agent"`,
+  // поэтому выбор карточки идёт по `toolMetadata.eve.name`.
+  ["agent", AgentCopyCard],
 ]);
 
 function FallbackToolCard({ part }: ToolCardProps) {
@@ -36,8 +44,20 @@ function FallbackToolCard({ part }: ToolCardProps) {
   );
 }
 
-/** Новые карточки добавляются в сопоставление, неизвестные инструменты сохраняют подпись eve. */
-export function ToolCard({ part, appSessionId }: ToolCardProps) {
-  const Card = toolCards.get(part.toolName) ?? FallbackToolCard;
-  return <Card part={part} appSessionId={appSessionId} />;
+/** Карточка вызова: имя инструмента берётся из метаданных eve, затем из части. */
+export function ToolCard({ part, data, appSessionId, onCopyPanelChange }: ToolCardProps) {
+  // У загрузки навыка `name` — имя навыка, а не инструмент: карточку не ищем.
+  const name =
+    part.toolMetadata?.eve?.kind === "load-skill"
+      ? part.toolName
+      : (part.toolMetadata?.eve?.name ?? part.toolName);
+  const Card = toolCards.get(name) ?? FallbackToolCard;
+  return (
+    <Card
+      appSessionId={appSessionId}
+      data={data}
+      onCopyPanelChange={onCopyPanelChange}
+      part={part}
+    />
+  );
 }
