@@ -182,7 +182,7 @@ npx shadcn@latest mcp init --client claude   # подключить MCP-серв
 - S3 — любой S3-совместимый провайдер, Node-совместимый клиент.
 - Postgres — внешний; схема и миграции в репозитории; Node-совместимый клиент.
 - Видео — Remotion в песочнице. Образ описывает `agent/sandbox/Dockerfile`: Python 3.12, Node 24 (NodeSource `setup_24.x`), библиотеки Chrome, шрифты кириллицы и эмодзи, шаблон Remotion 4.0.538 в `/opt/remotion` с Chrome Headless Shell (`npx remotion browser ensure` при сборке). Команды образа — `sandbox-vcpu` (квота vCPU) и `sandbox-selfcheck` (версии, браузер, русский шрифт, кадр `Main`, не дольше 60 с). Новый проект — копия шаблона и ссылка `node_modules` на `/opt/remotion/node_modules`. Проверка: собрать песочницу из этого Dockerfile (`daytona create --dockerfile agent/sandbox/Dockerfile --cpu 2 --memory 4`) и выполнить `sandbox-selfcheck`. Остальное агент ставит сам из PyPI и npm.
-- Озвучка — серверный инструмент на Edge TTS (MP3/WebM и word boundaries для субтитров); при отказе агент сам ставит Piper.
+- Озвучка — серверные инструменты `speak` и `list_voices` (`agent/tools/`, `@andresaya/edge-tts` 1.9.1). Формат только `audio-24khz-96kbitrate-mono-mp3`: длительность считается по размеру файла и 96 кбит/с. `speak` пишет в песочницу `<путь>.mp3` и `<путь>.words.json` (версия 1: слова и предложения в миллисекундах от начала файла, знаки препинания возвращены к единицам речи сервиса, `sentences[].endMs` включает паузу до следующего предложения) и публикует только аудио через `publishToolMedia` (строка `tool_call_media`, объект S3 вида `tool-media`). Между вызовами `speak` одной сессии — пауза 6 с, иначе сервис часто отвечает 429; внутри вызова до трёх попыток с паузами 1 с и 4 с. Адреса сервиса — необязательные `EDGE_TTS_WSS_URL` и `EDGE_TTS_VOICES_URL` (пусто — адреса библиотеки). При окончательном `speak_unavailable` и повторном `speak_rate_limited` агент сам ставит Piper в песочнице (`piper-tts` 1.8.0, русский голос medium) и озвучивает им; потоки ONNX равны квоте vCPU песочницы, а не `nproc`. Остальные ошибки `speak` так не заменяются.
 - Поиск в вебе и скачивание видео — серверные инструменты, а не песочница.
 - Готовое видео — в S3; ссылка на просмотр и скачивание временная, создаётся заново при открытии страницы, доступ только владельцу.
 - Песочница по умолчанию 2 vCPU и 4 ГБ: на 2 ГБ рендер Remotion падает по памяти. Ресурсы Daytona задаются только при создании из образа, не из готового снапшота; в CLI `--memory` в гигабайтах.
@@ -271,6 +271,7 @@ u/<user_id>/s/<app_session_id>/<вид>/<uuid>/<имя файла>
 | `loginAs(user, options?)` | вставляет строку `auth_sessions` с известным токеном и возвращает `studio_session=<токен>`; `options.expired: true` создаёт просроченную сессию |
 | `loginViaTelegram(profile?, { next }?)` | задаёт профиль через `telegramStub`, проходит редиректы начала входа, издателя и callback; возвращает `{ steps, cookie, user }`, callback — `steps[2]` |
 | `telegramStub` | управляет тестовым издателем: `setProfile(profile)`, `tamper(kind)`, `authorize("approve" \| "deny")`, `reset()` (вызывать в `beforeEach`), `lastIssued()` |
+| `edgeTtsStub` | тестовый Edge TTS (`tests/http/support/edge-tts.ts`): `setMode(mode, count?)`, `calls()` (рукопожатия, тексты, запросы списка голосов), `reset()` в `beforeEach`. Режимы: `ok`, `rate_limit`, `fail`, `no_boundaries`, `close_1007`, `forbidden`. Сервер `tests/http/support/edge-tts-server.ts` поднимает глобальная подготовка; `HEAD /` отдаёт корректный `Date`, чтобы библиотека не повторяла рукопожатие из-за часов |
 | тестовый издатель OIDC | `tests/http/support/oidc-issuer.ts` слушает порт из `TELEGRAM_OIDC_ISSUER`, поднимается глобальной подготовкой один раз; `/auth` и одноразовый `/token` проверяют Basic, redirect URI и PKCE; JWT и nonce проверяются по-настоящему. Состояние меняется через `POST /__control` только с loopback |
 | `db()` | клиент Drizzle к тестовой базе (клиент приложения, один пул на процесс воркера; после файла закрывается) |
 | `resetDatabase()` | `TRUNCATE … CASCADE` всех таблиц схемы `public`, кроме служебных таблиц drizzle; вызывается автоматически перед каждым тестовым файлом (`setupFiles`). `TRUNCATE` повторяется, если Postgres выбрал его жертвой взаимной блокировки с записью события хода из процесса eve |
@@ -306,6 +307,7 @@ u/<user_id>/s/<app_session_id>/<вид>/<uuid>/<имя файла>
 | 55432 | Postgres из `compose.yaml` |
 | 59000 | хранилище S3 из `compose.yaml` |
 | 59100–59299 | заглушки внешних сервисов в HTTP-тестах |
+| 59101 | тестовый сервер Edge TTS (`EDGE_TTS_WSS_URL`, `EDGE_TTS_VOICES_URL`) |
 
 ## Проверка
 

@@ -107,6 +107,10 @@ export interface AppConfig {
   readonly tavilyApiUrl: string;
   /** Абсолютный путь; обязателен только в тестовом режиме. */
   readonly fakeSandboxDir: string | undefined;
+  /** WebSocket синтеза Edge TTS. Пусто — адрес библиотеки. */
+  readonly edgeTtsWssUrl: string | undefined;
+  /** Список голосов Edge TTS. Пусто — адрес библиотеки. */
+  readonly edgeTtsVoicesUrl: string | undefined;
 }
 
 /** Значение из `.env.example`: в production не годится в качестве секрета. */
@@ -244,6 +248,15 @@ const envSchema = z.object({
     .refine((value) => !value.endsWith("/"), "не должен заканчиваться на /")
     .optional()
     .default("https://api.tavily.com"),
+  EDGE_TTS_WSS_URL: envUrl
+    .refine((value) => {
+      const protocol = new URL(value).protocol;
+      return protocol === "ws:" || protocol === "wss:";
+    }, "ожидается URL с ws:// или wss://")
+    .optional(),
+  EDGE_TTS_VOICES_URL: envUrl
+    .refine((value) => /^https?:\/\//.test(value), "ожидается URL с http:// или https://")
+    .optional(),
 });
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -386,6 +399,8 @@ export function parseConfig(env: EnvRecord): AppConfig {
     tavilyApiKey: data.TAVILY_API_KEY,
     tavilyApiUrl: data.TAVILY_API_URL,
     fakeSandboxDir: data.FAKE_SANDBOX_DIR === undefined ? undefined : resolve(data.FAKE_SANDBOX_DIR),
+    edgeTtsWssUrl: data.EDGE_TTS_WSS_URL,
+    edgeTtsVoicesUrl: data.EDGE_TTS_VOICES_URL,
   };
 }
 
