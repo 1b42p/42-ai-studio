@@ -79,8 +79,36 @@ npm run daytona:add-key -- основной < /путь/к/файлу-с-клю�
 после ручных прогонов их удаляют командой
 `npm run daytona:cleanup -- <appSessionId>` (или `-- --all`). Удаление строки
 `sandboxes` или пользователя машину в Daytona не удаляет.
-Команды работают от root; образ пока содержит Python и системные утилиты,
-а Node, Remotion и Chromium добавляются отдельно.
+Команды работают от root. Образ `agent/sandbox/Dockerfile` содержит Python 3.12,
+Node 24, библиотеки Chrome, шрифты с кириллицей и эмодзи и шаблон Remotion
+4.0.538 в `/opt/remotion`. Chrome Headless Shell ставится при сборке командой
+`npx remotion browser ensure` и лежит в `/opt/remotion/node_modules/.remotion`.
+В образ входят `sandbox-vcpu` (число vCPU по квоте cgroup) и `sandbox-selfcheck`
+(версии Node, Python и Remotion, запуск браузера, русский шрифт, один кадр
+композиции `Main`). Новый проект собирается копированием шаблона и ссылкой
+`node_modules` на `/opt/remotion/node_modules`.
+
+Документацию и страницы агент читает инструментом `read_page` на сервере
+приложения: песочница до обычных сайтов не ходит. Поиск — `web_search` через
+Tavily (`TAVILY_API_KEY`, необязательный `TAVILY_API_URL`). Без ключа сервер
+стартует, а поиск сообщает, что он не настроен; имена страниц Remotion тогда
+берутся из `https://www.remotion.dev/llms.txt`. Адреса внутренней сети,
+служебные IP и ссылки с логином `read_page` не открывает.
+
+Навыки Remotion ставятся из того же тега, что и `ARG REMOTION_VERSION`:
+
+```bash
+npx skills add https://github.com/remotion-dev/remotion/tree/v4.0.538/packages/skills --skill remotion-create remotion-docs remotion-markup remotion-multimedia remotion-render remotion-captions remotion-interactivity --subagent root -y
+```
+
+Образ проверяется созданием песочницы и командой `sandbox-selfcheck`:
+
+```bash
+daytona create --dockerfile agent/sandbox/Dockerfile --cpu 2 --memory 4 --name studio-image-check
+```
+
+`--memory` задаётся в гигабайтах. Повторное создание берёт кэш декларативного
+образа: Daytona держит его на раннере 24 часа.
 
 При сборке `prepare` собирает workspace и навыки в JSON-артефакт через
 `ctx.populate`, без Daytona и базы. При создании песочницы файлы доставляются
@@ -99,8 +127,6 @@ npm, PyPI, GitHub и Hugging Face. Произвольные сайты и YouTub
 сообщение восстанавливает ту же песочницу с файлами в `/workspace` и `/tmp`.
 В Daytona на сессию приходится одна песочница. Неверный ключ даёт
 `sandbox_create_failed` с русским сообщением без значения ключа.
-Холодное создание образа занимает десятки секунд, тёплое — около секунды;
-Daytona кэширует декларативные образы на раннере на 24 часа.
 
 ## Фоновые команды
 

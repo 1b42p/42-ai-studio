@@ -115,6 +115,55 @@
       "skillPath": "skills/engineering/prototype/SKILL.md",
       "computedHash": "d3fc74689bd993e39c44bfae510d014eecffbeec2922764b065377fd1327c0f6"
     },
+    "remotion-captions": {
+      "source": "remotion-dev/remotion",
+      "ref": "v4.0.538",
+      "sourceType": "github",
+      "skillPath": "packages/skills/skills/remotion-captions/SKILL.md",
+      "computedHash": "48b5b573250a02ec4cb7efc5252d390acff655df80fad473f294fb5cfd4b2041"
+    },
+    "remotion-create": {
+      "source": "remotion-dev/remotion",
+      "ref": "v4.0.538",
+      "sourceType": "github",
+      "skillPath": "packages/skills/skills/remotion-create/SKILL.md",
+      "computedHash": "a1fcc682b426a7d8cab64fe83d2588322d807d61c4beffc95b9f5a34dbdf2b20"
+    },
+    "remotion-docs": {
+      "source": "remotion-dev/remotion",
+      "ref": "v4.0.538",
+      "sourceType": "github",
+      "skillPath": "packages/skills/skills/remotion-docs/SKILL.md",
+      "computedHash": "9de39b801d87a5a2daf954c6c25e3775419f1294273ec79ef3e1e5b60a133c29"
+    },
+    "remotion-interactivity": {
+      "source": "remotion-dev/remotion",
+      "ref": "v4.0.538",
+      "sourceType": "github",
+      "skillPath": "packages/skills/skills/remotion-interactivity/SKILL.md",
+      "computedHash": "bb726e709011370e177201afa242fc306c58b2b41341a44ba50040b24c7e2911"
+    },
+    "remotion-markup": {
+      "source": "remotion-dev/remotion",
+      "ref": "v4.0.538",
+      "sourceType": "github",
+      "skillPath": "packages/skills/skills/remotion-markup/SKILL.md",
+      "computedHash": "f7d6d3fdef2dea27fe11cb7f2be93d09bf0584099797333c450eb954ee39d6b1"
+    },
+    "remotion-multimedia": {
+      "source": "remotion-dev/remotion",
+      "ref": "v4.0.538",
+      "sourceType": "github",
+      "skillPath": "packages/skills/skills/remotion-multimedia/SKILL.md",
+      "computedHash": "e3f6b9bae7cd6792897d1acbb0b7efb45e197cee290c57135cfe470478b83fdc"
+    },
+    "remotion-render": {
+      "source": "remotion-dev/remotion",
+      "ref": "v4.0.538",
+      "sourceType": "github",
+      "skillPath": "packages/skills/skills/remotion-render/SKILL.md",
+      "computedHash": "48222eabed23301c8fbfd01bcd48fb0a439fa1a4217a5f2d48076fecf9ab9ac2"
+    },
     "research": {
       "source": "mattpocock/skills",
       "sourceType": "github",
