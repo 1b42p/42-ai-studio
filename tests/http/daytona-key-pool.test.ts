@@ -209,6 +209,27 @@ describe("выбор ключа по свободной квоте", () => {
     expect(broken).toMatchObject({ source: "error", error: "unexpected", cpu: first?.cpu });
   }, 60_000);
 
+  test("резерв на замену очищает старый id машины", async () => {
+    const a = await createDaytonaKey({ apiKey: KEY_A });
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    await db().insert(sandboxes).values({
+      appSessionId: id,
+      daytonaKeyId: a.id,
+      daytonaSandboxId: "old-machine-id",
+      state: "gone",
+      lastActiveAt: new Date(),
+    });
+
+    const picked = await pickKey(ONE_SLOT, { appSessionId: id });
+    expect(picked.kind).toBe("key");
+    expect(await sandboxRow(id)).toMatchObject({
+      daytonaKeyId: a.id,
+      daytonaSandboxId: "",
+      state: "starting",
+    });
+  });
+
   test("два выбора подряд в пределах 30 секунд дают один запрос использования", async () => {
     const a = await createDaytonaKey({ apiKey: KEY_A });
     await fakeSandbox.setQuota(KEY_A, { cpu: 10, memoryGb: 20, diskGb: 30 });

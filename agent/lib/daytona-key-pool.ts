@@ -240,6 +240,7 @@ export async function pickKey(
           values (${options.appSessionId}, ${row.id}, '', 'starting', now(), 'create', now())
           on conflict (app_session_id) do update set
             daytona_key_id = excluded.daytona_key_id,
+            daytona_sandbox_id = '',
             state = 'starting',
             starting_since = excluded.starting_since,
             starting_kind = excluded.starting_kind,
@@ -383,7 +384,27 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
     return { remaining: remaining + targets.size };
   }
 
+  // Строку могли уже занять новой песочницей и ключом, пока удаление шло по
+  // сети: отмечаем `gone` только ту же пару «ключ + машина».
+  const markGone = async (rowIds: string[], sandboxId: string): Promise<void> => {
+    if (rowIds.length === 0) return;
+    await db
+      .update(sandboxes)
+      .set({ state: "gone" })
+      .where(and(
+        inArray(sandboxes.id, rowIds),
+        eq(sandboxes.daytonaKeyId, keyId),
+        eq(sandboxes.daytonaSandboxId, sandboxId),
+      ));
+  };
+
   for (const [sandboxId, rowIds] of targets) {
+    // Идентификатор запоминается до сетевого удаления: падение процесса
+    // между запросом и подтверждением не потеряет машину.
+    await db
+      .insert(pendingSandboxDeletions)
+      .values({ daytonaKeyId: keyId, daytonaSandboxId: sandboxId })
+      .onConflictDoNothing();
     try {
       const machine = await backend.get(sandboxId);
       await machine.delete();
@@ -393,9 +414,7 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
           eq(pendingSandboxDeletions.daytonaKeyId, keyId),
           eq(pendingSandboxDeletions.daytonaSandboxId, sandboxId),
         ));
-      if (rowIds.length > 0) {
-        await db.update(sandboxes).set({ state: "gone" }).where(inArray(sandboxes.id, rowIds));
-      }
+      await markGone(rowIds, sandboxId);
     } catch (error) {
       if (isMissingSandbox(error)) {
         await db
@@ -404,14 +423,8 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
             eq(pendingSandboxDeletions.daytonaKeyId, keyId),
             eq(pendingSandboxDeletions.daytonaSandboxId, sandboxId),
           ));
-        if (rowIds.length > 0) {
-          await db.update(sandboxes).set({ state: "gone" }).where(inArray(sandboxes.id, rowIds));
-        }
+        await markGone(rowIds, sandboxId);
       } else {
-        await db
-          .insert(pendingSandboxDeletions)
-          .values({ daytonaKeyId: keyId, daytonaSandboxId: sandboxId })
-          .onConflictDoNothing();
         remaining += 1;
       }
     }
