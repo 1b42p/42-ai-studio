@@ -55,11 +55,11 @@ Python-библиотеку со своими потоками (ONNX Runtime у 
 
 ## Приоритет
 
-Если официальный навык Remotion расходится с этим навыком, действует этот навык. Для проверочных кадров действует `frame-review`. Ссылки официальных навыков на «Remotion Best Practices» пропускай. Нужные навыки загружай по именам: `remotion-create`, `remotion-docs`, `remotion-markup`, `remotion-multimedia`, `remotion-render`, `remotion-captions`.
+Если официальный навык Remotion расходится с этим навыком, действует этот навык. Для проверочных кадров действует `frame-review`. Ссылки официальных навыков на «Remotion Best Practices» пропускай: каталога `remotion-best-practices` нет. Перед разметкой прочитай `remotion-interactivity/timeline-structure.md`: навык установлен, и ссылки `remotion-markup` на него открываются. Транскрибацию Whisper из `transcribe-captions.md` и пакет `@remotion/whisper-webgpu` не выполняй: субтитры строятся из таймингов озвучки. Нужные навыки загружай по именам: `remotion-create`, `remotion-docs`, `remotion-markup`, `remotion-multimedia`, `remotion-render`, `remotion-captions`, `remotion-interactivity`.
 
 ## Документация
 
-Страницу Remotion читай серверным `read_page` по адресу `https://www.remotion.dev/docs/<страница>.md`. Имя страницы ищи `web_search`. Если адрес с суффиксом `.md` отвечает 404, читай ту же страницу без `.md`. Запрос к Algolia из `remotion-docs` и `curl` на `remotion.dev` не используй. Файл `basic-captions.tsx` бери тем же способом: `https://www.remotion.dev/elements/captions/basic-captions.md`.
+Страницу Remotion читай серверным `read_page` по адресу `https://www.remotion.dev/docs/<страница>.md`. Имя страницы ищи `web_search`. Если поиск отвечает, что ключ не задан, открой тем же `read_page` путеводитель `https://www.remotion.dev/llms.txt` и `https://www.remotion.dev/sitemap.xml`. Если адрес с суффиксом `.md` отвечает 404, читай ту же страницу без `.md`. Запрос к Algolia из `remotion-docs` и `curl` на `remotion.dev` не используй. Файл `basic-captions.tsx` бери тем же способом: `https://www.remotion.dev/elements/captions/basic-captions.md`.
 
 ## Python
 

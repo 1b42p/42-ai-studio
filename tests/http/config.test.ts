@@ -174,6 +174,14 @@ describe("parseConfig: песочница и секреты", () => {
   });
 
   test("UPLOAD_MAX_BYTES: по умолчанию 256 МиБ, не больше 5 ГиБ", () => {
+    expect(parseConfig(validEnv()).tavilyApiKey).toBeUndefined();
+    expect(parseConfig(validEnv()).tavilyApiUrl).toBe("https://api.tavily.com");
+    expect(parseConfig({ ...validEnv(), TAVILY_API_URL: "http://127.0.0.1:59102" }).tavilyApiUrl).toBe(
+      "http://127.0.0.1:59102",
+    );
+    expect(issuesOf({ ...validEnv(), APP_TEST_MODE: "0", AGENT_MODEL: "test-model", TAVILY_API_URL: "http://example.com" }).join("\n")).toContain(
+      "TAVILY_API_URL",
+    );
     expect(parseConfig(validEnv()).uploadMaxBytes).toBe(268_435_456);
     expect(parseConfig({ ...validEnv(), UPLOAD_MAX_BYTES: "1048576" }).uploadMaxBytes).toBe(
       1_048_576,

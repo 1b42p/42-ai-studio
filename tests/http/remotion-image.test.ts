@@ -36,6 +36,7 @@ const REMOTION_SKILLS = [
   "remotion-multimedia",
   "remotion-render",
   "remotion-captions",
+  "remotion-interactivity",
 ] as const;
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -145,6 +146,10 @@ test("навык sandbox-environment описывает среду песочн�
     "frame-review",
     "read_page",
     "web_search",
+    "llms.txt",
+    "remotion-interactivity",
+    "timeline-structure.md",
+    "Whisper",
     "basic-captions",
     "Algolia",
     "pip install",
@@ -164,6 +169,8 @@ test("инструкции агента содержат правила песо
   expect(instructions).toContain("встраивается");
   expect(instructions).toContain("серверными инструментами");
   expect(instructions).toContain("командой `bash`");
+  expect(instructions).toContain("read_page");
+  expect(instructions).toContain("web_search");
   expect(instructions).toContain("Файлы в ответе");
   expect(instructions).toContain("Правки файлов");
   expect(instructions).toContain("out/final.mp4");

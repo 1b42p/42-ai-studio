@@ -101,6 +101,10 @@ export interface AppConfig {
   readonly mediaCopyMaxBytes: number;
   /** Предельный размер одного загружаемого файла, байты. */
   readonly uploadMaxBytes: number;
+  /** Ключ Tavily. Без него сервер стартует, а `web_search` отвечает, что поиск не настроен. */
+  readonly tavilyApiKey: string | undefined;
+  /** Базовый адрес API Tavily без завершающего «/». */
+  readonly tavilyApiUrl: string;
   /** Абсолютный путь; обязателен только в тестовом режиме. */
   readonly fakeSandboxDir: string | undefined;
 }
@@ -235,6 +239,11 @@ const envSchema = z.object({
     })
     .optional()
     .default("high"),
+  TAVILY_API_KEY: envString.optional(),
+  TAVILY_API_URL: envUrl
+    .refine((value) => !value.endsWith("/"), "не должен заканчиваться на /")
+    .optional()
+    .default("https://api.tavily.com"),
 });
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -326,6 +335,10 @@ export function parseConfig(env: EnvRecord): AppConfig {
       addIssue("AGENT_MODEL", "обязательна вне APP_TEST_MODE=1");
     }
 
+    if (!data.APP_TEST_MODE && data.TAVILY_API_URL.startsWith("http://")) {
+      addIssue("TAVILY_API_URL", "адрес должен быть https:// вне APP_TEST_MODE=1");
+    }
+
     if (data.AGENT_MODEL_BASE_URL !== undefined) {
       if (data.AGENT_MODEL_API_KEY === undefined) {
         addIssue("AGENT_MODEL_API_KEY", "нужна вместе с AGENT_MODEL_BASE_URL");
@@ -370,6 +383,8 @@ export function parseConfig(env: EnvRecord): AppConfig {
     sandboxDiskGb: data.SANDBOX_DISK_GB,
     mediaCopyMaxBytes: data.MEDIA_COPY_MAX_BYTES,
     uploadMaxBytes: data.UPLOAD_MAX_BYTES,
+    tavilyApiKey: data.TAVILY_API_KEY,
+    tavilyApiUrl: data.TAVILY_API_URL,
     fakeSandboxDir: data.FAKE_SANDBOX_DIR === undefined ? undefined : resolve(data.FAKE_SANDBOX_DIR),
   };
 }

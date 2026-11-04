@@ -83,10 +83,17 @@ Node 24, библиотеки Chrome, шрифты с кириллицей и э
 композиции `Main`). Новый проект собирается копированием шаблона и ссылкой
 `node_modules` на `/opt/remotion/node_modules`.
 
+Документацию и страницы агент читает инструментом `read_page` на сервере
+приложения: песочница до обычных сайтов не ходит. Поиск — `web_search` через
+Tavily (`TAVILY_API_KEY`, необязательный `TAVILY_API_URL`). Без ключа сервер
+стартует, а поиск сообщает, что он не настроен; имена страниц Remotion тогда
+берутся из `https://www.remotion.dev/llms.txt`. Адреса внутренней сети,
+служебные IP и ссылки с логином `read_page` не открывает.
+
 Навыки Remotion ставятся из того же тега, что и `ARG REMOTION_VERSION`:
 
 ```bash
-npx skills add https://github.com/remotion-dev/remotion/tree/v4.0.538/packages/skills --skill remotion-create remotion-docs remotion-markup remotion-multimedia remotion-render remotion-captions --subagent root -y
+npx skills add https://github.com/remotion-dev/remotion/tree/v4.0.538/packages/skills --skill remotion-create remotion-docs remotion-markup remotion-multimedia remotion-render remotion-captions remotion-interactivity --subagent root -y
 ```
 
 Образ проверяется созданием песочницы и командой `sandbox-selfcheck`:

@@ -136,6 +136,13 @@
       "skillPath": "packages/skills/skills/remotion-docs/SKILL.md",
       "computedHash": "9de39b801d87a5a2daf954c6c25e3775419f1294273ec79ef3e1e5b60a133c29"
     },
+    "remotion-interactivity": {
+      "source": "remotion-dev/remotion",
+      "ref": "v4.0.538",
+      "sourceType": "github",
+      "skillPath": "packages/skills/skills/remotion-interactivity/SKILL.md",
+      "computedHash": "bb726e709011370e177201afa242fc306c58b2b41341a44ba50040b24c7e2911"
+    },
     "remotion-markup": {
       "source": "remotion-dev/remotion",
       "ref": "v4.0.538",
