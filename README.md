@@ -94,13 +94,13 @@ npm run daytona:add-key -- основной < /путь/к/файлу-с-клю�
 ```json
 {
   "source": "daytona",
-  "fetchedAt": "2026-11-04T12:00:00.000Z",
+  "fetchedAt": "2026-11-04T19:38:35.751Z",
   "organizationId": "organization-id",
-  "region": "us-east-1",
-  "cpu": { "used": 2, "quota": 10 },
-  "memoryGb": { "used": 4, "quota": 20 },
-  "diskGb": { "used": 8, "quota": 30 },
-  "maxPerSandbox": { "cpu": 4, "memoryGb": 8, "diskGb": 10 },
+  "region": "eu",
+  "cpu": { "used": 6, "quota": 10 },
+  "memoryGb": { "used": 9, "quota": 10 },
+  "diskGb": { "used": 30, "quota": 30 },
+  "maxPerSandbox": null,
   "error": null
 }
 ```
