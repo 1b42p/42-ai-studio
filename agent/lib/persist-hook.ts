@@ -14,6 +14,7 @@
  *   приложения корня (#12).
  */
 import type { HookContext, HookEvent, StreamEventHook } from "eve/hooks";
+import { isEvalPrincipal } from "./eval-auth";
 
 import {
   BOUNDARY_EVENTS,
@@ -105,6 +106,8 @@ export function createPersistEventHandler(
   deps: PersistDependencies = defaultPersistDependencies,
 ): StreamEventHook<HookEvent> {
   return async (event, ctx) => {
+    if (isEvalPrincipal(ctx.session.auth.initiator)) return;
+
     if (ctx.session.parent !== undefined) {
       // Копия агента: её поток в поток корня не попадает, но фоновое задание
       // `bash` должно быть видно карточке панели копии — пишем его в сессию

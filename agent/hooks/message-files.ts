@@ -7,6 +7,7 @@
  * `copying` и доделывается в фоне того же процесса.
  */
 import { defineHook } from "eve/hooks";
+import { isEvalPrincipal } from "../lib/eval-auth";
 
 import { loadConfig } from "@/lib/config";
 import { HOOK_COPY_BUDGET_MS } from "@/lib/media/files";
@@ -36,6 +37,7 @@ export default defineHook({
     async "message.completed"(event, ctx) {
       // Копии агента (#12) показывает корневой агент в своём ответе.
       if (ctx.session.parent !== undefined) return;
+      if (isEvalPrincipal(ctx.session.auth.initiator)) return;
 
       const data = event.data as MessageCompletedData;
       if (typeof data.message !== "string" || data.message.length === 0) return;

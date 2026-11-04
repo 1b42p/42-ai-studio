@@ -4,7 +4,7 @@
 import { describe, expect, test } from "vitest";
 import { resolve } from "node:path";
 
-import { ConfigError, parseConfig, type EnvRecord } from "../../lib/config";
+import { ConfigError, parseConfig, parseEvalJudgeConfig, type EnvRecord } from "../../lib/config";
 
 /** Полный набор корректных переменных для перекрытия в отдельных тестах. */
 function validEnv(): EnvRecord {
@@ -64,6 +64,18 @@ describe("parseConfig", () => {
 
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain("APP_TEST_MODE");
+  });
+
+  test("среда оценок закрыта по умолчанию, требует локальный адрес и токен", () => {
+    expect(parseConfig(validEnv()).appEvalMode).toBe(false);
+    expect(issuesOf({ ...validEnv(), APP_EVAL_MODE: "1" }).join()).toContain("EVE_EVAL_AUTH_TOKEN");
+    const env = { ...validEnv(), APP_TEST_MODE: "0", AGENT_MODEL: "test/model", APP_EVAL_MODE: "1", EVE_EVAL_AUTH_TOKEN: "eval-only-token-0123456789abcdef" };
+    expect(parseConfig(env).appEvalMode).toBe(true);
+    expect(issuesOf({ ...env, NODE_ENV: "production" }).join()).toContain("APP_EVAL_MODE");
+    expect(issuesOf({ ...env, APP_URL: "https://example.com" }).join()).toContain("APP_URL");
+    expect(issuesOf({ ...env, EVE_EVAL_AUTH_TOKEN: "short" }).join()).toContain("EVE_EVAL_AUTH_TOKEN");
+    // Фикстурная модель проверяет тот же HTTP-контракт eval, без внешнего LLM.
+    expect(parseConfig({ ...env, APP_TEST_MODE: "1" }).appEvalMode).toBe(true);
   });
 
   test("отсутствующая обязательная переменная называется в ошибке", () => {
@@ -149,6 +161,39 @@ describe("parseConfig", () => {
   });
 });
 
+describe("конфигурация судьи eve eval", () => {
+  test("не требует конфигурации приложения и оставляет выбор модели eve", () => {
+    expect(parseEvalJudgeConfig({})).toEqual({
+      model: undefined, baseUrl: undefined, apiKey: undefined,
+    });
+    expect(parseEvalJudgeConfig({
+      EVAL_JUDGE_MODEL: "   ", DATABASE_URL: "not-a-url", SESSION_SECRET: "short",
+    }).model).toBeUndefined();
+  });
+
+  test("читает отдельную модель судьи и совместимого провайдера без окна контекста агента", () => {
+    expect(parseEvalJudgeConfig({
+      EVAL_JUDGE_MODEL: "  judge/model  ",
+      AGENT_MODEL_BASE_URL: "  https://api.example.com/v1  ",
+      AGENT_MODEL_API_KEY: "judge-test-key",
+    })).toEqual({
+      model: "judge/model", baseUrl: "https://api.example.com/v1", apiKey: "judge-test-key",
+    });
+    expect(parseEvalJudgeConfig({ EVAL_JUDGE_MODEL: "typesafe-ai/jev" }).model).toBe("typesafe-ai/jev");
+    expect(parseConfig({ ...validEnv(), EVAL_JUDGE_MODEL: "judge/model" }).evalJudgeModel).toBe("judge/model");
+  });
+
+  test("совместимый провайдер требует ключ только при выбранном судье", () => {
+    expect(() => parseEvalJudgeConfig({
+      EVAL_JUDGE_MODEL: "judge/model", AGENT_MODEL_BASE_URL: "https://api.example.com/v1",
+    })).toThrow("AGENT_MODEL_API_KEY");
+    expect(() => parseEvalJudgeConfig({
+      EVAL_JUDGE_MODEL: "judge/model", AGENT_MODEL_BASE_URL: "not-a-url",
+    })).toThrow("AGENT_MODEL_BASE_URL");
+    expect(() => parseEvalJudgeConfig({ AGENT_MODEL_BASE_URL: "https://api.example.com/v1" })).not.toThrow();
+  });
+});
+
 describe("parseConfig: песочница и секреты", () => {
   test("параметры Daytona получают безопасные значения по умолчанию", () => {
     const config = parseConfig(validEnv());
@@ -174,14 +219,6 @@ describe("parseConfig: песочница и секреты", () => {
   });
 
   test("UPLOAD_MAX_BYTES: по умолчанию 256 МиБ, не больше 5 ГиБ", () => {
-    expect(parseConfig(validEnv()).tavilyApiKey).toBeUndefined();
-    expect(parseConfig(validEnv()).tavilyApiUrl).toBe("https://api.tavily.com");
-    expect(parseConfig({ ...validEnv(), TAVILY_API_URL: "http://127.0.0.1:59102" }).tavilyApiUrl).toBe(
-      "http://127.0.0.1:59102",
-    );
-    expect(issuesOf({ ...validEnv(), APP_TEST_MODE: "0", AGENT_MODEL: "test-model", TAVILY_API_URL: "http://example.com" }).join("\n")).toContain(
-      "TAVILY_API_URL",
-    );
     expect(parseConfig(validEnv()).uploadMaxBytes).toBe(268_435_456);
     expect(parseConfig({ ...validEnv(), UPLOAD_MAX_BYTES: "1048576" }).uploadMaxBytes).toBe(
       1_048_576,
@@ -219,6 +256,22 @@ describe("parseConfig: песочница и секреты", () => {
     ["DAYTONA_API_URL", "not-url"], ["DAYTONA_API_URL", "ftp://example.com"],
   ])("неверное ограничение %s=%s отвергается", (name, value) => {
     expect(issuesOf({ ...validEnv(), [name]: value })[0]).toContain(name);
+  });
+});
+
+describe("parseConfig: Tavily", () => {
+  test("ключ необязателен, адрес по умолчанию https://api.tavily.com", () => {
+    expect(parseConfig(validEnv())).toMatchObject({ tavilyApiKey: undefined, tavilyApiUrl: "https://api.tavily.com" });
+    expect(parseConfig({ ...validEnv(), TAVILY_API_KEY: "" }).tavilyApiKey).toBeUndefined();
+    expect(parseConfig({ ...validEnv(), TAVILY_API_KEY: "tvly-test-key", TAVILY_API_URL: "http://127.0.0.1:59102" })).toMatchObject({
+      tavilyApiKey: "tvly-test-key", tavilyApiUrl: "http://127.0.0.1:59102",
+    });
+  });
+  test.each(["http://example.com", "ftp://example.com", "https://api.tavily.com/", "not-url"])("небезопасный адрес %s называет переменную", (url) => {
+    expect(issuesOf({ ...productionEnv(), TAVILY_API_URL: url }).join("\n")).toContain("TAVILY_API_URL");
+  });
+  test("в тестовом режиме разрешён HTTP, но не произвольная схема", () => {
+    expect(issuesOf({ ...validEnv(), TAVILY_API_URL: "ftp://example.com" }).join("\n")).toContain("TAVILY_API_URL");
   });
 });
 
