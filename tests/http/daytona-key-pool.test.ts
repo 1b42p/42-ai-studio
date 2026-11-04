@@ -3,7 +3,7 @@
  * фиктивный слой вместо настоящей Daytona. Точечные операции проверяются
  * в процессе теста: HTTP-маршруты для них делает админка (#32).
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { MessageStreamEvent } from "eve/client";
@@ -19,9 +19,17 @@ import {
 } from "../../agent/lib/daytona-key-pool";
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
 import { loadConfig } from "../../lib/config";
-import { appSessions, daytonaKeys, sandboxes, type DaytonaKey, type User } from "../../lib/db/schema";
+import {
+  appSessions,
+  daytonaKeys,
+  pendingSandboxDeletions,
+  sandboxes,
+  type DaytonaKey,
+  type User,
+} from "../../lib/db/schema";
 import { DAYTONA_KEY_PURPOSE, decryptSecret } from "../../lib/secrets";
 import { StudioSandboxError } from "../../lib/sandbox/errors";
+import { getFakeBackend } from "../../lib/sandbox/fake";
 import { appOutput } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, sendAndWait, sendWithFiles, waitForStoredEvents } from "./support/chat";
@@ -342,6 +350,42 @@ describe("отключение и удаление", () => {
     expect((await fakeSandbox.counters()).created).toBe(beforeCreated + 1);
     expect(await fakeSandbox.files.read(id, "/workspace/notes.txt")).toBeNull();
   }, 90_000);
+
+  test("неудалённое удаление запоминается и повторяется после смены песочницы", async () => {
+    const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });
+    const b = await createDaytonaKey({ label: "B", apiKey: KEY_B });
+    await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+    await fakeSandbox.setQuota(KEY_B, ONE_SLOT);
+    const user = await createUser();
+
+    const { id } = await createSessionAs(user);
+    await fakeSandbox.seed(id, { "/workspace/notes.txt": "На старой машине\n" });
+    expectRead(await sendAndWait(user, id, READ_FILE), "На старой машине");
+    const original = await sandboxRow(id);
+    expect(original.daytonaKeyId).toBe(a.id);
+
+    await fakeSandbox.failNextDelete("unavailable");
+    expect(await deleteKey(a.id)).toEqual({ remaining: 1 });
+    const pending = await db()
+      .select()
+      .from(pendingSandboxDeletions)
+      .where(eq(pendingSandboxDeletions.daytonaKeyId, a.id));
+    expect(pending.map((row) => row.daytonaSandboxId)).toEqual([original.daytonaSandboxId]);
+    expect((await keyRow(a.id)).apiKeyEncrypted).not.toBe("deleted");
+
+    // Сессия уходит с удалённого ключа на B, строка теряет старый id.
+    const renewed = await sendAndWait(user, id, READ_FILE);
+    expect(toolResult(renewed).status).toBe("failed");
+    expect((await sandboxRow(id)).daytonaKeyId).toBe(b.id);
+
+    expect(await deleteKey(a.id)).toEqual({ remaining: 0 });
+    expect((await keyRow(a.id)).apiKeyEncrypted).toBe("deleted");
+    expect(await db()
+      .select()
+      .from(pendingSandboxDeletions)
+      .where(eq(pendingSandboxDeletions.daytonaKeyId, a.id))).toHaveLength(0);
+    expect((await fakeSandbox.counters()).deleted).toBe(1);
+  }, 60_000);
 });
 
 describe("организации и отказы", () => {
@@ -417,6 +461,64 @@ describe("организации и отказы", () => {
     expect((await fakeSandbox.counters()).createAttempts).toBe(1);
   }, 60_000);
 });
+
+test("машина, созданная до записи id, восстанавливается по имени без места в пуле", async () => {
+  const a = await createDaytonaKey({ apiKey: KEY_A });
+  await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+  const user = await createUser();
+  const eveSessionId = randomUUID();
+  const [session] = await db().insert(appSessions).values({ userId: user.id, eveSessionId }).returning();
+  const name = `studio-${createHash("sha256").update(eveSessionId).digest("hex").slice(0, 32)}`;
+  const backend = getFakeBackend(loadConfig().fakeSandboxDir!, KEY_A, ONE_SLOT);
+  const machine = await backend.create({ name, appSessionId: session!.id });
+  await db().insert(sandboxes).values({
+    appSessionId: session!.id,
+    daytonaKeyId: a.id,
+    daytonaSandboxId: "",
+    state: "starting",
+    startingSince: new Date(),
+    startingKind: "create",
+  });
+
+  const started = await createDaytonaLifecycle().start(sessionContext(eveSessionId), undefined, ARTIFACT);
+  try {
+    expect(started.state.sandboxId).toBe(machine.id);
+    expect(await sandboxRow(session!.id)).toMatchObject({
+      daytonaKeyId: a.id,
+      daytonaSandboxId: machine.id,
+      state: "started",
+    });
+    expect((await fakeSandbox.counters()).created).toBe(1);
+  } finally {
+    await started.connection.close?.();
+  }
+}, 60_000);
+
+test("десять одновременных стартов не занимают весь пул соединений", async () => {
+  await createDaytonaKey({ apiKey: KEY_A });
+  await fakeSandbox.setQuota(KEY_A, { cpu: 10, memoryGb: 10, diskGb: 30 });
+  const user = await createUser();
+  const eveSessions = Array.from({ length: 10 }, () => randomUUID());
+  const rows = await db().insert(appSessions).values(
+    eveSessions.map((eveSessionId) => ({ userId: user.id, eveSessionId })),
+  ).returning();
+  const lifecycle = createDaytonaLifecycle();
+  const settled = await Promise.allSettled(
+    rows.map((row) => lifecycle.start(sessionContext(row.eveSessionId!), undefined, ARTIFACT)),
+  );
+  const opened = settled.filter((result) => result.status === "fulfilled");
+  const refused = settled.filter((result) => result.status === "rejected");
+  expect(opened).toHaveLength(2);
+  expect(refused).toHaveLength(8);
+  for (const result of refused) {
+    if (result.status !== "rejected") continue;
+    expect((result.reason as StudioSandboxError).code).toBe("capacity_exhausted");
+  }
+  expect((await fakeSandbox.counters()).created).toBe(2);
+  for (const result of opened) {
+    if (result.status === "fulfilled") await result.value.connection.close?.();
+  }
+}, 60_000);
 
 test("пять одновременных стартов при двух ключах дают ровно две песочницы", async () => {
   const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });

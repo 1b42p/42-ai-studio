@@ -2,6 +2,7 @@ import { loadConfig } from "../../../lib/config";
 import {
   FakeStore,
   type FakeCreateFailure,
+  type FakeDeleteFailure,
   type FakeResources,
   type FakeRule,
   type FakeUsageFailure,
@@ -32,6 +33,7 @@ export const fakeSandbox = {
   archive: (appSessionId: string) => store().archive(appSessionId),
   killProcess: (appSessionId: string, jobId: string) => store().killProcess(appSessionId, jobId),
   failNextCreate: (kind: FakeCreateFailure) => store().failNextCreate(kind),
+  failNextDelete: (kind: FakeDeleteFailure) => store().failNextDelete(kind),
   setQuota: (apiKey: string, quota: FakeResources) => store().setQuota(apiKey, quota),
   setOrganization: (apiKey: string, organizationId: string) => store().setOrganization(apiKey, organizationId),
   failUsage: (apiKey: string, failure: FakeUsageFailure | null) => store().failUsage(apiKey, failure),

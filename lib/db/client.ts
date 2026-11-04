@@ -18,6 +18,8 @@ export type Database = PostgresJsDatabase<typeof schema>;
 interface DbState {
   sql: postgres.Sql;
   database: Database;
+  /** Отдельный пул для долгих рекомендательных блокировок старта песочниц. */
+  lockSql?: postgres.Sql;
 }
 
 const globalForDb = globalThis as typeof globalThis & { __studioDb?: DbState };
@@ -42,10 +44,26 @@ export function getSqlClient(): postgres.Sql {
   return ensureState().sql;
 }
 
-/** Закрывает пул процесса. */
+/**
+ * Отдельный пул для `pg_advisory_lock` старта песочницы. Блокировка держится
+ * всё создание машины (до 15 минут), поэтому её соединение не должно
+ * занимать общий пул: иначе несколько одновременных стартов займут все
+ * соединения и будут ждать запросов, которым нужен тот же пул.
+ */
+export function getLockSqlClient(): postgres.Sql {
+  const current = ensureState();
+  current.lockSql ??= postgres(loadConfig().databaseUrl, { max: 16 });
+  return current.lockSql;
+}
+
+/** Закрывает пулы процесса. */
 export async function closeDb(): Promise<void> {
   const current = state;
   state = undefined;
   delete globalForDb.__studioDb;
-  if (current !== undefined) await current.sql.end();
+  if (current === undefined) return;
+  await Promise.allSettled([
+    current.sql.end(),
+    ...(current.lockSql === undefined ? [] : [current.lockSql.end()]),
+  ]);
 }

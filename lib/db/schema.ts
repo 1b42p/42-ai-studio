@@ -211,6 +211,31 @@ export type NewSandbox = typeof sandboxes.$inferInsert;
 export type SandboxState = (typeof sandboxState.enumValues)[number];
 export type SandboxLaunch = (typeof sandboxLaunch.enumValues)[number];
 
+/**
+ * Машина, которую не удалось удалить при удалении ключа. Идентификатор
+ * переживает переход сессии на новую песочницу, иначе повторная операция
+ * удаления потеряет машину и затрёт шифротекст ключа.
+ */
+export const pendingSandboxDeletions = pgTable(
+  "pending_sandbox_deletions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    daytonaKeyId: uuid("daytona_key_id")
+      .notNull()
+      .references(() => daytonaKeys.id, { onDelete: "cascade" }),
+    daytonaSandboxId: text("daytona_sandbox_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("pending_sandbox_deletions_key_sandbox_idx").on(
+      table.daytonaKeyId,
+      table.daytonaSandboxId,
+    ),
+  ],
+);
+
+export type PendingSandboxDeletion = typeof pendingSandboxDeletions.$inferSelect;
+
 /** Вид медиа: загрузка, медиа инструмента, файл ответа, превью сессии. */
 export const mediaKind = pgEnum("media_kind", [
   "upload",

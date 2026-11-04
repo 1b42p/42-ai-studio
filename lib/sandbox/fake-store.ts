@@ -10,6 +10,8 @@ import { JOB_ID_PATTERN } from "./job-types";
 export type FakeCreateFailure = "build_failed" | "unavailable" | "error" | "unauthorized";
 /** Отказ использования: как ответ Daytona на `/organizations/{id}/usage`. */
 export type FakeUsageFailure = "unauthorized" | "forbidden" | "unavailable" | "unexpected";
+/** Отказ удаления машины: проверка повторного `deleteKey`. */
+export type FakeDeleteFailure = "unavailable" | "error";
 /** Ресурсы песочницы и квота ключа в фиктивном слое. */
 export interface FakeResources {
   cpu: number;
@@ -64,6 +66,7 @@ interface StoreData {
   rules: StoredRule[];
   counters: FakeCounters;
   failNextCreate?: FakeCreateFailure;
+  failNextDelete?: FakeDeleteFailure;
   keys: Record<string, FakeKeyConfig>;
   usageCalls: Record<string, number>;
 }
@@ -465,6 +468,19 @@ export class FakeStore {
     await this.transaction((data) => { data.failNextCreate = kind; });
   }
 
+  async failNextDelete(kind: FakeDeleteFailure): Promise<void> {
+    await this.transaction((data) => { data.failNextDelete = kind; });
+  }
+
+  /** Забирает назначенный отказ удаления; следующий вызов удалит машину. */
+  async consumeDeleteFailure(): Promise<FakeDeleteFailure | undefined> {
+    return this.transaction((data) => {
+      const failure = data.failNextDelete;
+      delete data.failNextDelete;
+      return failure;
+    });
+  }
+
   async counters(): Promise<FakeCounters> {
     return this.transaction((data) => ({ ...data.counters }));
   }
@@ -482,6 +498,7 @@ export class FakeStore {
       }
       Object.assign(data, initialData());
       delete data.failNextCreate;
+      delete data.failNextDelete;
     });
   }
 

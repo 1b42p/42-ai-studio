@@ -61,6 +61,12 @@ class FakeMachineHandle implements FakeMachine {
   async delete(): Promise<void> {
     try {
       if (this.state === "destroyed") return;
+      const failure = await this.store.consumeDeleteFailure();
+      if (failure !== undefined) {
+        throw Object.assign(new Error(`Fake Daytona delete ${failure}`), {
+          status: failure === "unavailable" ? 503 : 400,
+        });
+      }
       await this.store.setState(this.id, "destroyed");
     } catch (error) {
       if (!(error instanceof Error && "status" in error && error.status === 404)) throw error;

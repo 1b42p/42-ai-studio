@@ -7,7 +7,7 @@ import {
   type SandboxSessionEndOptions,
 } from "eve/sandbox/provider";
 import { loadConfig } from "@/lib/config";
-import { getDb, getSqlClient } from "@/lib/db/client";
+import { getDb, getLockSqlClient } from "@/lib/db/client";
 import { appSessions, daytonaKeys, sandboxes, type DaytonaKey, type SandboxLaunch } from "@/lib/db/schema";
 import { findAppSessionById } from "@/lib/sessions/service";
 import { decryptSecret, DAYTONA_KEY_PURPOSE } from "@/lib/secrets";
@@ -282,7 +282,7 @@ export function createDaytonaLifecycle() {
     },
     async start(ctx: SandboxSessionContext, _options: undefined, artifact: Readonly<Artifact>) {
       const session = await boundSession(ctx.session.id, ctx.session.auth);
-      const sql = await getSqlClient().reserve();
+      const sql = await getLockSqlClient().reserve();
       let locked = false;
       let opened: { machine: DaytonaMachine; state: State } | undefined;
       try {
@@ -308,55 +308,92 @@ export function createDaytonaLifecycle() {
             await sql`update sandboxes set state = 'gone' where id = ${existing.id}`;
           }
         }
+        const name = `studio-${createHash("sha256").update(ctx.session.id).digest("hex").slice(0, 32)}`;
+        const config = loadConfig();
         if (opened === undefined) {
-          const name = `studio-${createHash("sha256").update(ctx.session.id).digest("hex").slice(0, 32)}`;
-          const config = loadConfig();
           const need = {
             cpu: config.sandboxCpu,
             memoryGb: config.sandboxMemoryGb,
             diskGb: config.sandboxDiskGb,
           };
-          const attempts = Math.max(1, await enabledKeyCount());
-          let lastError: unknown;
-          try {
-            for (let attempt = 0; attempt < attempts; attempt += 1) {
-              const picked = await pickKey(need, { appSessionId: session.id });
-              if (picked.kind === "no_key") throw new StudioSandboxError("no_daytona_key");
-              if (picked.kind === "no_capacity") throw new StudioSandboxError("capacity_exhausted");
-              const secret = decryptSecret(
-                picked.key.apiKeyEncrypted,
-                config.secretsEncryptionKey,
-                DAYTONA_KEY_PURPOSE,
+
+          // Процесс мог упасть после создания машины, но до записи её id.
+          // Имя детерминировано, поэтому сначала ищем её и только потом
+          // требуем место у пула: иначе машина занимает последний слот, а
+          // `pickKey` отвечает `capacity_exhausted`.
+          if (existing !== undefined && existing.state !== "gone" && existing.daytonaSandboxId === "") {
+            const [key] = await sql<Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deletedAt">[]>`
+              select id, api_key_encrypted as "apiKeyEncrypted", deleted_at as "deletedAt"
+              from daytona_keys where id = ${existing.daytonaKeyId}`;
+            if (key !== undefined && key.apiKeyEncrypted !== DELETED_KEY_MARKER && key.deletedAt === null) {
+              const backend = daytonaBackend(
+                key.id,
+                decryptSecret(key.apiKeyEncrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
               );
-              const backend = daytonaBackend(picked.key.id, secret);
-              let machine: DaytonaMachine;
               try {
-                machine = await provision(backend, name, session.id, artifact, existing?.daytonaSandboxId);
+                await backend.get(name);
+                const machine = await provision(
+                  backend,
+                  name,
+                  session.id,
+                  artifact,
+                  existing.daytonaSandboxId,
+                );
+                const state = { keyId: key.id, sandboxId: machine.id };
+                await sql`update sandboxes set daytona_key_id = ${key.id},
+                  daytona_sandbox_id = ${machine.id}, state = ${sandboxState(machine.state)},
+                  starting_since = null, starting_kind = null, last_active_at = now()
+                  where app_session_id = ${session.id}`;
+                opened = { machine, state };
               } catch (error) {
-                lastError = error;
-                // Исчерпанная квота Daytona — сигнал пулу на 60 секунд; отозванный
-                // ключ (401) выбывает из выбора, остальные ошибки не помечают ключ.
-                if (isQuotaExceeded(error)) { await exhaustPool(picked.key.id); continue; }
-                if (errorStatus(error) === 401) { await markKeyUnauthorized(picked.key.id); continue; }
-                throw error;
+                if (!isMissingSandbox(error)) throw error;
               }
-              const state = { keyId: picked.key.id, sandboxId: machine.id };
-              await sql`update sandboxes set daytona_key_id = ${picked.key.id},
-                daytona_sandbox_id = ${machine.id}, state = ${sandboxState(machine.state)},
-                starting_since = null, starting_kind = null, last_active_at = now()
-                where app_session_id = ${session.id}`;
-              opened = { machine, state };
-              break;
             }
-          } catch (error) {
-            await releaseReservation(session.id);
-            throw error;
           }
+
           if (opened === undefined) {
-            await releaseReservation(session.id);
-            // Последняя попытка тоже упёрлась в квоту: места нет, а не сбой сборки.
-            if (isQuotaExceeded(lastError)) throw new StudioSandboxError("capacity_exhausted");
-            throw sandboxFailure(lastError ?? new StudioSandboxError("sandbox_create_failed"), "sandbox_create_failed");
+            const attempts = Math.max(1, await enabledKeyCount());
+            let lastError: unknown;
+            try {
+              for (let attempt = 0; attempt < attempts; attempt += 1) {
+                const picked = await pickKey(need, { appSessionId: session.id });
+                if (picked.kind === "no_key") throw new StudioSandboxError("no_daytona_key");
+                if (picked.kind === "no_capacity") throw new StudioSandboxError("capacity_exhausted");
+                const secret = decryptSecret(
+                  picked.key.apiKeyEncrypted,
+                  config.secretsEncryptionKey,
+                  DAYTONA_KEY_PURPOSE,
+                );
+                const backend = daytonaBackend(picked.key.id, secret);
+                let machine: DaytonaMachine;
+                try {
+                  machine = await provision(backend, name, session.id, artifact, existing?.daytonaSandboxId);
+                } catch (error) {
+                  lastError = error;
+                  // Исчерпанная квота Daytona — сигнал пулу на 60 секунд; отозванный
+                  // ключ (401) выбывает из выбора, остальные ошибки не помечают ключ.
+                  if (isQuotaExceeded(error)) { await exhaustPool(picked.key.id); continue; }
+                  if (errorStatus(error) === 401) { await markKeyUnauthorized(picked.key.id); continue; }
+                  throw error;
+                }
+                const state = { keyId: picked.key.id, sandboxId: machine.id };
+                await sql`update sandboxes set daytona_key_id = ${picked.key.id},
+                  daytona_sandbox_id = ${machine.id}, state = ${sandboxState(machine.state)},
+                  starting_since = null, starting_kind = null, last_active_at = now()
+                  where app_session_id = ${session.id}`;
+                opened = { machine, state };
+                break;
+              }
+            } catch (error) {
+              await releaseReservation(session.id);
+              throw error;
+            }
+            if (opened === undefined) {
+              await releaseReservation(session.id);
+              // Последняя попытка тоже упёрлась в квоту: места нет, а не сбой сборки.
+              if (isQuotaExceeded(lastError)) throw new StudioSandboxError("capacity_exhausted");
+              throw sandboxFailure(lastError ?? new StudioSandboxError("sandbox_create_failed"), "sandbox_create_failed");
+            }
           }
         }
       } catch (error) {

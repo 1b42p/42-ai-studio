@@ -10,7 +10,13 @@ import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
 
 import { loadConfig } from "@/lib/config";
 import { getDb, getSqlClient } from "@/lib/db/client";
-import { daytonaKeys, sandboxes, type DaytonaKey, type SandboxLaunch } from "@/lib/db/schema";
+import {
+  daytonaKeys,
+  pendingSandboxDeletions,
+  sandboxes,
+  type DaytonaKey,
+  type SandboxLaunch,
+} from "@/lib/db/schema";
 import {
   failedUsage,
   fetchUsage,
@@ -341,10 +347,30 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
     .where(eq(daytonaKeys.id, keyId));
 
   const rows = await db.select().from(sandboxes).where(eq(sandboxes.daytonaKeyId, keyId));
-  const alive = rows.filter((row) => row.state !== "gone");
+  const pending = await db
+    .select()
+    .from(pendingSandboxDeletions)
+    .where(eq(pendingSandboxDeletions.daytonaKeyId, keyId));
+
+  // Резерв без машины: создание может идти прямо сейчас. Оставляем строку
+  // живой и сохраняем шифротекст — повтор удалит появившуюся машину.
+  let remaining = rows.filter(
+    (row) => row.state !== "gone" && row.daytonaSandboxId === "",
+  ).length;
+
+  // Цели — живые строки и машины, удаление которых уже сорвалось раньше.
+  // `gone` без записи в pending считается удалённой в Daytona.
+  const targets = new Map<string, string[]>();
+  for (const row of rows) {
+    if (row.state === "gone" || row.daytonaSandboxId === "") continue;
+    targets.set(row.daytonaSandboxId, [...(targets.get(row.daytonaSandboxId) ?? []), row.id]);
+  }
+  for (const entry of pending) {
+    if (!targets.has(entry.daytonaSandboxId)) targets.set(entry.daytonaSandboxId, []);
+  }
 
   if (key.apiKeyEncrypted === DELETED_KEY_MARKER) {
-    return { remaining: alive.length };
+    return { remaining: remaining + targets.size };
   }
 
   let backend: ReturnType<typeof daytonaBackend>;
@@ -354,32 +380,47 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
       decryptSecret(key.apiKeyEncrypted, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
     );
   } catch {
-    return { remaining: alive.length };
+    return { remaining: remaining + targets.size };
   }
 
-  let remaining = 0;
-  for (const row of rows) {
-    if (row.state === "gone") continue;
-    // Строка-резерв без машины: создание может идти прямо сейчас. Оставляем
-    // её живой и сохраняем шифротекст — повтор удалит появившуюся машину.
-    if (row.daytonaSandboxId === "") {
-      remaining += 1;
-      continue;
-    }
+  for (const [sandboxId, rowIds] of targets) {
     try {
-      const machine = await backend.get(row.daytonaSandboxId);
+      const machine = await backend.get(sandboxId);
       await machine.delete();
-      await db.update(sandboxes).set({ state: "gone" }).where(eq(sandboxes.id, row.id));
+      await db
+        .delete(pendingSandboxDeletions)
+        .where(and(
+          eq(pendingSandboxDeletions.daytonaKeyId, keyId),
+          eq(pendingSandboxDeletions.daytonaSandboxId, sandboxId),
+        ));
+      if (rowIds.length > 0) {
+        await db.update(sandboxes).set({ state: "gone" }).where(inArray(sandboxes.id, rowIds));
+      }
     } catch (error) {
       if (isMissingSandbox(error)) {
-        await db.update(sandboxes).set({ state: "gone" }).where(eq(sandboxes.id, row.id));
+        await db
+          .delete(pendingSandboxDeletions)
+          .where(and(
+            eq(pendingSandboxDeletions.daytonaKeyId, keyId),
+            eq(pendingSandboxDeletions.daytonaSandboxId, sandboxId),
+          ));
+        if (rowIds.length > 0) {
+          await db.update(sandboxes).set({ state: "gone" }).where(inArray(sandboxes.id, rowIds));
+        }
       } else {
+        await db
+          .insert(pendingSandboxDeletions)
+          .values({ daytonaKeyId: keyId, daytonaSandboxId: sandboxId })
+          .onConflictDoNothing();
         remaining += 1;
       }
     }
   }
 
   if (remaining === 0) {
+    await db
+      .delete(pendingSandboxDeletions)
+      .where(eq(pendingSandboxDeletions.daytonaKeyId, keyId));
     await db
       .update(daytonaKeys)
       .set({ apiKeyEncrypted: DELETED_KEY_MARKER })
