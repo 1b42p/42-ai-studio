@@ -635,6 +635,43 @@ test("401 при восстановлении по имени переводит
   }
 }, 60_000);
 
+test("сбой очистки после создания оставляет восстановимый резерв", async () => {
+  const a = await createDaytonaKey({ apiKey: KEY_A });
+  await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+  const user = await createUser();
+  const eveSessionId = randomUUID();
+  const [session] = await db().insert(appSessions).values({ userId: user.id, eveSessionId }).returning();
+  const badArtifact = {
+    templateKey: "bad",
+    dockerfile: "FROM alpine:3.20\n",
+    files: [{ path: "/workspace/\u0000bad", content: "" }],
+  };
+  await fakeSandbox.failNextDelete("unavailable");
+
+  await expect(
+    createDaytonaLifecycle().start(sessionContext(eveSessionId), undefined, badArtifact),
+  ).rejects.toMatchObject({ code: "sandbox_create_failed" });
+  expect(await sandboxRow(session!.id)).toMatchObject({
+    daytonaKeyId: a.id,
+    daytonaSandboxId: "",
+    state: "starting",
+  });
+  expect((await fakeSandbox.counters()).created).toBe(1);
+  expect((await fakeSandbox.counters()).deleted).toBe(0);
+
+  const started = await createDaytonaLifecycle().start(sessionContext(eveSessionId), undefined, ARTIFACT);
+  try {
+    expect(await sandboxRow(session!.id)).toMatchObject({
+      daytonaKeyId: a.id,
+      daytonaSandboxId: expect.any(String),
+      state: "started",
+    });
+    expect((await fakeSandbox.counters()).created).toBe(1);
+  } finally {
+    await started.connection.close?.();
+  }
+}, 60_000);
+
 test("десять одновременных стартов не занимают весь пул соединений", async () => {
   await createDaytonaKey({ apiKey: KEY_A });
   await fakeSandbox.setQuota(KEY_A, { cpu: 10, memoryGb: 10, diskGb: 30 });

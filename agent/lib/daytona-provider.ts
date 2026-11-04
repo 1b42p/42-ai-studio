@@ -28,6 +28,14 @@ import {
 const HOME_MARKER = "/__eve_home__";
 type Artifact = { templateKey: string; dockerfile: string; files: { path: string; content: string }[] };
 type State = { keyId: string; sandboxId: string };
+
+/** Машина создана, но убрать её после сбоя не удалось: резерв нельзя терять. */
+class KeepReservationError extends Error {
+  constructor(readonly cause: unknown) {
+    super("Песочница создана, но очистка после сбоя не удалась.");
+    this.name = "KeepReservationError";
+  }
+}
 type StoredState = "started" | "stopped" | "archived" | "starting" | "gone";
 
 export function sandboxState(state: string | undefined): StoredState {
@@ -304,12 +312,17 @@ async function provision(backend: DaytonaBackend, name: string, appSessionId: st
     finally { await connection.close?.(); }
     return machine;
   } catch (error) {
+    let cleanupFailed = false;
     try { await (await backend.get(name)).delete(); }
     catch (cleanupError) {
-      if (!isMissingSandbox(cleanupError)) sandboxFailure(cleanupError, "sandbox_create_failed");
+      if (!isMissingSandbox(cleanupError)) {
+        sandboxFailure(cleanupError, "sandbox_create_failed");
+        cleanupFailed = true;
+      }
     }
     // Исходная ошибка решает, исчерпана ли квота или отозван ключ; коды
     // Daytona наружу не уходят — их разбирает вызывающий.
+    if (cleanupFailed) throw new KeepReservationError(error);
     throw error;
   }
 }
@@ -452,10 +465,13 @@ export function createDaytonaLifecycle() {
                 created = undefined;
               }
             } catch (error) {
-              // Если машина уже создана, но запись id сорвалась, резерв
-              // оставляем восстановимым по имени, а не помечаем gone.
-              if (created === undefined) await releaseReservation(session.id);
-              else await clearLaunchReservation(session.id);
+              // Если машина уже создана, но запись id или очистка после сбоя
+              // сорвалась, резерв оставляем восстановимым по имени.
+              if (created === undefined && !(error instanceof KeepReservationError)) {
+                await releaseReservation(session.id);
+              } else {
+                await clearLaunchReservation(session.id);
+              }
               throw error;
             }
             if (opened === undefined) {
