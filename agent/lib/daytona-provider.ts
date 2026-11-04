@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, isNull, lt, ne } from "drizzle-orm";
 import {
   defineSandboxProvider, SandboxSessionGoneError,
   type SandboxConnection, type SandboxPrepareContext, type SandboxSessionContext,
@@ -169,14 +169,41 @@ function clearLaunchReservation(appSessionId: string): Promise<void> {
   return updateReservation(appSessionId, { startingSince: null, startingKind: null });
 }
 
-/** Ключ удалили или отозвали, пока машина создавалась. */
-async function keyWasDeleted(keyId: string): Promise<boolean> {
-  const [row] = await getDb()
-    .select({ deletedAt: daytonaKeys.deletedAt, apiKeyEncrypted: daytonaKeys.apiKeyEncrypted })
-    .from(daytonaKeys)
-    .where(eq(daytonaKeys.id, keyId))
-    .limit(1);
-  return row === undefined || row.deletedAt !== null || row.apiKeyEncrypted === DELETED_KEY_MARKER;
+/**
+ * Записывает машину в строку сессии, только если ключ ещё не удалён. Замок на
+ * строке ключа сериализует это с `deleteKey`: либо машина попадёт в строку и
+ * удаление увидит её id, либо удаление уже зафиксировано и машина уходит в
+ * pending. Возвращает `false`, если ключ успели удалить.
+ */
+async function checkpointMachine(
+  appSessionId: string,
+  keyId: string,
+  machine: DaytonaMachine,
+): Promise<boolean> {
+  return getDb().transaction(async (tx) => {
+    const [key] = await tx
+      .select({ id: daytonaKeys.id })
+      .from(daytonaKeys)
+      .where(and(
+        eq(daytonaKeys.id, keyId),
+        isNull(daytonaKeys.deletedAt),
+        ne(daytonaKeys.apiKeyEncrypted, DELETED_KEY_MARKER),
+      ))
+      .for("update");
+    if (key === undefined) return false;
+    await tx
+      .update(sandboxes)
+      .set({
+        daytonaKeyId: keyId,
+        daytonaSandboxId: machine.id,
+        state: sandboxState(machine.state),
+        startingSince: null,
+        startingKind: null,
+        lastActiveAt: new Date(),
+      })
+      .where(eq(sandboxes.appSessionId, appSessionId));
+    return true;
+  });
 }
 
 /**
@@ -366,15 +393,11 @@ export function createDaytonaLifecycle() {
                   artifact,
                   existing.daytonaSandboxId,
                 );
-                if (await keyWasDeleted(key.id)) {
-                  await discardMachine(key.id, machine);
-                } else {
-                  const state = { keyId: key.id, sandboxId: machine.id };
-                  await sql`update sandboxes set daytona_key_id = ${key.id},
-                    daytona_sandbox_id = ${machine.id}, state = ${sandboxState(machine.state)},
-                    starting_since = null, starting_kind = null, last_active_at = now()
-                    where app_session_id = ${session.id}`;
+                const state = { keyId: key.id, sandboxId: machine.id };
+                if (await checkpointMachine(session.id, key.id, machine)) {
                   opened = { machine, state };
+                } else {
+                  await discardMachine(key.id, machine);
                 }
               } catch (error) {
                 if (!isMissingSandbox(error)) throw error;
@@ -407,17 +430,12 @@ export function createDaytonaLifecycle() {
                   if (errorStatus(error) === 401) { await markKeyUnauthorized(picked.key.id); continue; }
                   throw error;
                 }
-                if (await keyWasDeleted(picked.key.id)) {
-                  await discardMachine(picked.key.id, machine);
-                  continue;
-                }
                 const state = { keyId: picked.key.id, sandboxId: machine.id };
-                await sql`update sandboxes set daytona_key_id = ${picked.key.id},
-                  daytona_sandbox_id = ${machine.id}, state = ${sandboxState(machine.state)},
-                  starting_since = null, starting_kind = null, last_active_at = now()
-                  where app_session_id = ${session.id}`;
-                opened = { machine, state };
-                break;
+                if (await checkpointMachine(session.id, picked.key.id, machine)) {
+                  opened = { machine, state };
+                  break;
+                }
+                await discardMachine(picked.key.id, machine);
               }
             } catch (error) {
               await releaseReservation(session.id);
