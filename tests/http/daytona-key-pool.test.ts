@@ -582,6 +582,7 @@ test("машина удалённого ключа, не записанная д
   const name = `studio-${createHash("sha256").update(eveSessionId).digest("hex").slice(0, 32)}`;
   const backend = getFakeBackend(loadConfig().fakeSandboxDir!, KEY_A, ONE_SLOT);
   await backend.create({ name, appSessionId: session!.id });
+  await fakeSandbox.stop(session!.id);
   await db().insert(sandboxes).values({
     appSessionId: session!.id,
     daytonaKeyId: a.id,
@@ -597,6 +598,7 @@ test("машина удалённого ключа, не записанная д
     expect(started.state.keyId).toBe(b.id);
     expect(await sandboxRow(session!.id)).toMatchObject({ daytonaKeyId: b.id, state: "started" });
     expect((await fakeSandbox.counters()).created).toBe(2);
+    expect((await fakeSandbox.counters()).started).toBe(2);
     expect((await fakeSandbox.counters()).deleted).toBe(1);
 
     expect(await deleteKey(a.id)).toEqual({ remaining: 0 });

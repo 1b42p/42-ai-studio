@@ -401,18 +401,23 @@ export function createDaytonaLifecycle() {
               // падения машину нужно найти и убрать, а не оставить сиротой.
               const deleted = key.deletedAt !== null;
               try {
-                await backend.get(name);
-                const machine = await provision(
-                  backend,
-                  name,
-                  session.id,
-                  artifact,
-                  existing.daytonaSandboxId,
-                );
-                if (!deleted && await checkpointMachine(session.id, key.id, machine)) {
-                  opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
+                const found = await backend.get(name);
+                if (deleted) {
+                  // Машину удалённого ключа не будим и не сеем: сразу в очистку.
+                  await discardMachine(key.id, found);
                 } else {
-                  await discardMachine(key.id, machine);
+                  const machine = await provision(
+                    backend,
+                    name,
+                    session.id,
+                    artifact,
+                    existing.daytonaSandboxId,
+                  );
+                  if (await checkpointMachine(session.id, key.id, machine)) {
+                    opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
+                  } else {
+                    await discardMachine(key.id, machine);
+                  }
                 }
               } catch (error) {
                 if (isMissingSandbox(error)) {
