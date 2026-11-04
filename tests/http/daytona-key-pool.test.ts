@@ -372,6 +372,21 @@ describe("отключение и удаление", () => {
     expect(await fakeSandbox.files.read(id, "/workspace/notes.txt")).toBeNull();
   }, 90_000);
 
+  test("удаление забирает машину у строки, которую уже пометили gone", async () => {
+    const a = await createDaytonaKey({ apiKey: KEY_A });
+    await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    await fakeSandbox.seed(id, { "/workspace/notes.txt": "Строка gone, машина жива\n" });
+    expectRead(await sendAndWait(user, id, READ_FILE), "Строка gone, машина жива");
+    const original = await sandboxRow(id);
+    await db().update(sandboxes).set({ state: "gone" }).where(eq(sandboxes.id, original.id));
+
+    expect(await deleteKey(a.id)).toEqual({ remaining: 0 });
+    expect((await keyRow(a.id)).apiKeyEncrypted).toBe("deleted");
+    expect((await fakeSandbox.counters()).deleted).toBe(1);
+  }, 60_000);
+
   test("неудалённое удаление запоминается и повторяется после смены песочницы", async () => {
     const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });
     const b = await createDaytonaKey({ label: "B", apiKey: KEY_B });

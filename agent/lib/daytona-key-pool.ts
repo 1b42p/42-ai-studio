@@ -342,10 +342,30 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
   const [key] = await db.select().from(daytonaKeys).where(eq(daytonaKeys.id, keyId));
   if (key === undefined) return { remaining: 0 };
 
-  await db
-    .update(daytonaKeys)
-    .set({ deletedAt: new Date(), enabled: false })
-    .where(eq(daytonaKeys.id, keyId));
+  // Идентификаторы машин фиксируются в одной транзакции с `deleted_at`:
+  // параллельный resume не успеет пометить строку `gone` и потерять машину
+  // до того, как она попадёт в pending.
+  const deletedAt = new Date();
+  await db.transaction(async (tx) => {
+    await tx
+      .update(daytonaKeys)
+      .set({ deletedAt, enabled: false })
+      .where(eq(daytonaKeys.id, keyId));
+    // Блокируем строки, пока снимаем идентификаторы: параллельный resume
+    // подождёт и не успеет пометить их `gone` до записи в pending.
+    const snapshot = await tx
+      .select()
+      .from(sandboxes)
+      .where(eq(sandboxes.daytonaKeyId, keyId))
+      .for("update");
+    for (const row of snapshot) {
+      if (row.daytonaSandboxId === "") continue;
+      await tx
+        .insert(pendingSandboxDeletions)
+        .values({ daytonaKeyId: keyId, daytonaSandboxId: row.daytonaSandboxId })
+        .onConflictDoNothing();
+    }
+  });
 
   const rows = await db.select().from(sandboxes).where(eq(sandboxes.daytonaKeyId, keyId));
   const pending = await db
