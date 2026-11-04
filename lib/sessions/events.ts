@@ -78,6 +78,45 @@ export function stripNullCharacters<T>(value: T): T {
   return value;
 }
 
+/**
+ * Строка `bash_jobs` по событию потока. `null` — событие не про фоновую
+ * команду. Задание из песочницы копии агента пишется в ту же сессию
+ * приложения: копия работает в песочнице корня.
+ */
+export function bashJobRow(appSessionId: string, event: MessageStreamEvent) {
+  const job = runningBashJob(event);
+  if (job === null) return null;
+
+  const stdout = stripNullCharacters(job.stdout);
+  const stderr = stripNullCharacters(job.stderr);
+  return {
+    appSessionId,
+    jobId: job.jobId,
+    status: "running" as const,
+    stdoutTail: stdout,
+    stderrTail: stderr,
+    stdoutBytes: Buffer.byteLength(stdout),
+    stderrBytes: Buffer.byteLength(stderr),
+  };
+}
+
+/**
+ * Записывает задание `bash` в `bash_jobs` (повтор ничего не меняет). Нужна
+ * копиям агента: их события не попадают в поток корня, а карточка в панели
+ * копии опрашивает задание по корневой сессии.
+ */
+export async function recordBashJob(
+  appSessionId: string,
+  event: MessageStreamEvent,
+): Promise<void> {
+  const row = bashJobRow(appSessionId, event);
+  if (row === null) return;
+  await getDb()
+    .insert(bashJobs)
+    .values(row)
+    .onConflictDoNothing({ target: [bashJobs.appSessionId, bashJobs.jobId] });
+}
+
 function eventId(event: MessageStreamEvent): string | null {
   return event.meta?.id ?? null;
 }
@@ -140,19 +179,8 @@ export async function syncAppSession(
       // Задание `bash`, ушедшее в фон, существует в базе независимо от того,
       // открыта ли вкладка: строка создаётся здесь же, идемпотентно.
       const jobs = rows.flatMap((row) => {
-        const job = runningBashJob(row.payload);
-        if (job === null) return [];
-        const stdout = stripNullCharacters(job.stdout);
-        const stderr = stripNullCharacters(job.stderr);
-        return [{
-          appSessionId,
-          jobId: job.jobId,
-          status: "running" as const,
-          stdoutTail: stdout,
-          stderrTail: stderr,
-          stdoutBytes: Buffer.byteLength(stdout),
-          stderrBytes: Buffer.byteLength(stderr),
-        }];
+        const job = bashJobRow(appSessionId, row.payload);
+        return job === null ? [] : [job];
       });
       if (jobs.length > 0) {
         await tx

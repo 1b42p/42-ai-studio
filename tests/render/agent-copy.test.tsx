@@ -6,7 +6,7 @@ import { page, userEvent } from "vitest/browser";
 import { ChatView } from "@/components/studio/chat/chat-view";
 
 import { copyConversation, copyStream, COPY_SESSION_ID } from "./fixtures/agent-copies";
-import { expectNoHorizontalScroll, renderOnDesktop, renderOnPhone } from "./support/render";
+import { expectNoHorizontalScroll, renderOnDesktop, renderOnPhone, renderAtSize } from "./support/render";
 
 function view(state: ConversationState) {
   return (
@@ -24,12 +24,14 @@ function view(state: ConversationState) {
 /** Рисует беседу и снимает её после теста: панель иначе остаётся в документе. */
 async function renderAt(
   state: ConversationState,
-  viewport: "desktop" | "phone" = "desktop",
+  viewport: "desktop" | "phone" | { width: number; height: number } = "desktop",
 ): Promise<void> {
   const rendered =
-    viewport === "phone"
-      ? await renderOnPhone(view(state))
-      : await renderOnDesktop(view(state));
+    typeof viewport === "object"
+      ? await renderAtSize(view(state), viewport)
+      : viewport === "phone"
+        ? await renderOnPhone(view(state))
+        : await renderOnDesktop(view(state));
   onTestFinished(async () => {
     await rendered.unmount();
   });
@@ -360,6 +362,21 @@ test("на телефоне панель занимает весь экран и
   await page.getByRole("button", { name: "Закрыть" }).click();
   await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
   expectNoHorizontalScroll();
+});
+
+test("на планшете 700 px панель тоже во весь экран", async () => {
+  await renderAt(
+    copyConversation({ status: "working", copy: copyStream({ text: "Пишу" }) }),
+    { width: 700, height: 800 },
+  );
+
+  await page.getByRole("button", { name: /Копия агента/ }).click();
+  await expect.element(page.getByRole("dialog")).toBeVisible();
+
+  const rect = panel()!.getBoundingClientRect();
+  expect(Math.round(rect.width)).toBe(window.innerWidth);
+  expect(Math.round(rect.width)).toBe(700);
+  expect(document.querySelector('[data-slot="sheet-overlay"]')).not.toBeNull();
 });
 
 test("на странице нет сырого имени инструмента и JSON", async () => {

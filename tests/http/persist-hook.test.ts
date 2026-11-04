@@ -60,6 +60,7 @@ function dependencies(overrides: Partial<PersistDependencies> = {}): PersistDepe
     bindSession: async () => true,
     requestSync: async () => ({ stored: 1, cursor: 1 }),
     syncAndConfirm: async () => true,
+    recordJob: async () => {},
     ...overrides,
   };
 }
@@ -180,14 +181,23 @@ describe("createPersistEventHandler", () => {
     expect(cancelled).toBe(true);
   });
 
-  test("дочерние сессии пропускаются", async () => {
+  test("дочерние сессии в поток корня не пишутся", async () => {
     cancelled = false;
-    let called = false;
+    let synced = false;
+    let bound = false;
     const handler = createPersistEventHandler(
       dependencies({
-        findSessionByEveId: async () => {
-          called = true;
-          return null;
+        bindSession: async () => {
+          bound = true;
+          return true;
+        },
+        requestSync: async () => {
+          synced = true;
+          return { stored: 0, cursor: 0 };
+        },
+        syncAndConfirm: async () => {
+          synced = true;
+          return true;
         },
       }),
     );
@@ -200,6 +210,54 @@ describe("createPersistEventHandler", () => {
     );
 
     expect(cancelled).toBe(false);
-    expect(called).toBe(false);
+    expect(synced).toBe(false);
+    expect(bound).toBe(false);
+  });
+
+  test("фоновая команда копии пишется в сессию приложения корня", async () => {
+    const looked: string[] = [];
+    const recorded: Array<{ appSessionId: string; type: string }> = [];
+    const handler = createPersistEventHandler(
+      dependencies({
+        findSessionByEveId: async (eveSessionId) => {
+          looked.push(eveSessionId);
+          return eveSessionId === "wrun_root" ? { id: "app-root", userId: "user-1" } : null;
+        },
+        recordJob: async (appSessionId, hookEvent) => {
+          recorded.push({ appSessionId, type: hookEvent.type });
+        },
+      }),
+    );
+
+    const job = event("action.result");
+    await handler(
+      job,
+      context({
+        parent: { callId: "call_1", rootSessionId: "wrun_root", sessionId: "wrun_child" },
+      }),
+    );
+
+    expect(looked).toEqual(["wrun_root"]);
+    expect(recorded).toEqual([{ appSessionId: "app-root", type: "action.result" }]);
+  });
+
+  test("прочие события копии задание не пишут", async () => {
+    let recorded = 0;
+    const handler = createPersistEventHandler(
+      dependencies({
+        recordJob: async () => {
+          recorded += 1;
+        },
+      }),
+    );
+
+    await handler(
+      event("actions.requested"),
+      context({
+        parent: { callId: "call_1", rootSessionId: "wrun_root", sessionId: "wrun_child" },
+      }),
+    );
+
+    expect(recorded).toBe(0);
   });
 });

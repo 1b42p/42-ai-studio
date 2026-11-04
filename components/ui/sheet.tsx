@@ -41,7 +41,7 @@ const SHEET_WIDTH: Record<"default" | "panel", string> = {
   default:
     "data-[side=left]:w-3/4 data-[side=right]:w-3/4 data-[side=left]:sm:max-w-sm data-[side=right]:sm:max-w-sm",
   panel:
-    "data-[side=left]:w-full data-[side=right]:w-full data-[side=left]:sm:max-w-[480px] data-[side=right]:sm:max-w-[480px]",
+    "data-[side=left]:w-full data-[side=right]:w-full data-[side=left]:md:max-w-[480px] data-[side=right]:md:max-w-[480px]",
 }
 
 function SheetContent({
