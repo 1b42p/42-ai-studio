@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 
 import { textCoverage } from "../../lib/speech/coverage";
 import { SpeechIncompleteError, isRetryableSpeechError, mapSpeechFailure } from "../../lib/speech/errors";
-import { withSpeechPace } from "../../lib/speech/pace";
+import { hasSpeechLane, withSpeechPace } from "../../lib/speech/pace";
 import { resolveSpeechOutputPath } from "../../lib/speech/path";
 import { attachPunctuation } from "../../lib/speech/punctuation";
 import { retrySpeech, sleepAbortable } from "../../lib/speech/retry";
@@ -182,7 +182,19 @@ describe("голоса и повтор", () => {
         voiceExplicit: false,
         voiceName: "ru-RU-SvetlanaNeural",
       }).message,
-    ).toMatch(/^speak_rate_limited: /);
+    ).toMatch(/^speak_rate_limited: [\s\S]*Piper/);
+    expect(
+      mapSpeechFailure(new SpeechIncompleteError(), {
+        voiceExplicit: false,
+        voiceName: "ru-RU-SvetlanaNeural",
+      }).message,
+    ).toMatch(/^speak_unavailable: [\s\S]*Piper/);
+    expect(
+      mapSpeechFailure(new EdgeTTSError("bad", "INVALID_OPTION"), {
+        voiceExplicit: false,
+        voiceName: "ru-RU-SvetlanaNeural",
+      }).message,
+    ).not.toContain("Piper");
     expect(
       mapSpeechFailure(Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:9"), { code: "ECONNREFUSED" }), {
         voiceExplicit: true,
@@ -208,5 +220,52 @@ describe("голоса и повтор", () => {
     expect(marks[0]).toBe("a-start");
     expect(marks.indexOf("c-start")).toBeLessThan(marks.indexOf("a-end"));
     expect(marks.indexOf("b-start")).toBeGreaterThan(marks.indexOf("a-end"));
+  });
+
+  test("ожидающий вызов не даёт удалить дорожку", async () => {
+    const marks: string[] = [];
+    let release = () => {};
+    const held = withSpeechPace(
+      "pace-queue",
+      80,
+      () =>
+        new Promise<void>((resolve) => {
+          marks.push("a-hold");
+          release = resolve;
+        }),
+    );
+    await sleepAbortable(5);
+    const queued = withSpeechPace("pace-queue", 80, async () => {
+      marks.push("b-start");
+    });
+    const intruder = (async () => {
+      await sleepAbortable(5);
+      release();
+      await sleepAbortable(5);
+      return withSpeechPace("pace-queue", 80, async () => {
+        marks.push("c-start");
+      });
+    })();
+    await Promise.all([held, queued, intruder]);
+    expect(marks).toEqual(["a-hold", "b-start", "c-start"]);
+    expect(hasSpeechLane("pace-queue")).toBe(true);
+  });
+
+  test("отмена до входа не оставляет дорожку", async () => {
+    await expect(withSpeechPace("pace-abort", 30, async () => {}, AbortSignal.abort())).rejects.toThrow();
+    expect(hasSpeechLane("pace-abort")).toBe(false);
+  });
+
+  test("дорожка сессии исчезает после паузы", async () => {
+    const started = Date.now();
+    await withSpeechPace("pace-evict", 40, async () => {});
+    expect(hasSpeechLane("pace-evict")).toBe(true);
+    await withSpeechPace("pace-evict", 40, async () => {});
+    expect(Date.now() - started).toBeGreaterThanOrEqual(35);
+    await sleepAbortable(60);
+    expect(hasSpeechLane("pace-evict")).toBe(false);
+    const fresh = Date.now();
+    await withSpeechPace("pace-evict", 40, async () => {});
+    expect(Date.now() - fresh).toBeLessThan(30);
   });
 });

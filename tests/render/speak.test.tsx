@@ -89,13 +89,14 @@ for (const [viewport, render] of [
         ...call,
         state: "output-error",
         errorText:
-          "speak_rate_limited: Сервис озвучки ограничил частоту запросов (после трёх попыток). Подождите минуту и повторите.",
+          "speak_rate_limited: Сервис озвучки ограничил частоту запросов (после трёх попыток). Подождите минуту и повторите. Если повтор тоже завершится этой ошибкой, установите Piper в песочнице и озвучьте им.",
       }),
     );
     await expect.element(page.getByText("Озвучка", { exact: true })).toBeVisible();
     await expect
       .element(page.getByText(/Сервис озвучки ограничил частоту запросов/))
       .toBeVisible();
+    await expect.element(page.getByText(/установите Piper/i)).toBeVisible();
     expect(document.querySelector('[data-variant="destructive"]')).not.toBeNull();
     expect(document.body.innerText).not.toMatch(/\bspeak\b/);
     expect(document.body.innerText).not.toContain("{");
