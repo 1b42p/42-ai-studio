@@ -4,13 +4,13 @@
  * ни в базу: вызывающий код передаёт уже расшифрованный секрет.
  */
 import { Daytona } from "@daytona/sdk";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 
 import { loadConfig } from "../config";
 import { getDb } from "../db/client";
 import { sandboxes } from "../db/schema";
 import { errorStatus } from "../sandbox/errors";
-import { FakeStore } from "../sandbox/fake-store";
+import { FAKE_DEFAULT_REGION, FakeStore } from "../sandbox/fake-store";
 
 /** Коды, которые админка (#32) показывает вместо чисел. */
 export const USAGE_ERRORS = ["unauthorized", "forbidden", "unavailable", "unexpected"] as const;
@@ -302,7 +302,7 @@ function fakeSource(secret: string): UsageSource {
     keyOrganization: () => store.keyOrganization(secret),
     organizations: async () => [await store.keyOrganization(secret)],
     organizationUsage: async (organizationId) => store.organizationUsage(secret, organizationId),
-    organizationDefaultRegion: async () => "us-east-1",
+    organizationDefaultRegion: async () => FAKE_DEFAULT_REGION,
     sandboxOrganization: (sandboxId) => store.sandboxOrganization(sandboxId),
   };
 }
@@ -322,13 +322,19 @@ async function resolveOrganization(
   if (organizations.length === 1) return organizations[0];
 
   // `GET /organizations` перечисляет организации владельца ключа, а не самого
-  // ключа: при неоднозначности помогает любая его песочница.
-  const [row] = await getDb()
+  // ключа: при неоднозначности помогает песочница, которая ещё есть в Daytona.
+  // Удалённые строки и резервы без машины пропускаются.
+  const rows = await getDb()
     .select({ daytonaSandboxId: sandboxes.daytonaSandboxId })
     .from(sandboxes)
-    .where(eq(sandboxes.daytonaKeyId, keyId))
-    .limit(1);
-  if (row !== undefined && row.daytonaSandboxId.length > 0) {
+    .where(and(
+      eq(sandboxes.daytonaKeyId, keyId),
+      ne(sandboxes.state, "gone"),
+      ne(sandboxes.daytonaSandboxId, ""),
+    ))
+    .orderBy(desc(sandboxes.createdAt))
+    .limit(5);
+  for (const row of rows) {
     const organizationId = await source.sandboxOrganization(row.daytonaSandboxId);
     if (organizationId !== undefined) return organizationId;
   }

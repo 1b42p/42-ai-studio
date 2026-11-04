@@ -139,12 +139,32 @@ async function reserveLaunch(appSessionId: string, keyId: string, kind: SandboxL
     .where(eq(sandboxes.appSessionId, appSessionId));
 }
 
+/** Снимает резерв; сбой записи не должен подменять исходную ошибку старта. */
+async function updateReservation(
+  appSessionId: string,
+  values: { state?: "gone"; startingSince: null; startingKind: null },
+): Promise<void> {
+  try {
+    await getDb()
+      .update(sandboxes)
+      .set(values)
+      .where(and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.state, "starting")));
+  } catch (error) {
+    console.error("[sandbox] reservation_release_failed", errorStatus(error) ?? "db");
+  }
+}
+
 /** Неудачное создание не должно держать место в пуле пять минут. */
-async function releaseReservation(appSessionId: string): Promise<void> {
-  await getDb()
-    .update(sandboxes)
-    .set({ state: "gone", startingSince: null, startingKind: null })
-    .where(and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.state, "starting")));
+function releaseReservation(appSessionId: string): Promise<void> {
+  return updateReservation(appSessionId, { state: "gone", startingSince: null, startingKind: null });
+}
+
+/**
+ * Снимает резерв с неудавшегося пробуждения, не теряя саму машину: следующее
+ * обращение снова попробует её запустить.
+ */
+function clearLaunchReservation(appSessionId: string): Promise<void> {
+  return updateReservation(appSessionId, { startingSince: null, startingKind: null });
 }
 
 function sandboxStateForLoss(state: string | undefined) {
@@ -271,7 +291,7 @@ export function createDaytonaLifecycle() {
         const [existing] = await sql<{ id: string; daytonaKeyId: string; daytonaSandboxId: string; state: StoredState }[]>`
           select id, daytona_key_id as "daytonaKeyId", daytona_sandbox_id as "daytonaSandboxId", state
           from sandboxes where app_session_id = ${session.id}`;
-        if (existing !== undefined && existing.state !== "gone") {
+        if (existing !== undefined && existing.state !== "gone" && existing.daytonaSandboxId !== "") {
           try {
             const [key] = await sql<Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deletedAt">[]>`
               select id, api_key_encrypted as "apiKeyEncrypted", deleted_at as "deletedAt"
@@ -339,7 +359,10 @@ export function createDaytonaLifecycle() {
             throw sandboxFailure(lastError ?? new StudioSandboxError("sandbox_create_failed"), "sandbox_create_failed");
           }
         }
-      } catch (error) { throw sandboxFailure(error, "sandbox_create_failed"); }
+      } catch (error) {
+        await clearLaunchReservation(session.id);
+        throw sandboxFailure(error, "sandbox_create_failed");
+      }
       finally {
         try { if (locked) await sql`select pg_advisory_unlock(1, hashtext(${session.id}::text))`; }
         finally { await sql.release(); }
@@ -348,7 +371,11 @@ export function createDaytonaLifecycle() {
       return { state: opened.state, connection: await connected(opened.machine, session.id) };
     },
     async resume(ctx: SandboxSessionContext, _artifact: Readonly<Artifact>, state: Readonly<State>) {
-      if (!state || typeof state !== "object" || typeof state.keyId !== "string" || typeof state.sandboxId !== "string") throw new SandboxSessionGoneError("Некорректное состояние песочницы.");
+      if (
+        !state || typeof state !== "object" ||
+        typeof state.keyId !== "string" || state.keyId.length === 0 ||
+        typeof state.sandboxId !== "string" || state.sandboxId.length === 0
+      ) throw new SandboxSessionGoneError("Некорректное состояние песочницы.");
       const session = await boundSession(ctx.session.id, ctx.session.auth);
       try {
         const backend = await backendFor(state.keyId);
@@ -364,6 +391,7 @@ export function createDaytonaLifecycle() {
             .where(and(eq(sandboxes.appSessionId, session.id), eq(sandboxes.daytonaSandboxId, state.sandboxId)));
           throw error;
         }
+        await clearLaunchReservation(session.id);
         throw sandboxFailure(error, "sandbox_start_failed");
       }
     },

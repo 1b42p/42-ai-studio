@@ -9,7 +9,7 @@ import { JOB_ID_PATTERN } from "./job-types";
 
 export type FakeCreateFailure = "build_failed" | "unavailable" | "error" | "unauthorized";
 /** Отказ использования: как ответ Daytona на `/organizations/{id}/usage`. */
-export type FakeUsageFailure = "unauthorized" | "forbidden" | "unavailable";
+export type FakeUsageFailure = "unauthorized" | "forbidden" | "unavailable" | "unexpected";
 /** Ресурсы песочницы и квота ключа в фиктивном слое. */
 export interface FakeResources {
   cpu: number;
@@ -540,6 +540,8 @@ export class FakeStore {
       if (config.usageFailure === "unauthorized") throw httpFailure(401, "Fake Daytona: unauthorized");
       if (config.usageFailure === "forbidden") throw httpFailure(403, "Fake Daytona: forbidden");
       if (config.usageFailure === "unavailable") throw httpFailure(503, "Fake Daytona: unavailable");
+      // Ответ 200 не по схеме: чистый разбор обязан дать `unexpected`.
+      if (config.usageFailure === "unexpected") return {};
       const used = usageTotals(data, organizationId);
       const quota = config.quota;
       const entry = {

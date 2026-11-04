@@ -1,4 +1,7 @@
-/** Чистый разбор `OrganizationUsageOverview` из ответа Daytona (#23). */
+/**
+ * Чистый разбор `OrganizationUsageOverview` из ответа Daytona (#23).
+ * Отдельного юнит-набора в проекте нет, поэтому проверка живёт рядом с HTTP-тестами.
+ */
 import { describe, expect, test } from "vitest";
 
 import {

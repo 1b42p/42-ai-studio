@@ -152,8 +152,8 @@ Tier 1 при диске 8 ГиБ неархивных песочниц не б�
 Ключ Daytona принадлежит одной организации. `GET /api-keys/current` отдаёт
 `organizationId` необязательным полем; `GET /organizations` перечисляет
 организации владельца ключа, а не самого ключа, поэтому при нескольких
-организациях нужен `organizationId` песочницы. `GET
-/organizations/{id}/usage` принимает ключ с правом `read:billing` или
+организациях нужен `organizationId` песочницы. Запрос
+`GET /organizations/{id}/usage` принимает ключ с правом `read:billing` или
 `write:sandboxes`; для создания и удаления песочниц достаточно
 `write:sandboxes` и `delete:sandboxes` (чтение песочниц выдаётся всегда).
 Документация Daytona расходится по памяти Tier 1 (10 и 20 ГиБ в разных
@@ -451,7 +451,7 @@ npm run test:http
 Квота ключа задаётся `fakeSandbox.setQuota(apiKey, {cpu, memoryGb, diskGb})`
 (по умолчанию 10/10/30), общая организация двух ключей — `setOrganization`,
 отказ использования — `failUsage(apiKey, "forbidden" | "unavailable" |
-"unauthorized")`, архивация — `archive(appSessionId)`. `usageCalls(apiKey)`
+"unauthorized" | "unexpected")`, архивация — `archive(appSessionId)`. `usageCalls(apiKey)`
 считает запросы использования, а `counters()` показывает `created` и
 `createAttempts` (включая отказ по квоте). Фиктивные `/api-keys/current` и
 `/organizations/{id}/usage` отвечают в форме настоящего Daytona с несколькими

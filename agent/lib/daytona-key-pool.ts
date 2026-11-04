@@ -93,20 +93,20 @@ export async function refreshUsage(
     Date.now() - row.usageCheckedAt.getTime() < USAGE_FRESH_MS;
   if (options.force !== true && fresh) return previous;
 
+  // Удалённый ключ не выбирается и не расшифровывается: последние числа
+  // остаются как есть, чтобы админка не показывала выдуманную ошибку.
+  if (row.apiKeyEncrypted === DELETED_KEY_MARKER) return previous;
+
   let usage: KeyUsage;
-  if (row.apiKeyEncrypted === DELETED_KEY_MARKER) {
-    usage = failedUsage(previous, "unauthorized", previous?.organizationId ?? null);
-  } else {
-    try {
-      const secret = decryptSecret(
-        row.apiKeyEncrypted,
-        loadConfig().secretsEncryptionKey,
-        DAYTONA_KEY_PURPOSE,
-      );
-      usage = await fetchUsage(keyId, secret, previous);
-    } catch {
-      usage = failedUsage(previous, "unexpected", previous?.organizationId ?? null);
-    }
+  try {
+    const secret = decryptSecret(
+      row.apiKeyEncrypted,
+      loadConfig().secretsEncryptionKey,
+      DAYTONA_KEY_PURPOSE,
+    );
+    usage = await fetchUsage(keyId, secret, previous);
+  } catch {
+    usage = failedUsage(previous, "unexpected", previous?.organizationId ?? null);
   }
 
   await db
@@ -160,6 +160,12 @@ export async function pickKey(
   const organizationByKey = new Map(
     keys.map((key) => [key.id, poolOf(storedUsage(key.usage), key.id)]),
   );
+  // Блокировки берутся на пулы кандидатов в отсортированном порядке: две
+  // параллельные сессии не займут последнее место, а разные организации
+  // не ждут друг друга.
+  const candidatePools = [...new Set(
+    candidates.map((candidate) => organizationByKey.get(candidate.id) ?? poolOf(null, candidate.id)),
+  )].sort();
   const config = loadConfig();
   const sandboxSize: KeyNeed = {
     cpu: config.sandboxCpu,
@@ -169,7 +175,9 @@ export async function pickKey(
 
   const sql = getSqlClient();
   const picked = await sql.begin(async (tx) => {
-    await tx`select pg_advisory_xact_lock(${POOL_LOCK})`;
+    for (const pool of candidatePools) {
+      await tx`select pg_advisory_xact_lock(${POOL_LOCK}::int, hashtext(${pool}))`;
+    }
 
     const rows = (await tx`
       select id, usage, exhausted_until as "exhaustedUntil"
@@ -315,8 +323,6 @@ export async function enableKey(keyId: string): Promise<DaytonaKey | null> {
 export interface DeleteKeyResult {
   /** Песочницы, которые не удалось удалить в Daytona. */
   readonly remaining: number;
-  /** Ключ найден (даже если уже был удалён). */
-  readonly deleted: boolean;
 }
 
 /**
@@ -327,7 +333,7 @@ export interface DeleteKeyResult {
 export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
   const db = getDb();
   const [key] = await db.select().from(daytonaKeys).where(eq(daytonaKeys.id, keyId));
-  if (key === undefined) return { remaining: 0, deleted: false };
+  if (key === undefined) return { remaining: 0 };
 
   await db
     .update(daytonaKeys)
@@ -338,7 +344,7 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
   const alive = rows.filter((row) => row.state !== "gone");
 
   if (key.apiKeyEncrypted === DELETED_KEY_MARKER) {
-    return { remaining: alive.length, deleted: true };
+    return { remaining: alive.length };
   }
 
   let backend: ReturnType<typeof daytonaBackend>;
@@ -348,14 +354,16 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
       decryptSecret(key.apiKeyEncrypted, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
     );
   } catch {
-    return { remaining: alive.length, deleted: true };
+    return { remaining: alive.length };
   }
 
   let remaining = 0;
   for (const row of rows) {
     if (row.state === "gone") continue;
+    // Строка-резерв без машины: создание может идти прямо сейчас. Оставляем
+    // её живой и сохраняем шифротекст — повтор удалит появившуюся машину.
     if (row.daytonaSandboxId === "") {
-      await db.update(sandboxes).set({ state: "gone" }).where(eq(sandboxes.id, row.id));
+      remaining += 1;
       continue;
     }
     try {
@@ -377,7 +385,7 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
       .set({ apiKeyEncrypted: DELETED_KEY_MARKER })
       .where(eq(daytonaKeys.id, keyId));
   }
-  return { remaining, deleted: true };
+  return { remaining };
 }
 
 /** Daytona отказала по квоте: `400` и сообщение «Total … limit exceeded». */

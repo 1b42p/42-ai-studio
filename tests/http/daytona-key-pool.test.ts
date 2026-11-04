@@ -1,6 +1,7 @@
 /**
  * Пул ключей Daytona (#23): выбор по свободной квоте, отключение и удаление,
- * фиктивный слой вместо настоящей Daytona.
+ * фиктивный слой вместо настоящей Daytona. Точечные операции проверяются
+ * в процессе теста: HTTP-маршруты для них делает админка (#32).
  */
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -193,7 +194,30 @@ describe("выбор ключа по свободной квоте", () => {
     await fakeSandbox.seed(session.id, { "/workspace/notes.txt": "С прежними числами\n" });
     expectRead(await sendAndWait(user, session.id, READ_FILE), "С прежними числами");
     expect((await sandboxRow(session.id)).daytonaKeyId).toBe(a.id);
+
+    // Ответ 200 не по схеме доходит до `usage` как `unexpected`.
+    await fakeSandbox.failUsage(KEY_A, "unexpected");
+    const broken = await refreshUsage(a.id, { force: true });
+    expect(broken).toMatchObject({ source: "error", error: "unexpected", cpu: first?.cpu });
   }, 60_000);
+
+  test("два выбора подряд в пределах 30 секунд дают один запрос использования", async () => {
+    const a = await createDaytonaKey({ apiKey: KEY_A });
+    await fakeSandbox.setQuota(KEY_A, { cpu: 10, memoryGb: 20, diskGb: 30 });
+    const user = await createUser();
+    const one = await createSessionAs(user);
+    const two = await createSessionAs(user);
+    const need = { cpu: 2, memoryGb: 4, diskGb: 8 };
+
+    const first = await pickKey(need, { appSessionId: one.id });
+    const second = await pickKey(need, { appSessionId: two.id });
+    expect(first.kind).toBe("key");
+    expect(second.kind).toBe("key");
+    expect(await fakeSandbox.usageCalls(KEY_A)).toBe(1);
+
+    await refreshUsage(a.id, { force: true });
+    expect(await fakeSandbox.usageCalls(KEY_A)).toBe(2);
+  });
 
   test("устаревшее использование: отказ по квоте помечает пул и передаёт выбор следующему ключу", async () => {
     const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });
@@ -291,7 +315,7 @@ describe("отключение и удаление", () => {
     const beforeCreated = (await fakeSandbox.counters()).created;
 
     const result = await deleteKey(a.id);
-    expect(result).toEqual({ remaining: 0, deleted: true });
+    expect(result).toEqual({ remaining: 0 });
     const deleted = await keyRow(a.id);
     expect(deleted.apiKeyEncrypted).toBe("deleted");
     expect(deleted.deletedAt).not.toBeNull();
@@ -327,7 +351,9 @@ describe("организации и отказы", () => {
     await fakeSandbox.setOrganization(KEY_A, "org-shared");
     await fakeSandbox.setOrganization(KEY_B, "org-shared");
     await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
-    await fakeSandbox.setQuota(KEY_B, ONE_SLOT);
+    // B сам по себе вместил бы ещё песочницу; выбор обязан идти по
+    // представителю пула A, а не по квоте второго ключа.
+    await fakeSandbox.setQuota(KEY_B, { cpu: 10, memoryGb: 20, diskGb: 30 });
     const user = await createUser();
 
     const one = await createSessionAs(user);
@@ -339,6 +365,9 @@ describe("организации и отказы", () => {
     expect(JSON.stringify(toolResult(await sendAndWait(user, two.id, READ_FILE))))
       .toContain("capacity_exhausted");
     expect((await fakeSandbox.counters()).created).toBe(1);
+    // Первый ход создал A (1 попытка), второй упёрся в квоту A (2-я) и не
+    // пробовал B: иначе была бы третья попытка и вторая песочница.
+    expect((await fakeSandbox.counters()).createAttempts).toBe(2);
     // Представитель пула исчерпан — второй ключ той же организации пропущен.
     expect((await keyRow(first.id)).exhaustedUntil).not.toBeNull();
     expect((await keyRow(second.id)).exhaustedUntil).not.toBeNull();
