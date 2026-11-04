@@ -606,6 +606,35 @@ test("машина удалённого ключа, не записанная д
   }
 }, 60_000);
 
+test("401 при восстановлении по имени переводит выбор на другой ключ", async () => {
+  const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });
+  const b = await createDaytonaKey({ label: "B", apiKey: KEY_B });
+  await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+  await fakeSandbox.setQuota(KEY_B, ONE_SLOT);
+  const user = await createUser();
+  const eveSessionId = randomUUID();
+  const [session] = await db().insert(appSessions).values({ userId: user.id, eveSessionId }).returning();
+  await db().insert(sandboxes).values({
+    appSessionId: session!.id,
+    daytonaKeyId: a.id,
+    daytonaSandboxId: "",
+    state: "starting",
+    startingSince: new Date(),
+    startingKind: "create",
+  });
+  await fakeSandbox.failNextGet("unauthorized");
+
+  const started = await createDaytonaLifecycle().start(sessionContext(eveSessionId), undefined, ARTIFACT);
+  try {
+    expect(started.state.keyId).toBe(b.id);
+    expect(await sandboxRow(session!.id)).toMatchObject({ daytonaKeyId: b.id, state: "started" });
+    expect(await keyRow(a.id)).toMatchObject({ usage: { error: "unauthorized" } });
+    expect((await fakeSandbox.counters()).created).toBe(1);
+  } finally {
+    await started.connection.close?.();
+  }
+}, 60_000);
+
 test("десять одновременных стартов не занимают весь пул соединений", async () => {
   await createDaytonaKey({ apiKey: KEY_A });
   await fakeSandbox.setQuota(KEY_A, { cpu: 10, memoryGb: 10, diskGb: 30 });

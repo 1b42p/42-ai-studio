@@ -402,7 +402,15 @@ export function createDaytonaLifecycle() {
                   await discardMachine(key.id, machine);
                 }
               } catch (error) {
-                if (!isMissingSandbox(error)) throw error;
+                if (isMissingSandbox(error)) {
+                  // Машины по имени нет — обычный путь создания.
+                } else if (errorStatus(error) === 401) {
+                  // Ключ отозван: помечаем и переходим к следующему, иначе
+                  // пустой резерв будет вечно повторять этот же отказ.
+                  await markKeyUnauthorized(key.id);
+                } else {
+                  throw error;
+                }
               }
             }
           }

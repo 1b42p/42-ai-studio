@@ -242,6 +242,12 @@ export function getFakeBackend(directory: string, apiKey: string, resources: Fak
   const store = new FakeStore(directory);
   return {
     get: async (idOrName: string): Promise<FakeMachine> => {
+      const failure = await store.consumeGetFailure();
+      if (failure !== undefined) {
+        throw Object.assign(new Error(`Fake Daytona get ${failure}`), {
+          status: failure === "unauthorized" ? 401 : 503,
+        });
+      }
       const record = await store.transaction((data) => store.find(data, idOrName));
       return new FakeMachineHandle(store, record);
     },

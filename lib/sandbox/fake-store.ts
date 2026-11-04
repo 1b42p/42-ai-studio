@@ -12,6 +12,8 @@ export type FakeCreateFailure = "build_failed" | "unavailable" | "error" | "unau
 export type FakeUsageFailure = "unauthorized" | "forbidden" | "unavailable" | "unexpected";
 /** Отказ удаления машины: проверка повторного `deleteKey`. */
 export type FakeDeleteFailure = "unavailable" | "error";
+/** Отказ чтения машины: проверка восстановления на отозванном ключе. */
+export type FakeGetFailure = "unauthorized" | "unavailable";
 /** Ресурсы песочницы и квота ключа в фиктивном слое. */
 export interface FakeResources {
   cpu: number;
@@ -67,6 +69,7 @@ interface StoreData {
   counters: FakeCounters;
   failNextCreate?: FakeCreateFailure;
   failNextDelete?: FakeDeleteFailure;
+  failNextGet?: FakeGetFailure;
   /** Задержка создания, чтобы тест успел удалить ключ во время старта. */
   createDelayMs: number;
   keys: Record<string, FakeKeyConfig>;
@@ -475,6 +478,18 @@ export class FakeStore {
     await this.transaction((data) => { data.failNextDelete = kind; });
   }
 
+  async failNextGet(kind: FakeGetFailure): Promise<void> {
+    await this.transaction((data) => { data.failNextGet = kind; });
+  }
+
+  async consumeGetFailure(): Promise<FakeGetFailure | undefined> {
+    return this.transaction((data) => {
+      const failure = data.failNextGet;
+      delete data.failNextGet;
+      return failure;
+    });
+  }
+
   /** Задерживает создание: тест успевает удалить ключ во время старта. */
   async setCreateDelay(ms: number): Promise<void> {
     await this.transaction((data) => { data.createDelayMs = Math.max(0, ms); });
@@ -507,6 +522,7 @@ export class FakeStore {
       Object.assign(data, initialData());
       delete data.failNextCreate;
       delete data.failNextDelete;
+      delete data.failNextGet;
     });
   }
 
