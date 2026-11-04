@@ -22,7 +22,8 @@
     "test:http": "vitest run --config vitest.http.config.ts",
     "test:render": "vitest run --config vitest.render.config.ts",
     "typecheck": "tsc --noEmit",
-    "daytona:add-key": "tsx scripts/add-daytona-key.ts"
+    "daytona:add-key": "tsx scripts/add-daytona-key.ts",
+    "daytona:cleanup": "tsx scripts/daytona-cleanup.ts"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "^3.0.82",

@@ -14,8 +14,9 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { runningBashJob } from "../sandbox/bash-jobs";
 import { getDb } from "../db/client";
-import { appSessions, bashJobs, sessionEvents } from "../db/schema";
+import { agentSessions, appSessions, bashJobs, sessionEvents } from "../db/schema";
 import { sleep } from "../sleep";
+import { copySessionFromEvent } from "./agent-sessions";
 import { findAppSessionById, hasSessionEvent, setTitleIfEmpty } from "./service";
 
 /** Чтение потока сессии с абсолютного номера события. */
@@ -77,6 +78,45 @@ export function stripNullCharacters<T>(value: T): T {
   return value;
 }
 
+/**
+ * Строка `bash_jobs` по событию потока. `null` — событие не про фоновую
+ * команду. Задание из песочницы копии агента пишется в ту же сессию
+ * приложения: копия работает в песочнице корня.
+ */
+export function bashJobRow(appSessionId: string, event: MessageStreamEvent) {
+  const job = runningBashJob(event);
+  if (job === null) return null;
+
+  const stdout = stripNullCharacters(job.stdout);
+  const stderr = stripNullCharacters(job.stderr);
+  return {
+    appSessionId,
+    jobId: job.jobId,
+    status: "running" as const,
+    stdoutTail: stdout,
+    stderrTail: stderr,
+    stdoutBytes: Buffer.byteLength(stdout),
+    stderrBytes: Buffer.byteLength(stderr),
+  };
+}
+
+/**
+ * Записывает задание `bash` в `bash_jobs` (повтор ничего не меняет). Нужна
+ * копиям агента: их события не попадают в поток корня, а карточка в панели
+ * копии опрашивает задание по корневой сессии.
+ */
+export async function recordBashJob(
+  appSessionId: string,
+  event: MessageStreamEvent,
+): Promise<void> {
+  const row = bashJobRow(appSessionId, event);
+  if (row === null) return;
+  await getDb()
+    .insert(bashJobs)
+    .values(row)
+    .onConflictDoNothing({ target: [bashJobs.appSessionId, bashJobs.jobId] });
+}
+
 function eventId(event: MessageStreamEvent): string | null {
   return event.meta?.id ?? null;
 }
@@ -123,25 +163,24 @@ export async function syncAppSession(
         .insert(sessionEvents)
         .values(rows)
         .onConflictDoNothing({ target: [sessionEvents.appSessionId, sessionEvents.seq] });
+      // Сессия копии агента появляется в базе вместе с событием `agent.started`:
+      // по ней канал проверяет владельца потока копии. `ON CONFLICT DO NOTHING`
+      // делает вставку идемпотентной при повторных синхронизациях.
+      const copies = rows.flatMap((row) => {
+        const copy = copySessionFromEvent(row.payload, appSessionId);
+        return copy === null ? [] : [copy];
+      });
+      if (copies.length > 0) {
+        await tx.insert(agentSessions).values(copies).onConflictDoNothing();
+      }
       // Название — из тех же очищенных нагрузок: `text` в Postgres, как и
       // `jsonb`, не принимает NUL, и сырое событие откатывало бы транзакцию.
       await setTitleIfEmpty(tx, appSessionId, rows.map((row) => row.payload));
       // Задание `bash`, ушедшее в фон, существует в базе независимо от того,
       // открыта ли вкладка: строка создаётся здесь же, идемпотентно.
       const jobs = rows.flatMap((row) => {
-        const job = runningBashJob(row.payload);
-        if (job === null) return [];
-        const stdout = stripNullCharacters(job.stdout);
-        const stderr = stripNullCharacters(job.stderr);
-        return [{
-          appSessionId,
-          jobId: job.jobId,
-          status: "running" as const,
-          stdoutTail: stdout,
-          stderrTail: stderr,
-          stdoutBytes: Buffer.byteLength(stdout),
-          stderrBytes: Buffer.byteLength(stderr),
-        }];
+        const job = bashJobRow(appSessionId, row.payload);
+        return job === null ? [] : [job];
       });
       if (jobs.length > 0) {
         await tx

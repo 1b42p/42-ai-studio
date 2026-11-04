@@ -7,13 +7,21 @@ import { ThemeProvider } from "@/components/studio/theme-provider";
 
 import { viewports } from "./viewports";
 
+/** Отрисовывает интерфейс в окне заданного размера. */
+export async function renderAtSize(
+  ui: ReactElement,
+  size: { width: number; height: number },
+) {
+  await page.viewport(size.width, size.height);
+
+  return render(<ThemeProvider>{ui}</ThemeProvider>);
+}
+
 async function renderAt(
   viewport: (typeof viewports)[keyof typeof viewports],
   ui: ReactElement,
 ) {
-  await page.viewport(viewport.width, viewport.height);
-
-  return render(<ThemeProvider>{ui}</ThemeProvider>);
+  return renderAtSize(ui, viewport);
 }
 
 /** Отрисовывает интерфейс в окне телефона (390×844). */

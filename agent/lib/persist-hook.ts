@@ -9,13 +9,16 @@
  * - `session.started` сначала привязывает сессию eve к сессии приложения;
  * - `turn.started` отменяет ход, если сессия eve не привязана к сессии
  *   приложения её инициатора;
- * - дочерние сессии пропускаются: ими займётся #12.
+ * - дочерние сессии в поток корня не пишутся, но их фоновые команды `bash`
+ *   должны быть видны карточке копии: строка `bash_jobs` пишется в сессию
+ *   приложения корня (#12).
  */
 import type { HookContext, HookEvent, StreamEventHook } from "eve/hooks";
 
 import {
   BOUNDARY_EVENTS,
   INCREMENTAL_EVENTS,
+  recordBashJob,
   requestSessionSync,
   syncAndConfirm,
 } from "@/lib/sessions/events";
@@ -37,6 +40,8 @@ export interface PersistDependencies {
   }) => Promise<boolean>;
   readonly requestSync: (appSessionId: string) => Promise<unknown>;
   readonly syncAndConfirm: (appSessionId: string, eventId: string | null) => Promise<boolean>;
+  /** Строка `bash_jobs` по событию копии агента. */
+  readonly recordJob: (appSessionId: string, event: HookEvent) => Promise<void>;
 }
 
 export const defaultPersistDependencies: PersistDependencies = {
@@ -48,6 +53,7 @@ export const defaultPersistDependencies: PersistDependencies = {
     bindAppSession(appSessionId, userId, eveSessionId),
   requestSync: (appSessionId) => requestSessionSync(appSessionId),
   syncAndConfirm: (appSessionId, eventId) => syncAndConfirm(appSessionId, eventId),
+  recordJob: (appSessionId, event) => recordBashJob(appSessionId, event),
 };
 
 function logSyncFailure(error: unknown): void {
@@ -99,7 +105,23 @@ export function createPersistEventHandler(
   deps: PersistDependencies = defaultPersistDependencies,
 ): StreamEventHook<HookEvent> {
   return async (event, ctx) => {
-    if (ctx.session.parent !== undefined) return;
+    if (ctx.session.parent !== undefined) {
+      // Копия агента: её поток в поток корня не попадает, но фоновое задание
+      // `bash` должно быть видно карточке панели копии — пишем его в сессию
+      // приложения корня, идемпотентно.
+      if (event.type !== "action.result") return;
+      try {
+        const root = await deps.findSessionByEveId(ctx.session.parent.rootSessionId);
+        if (root === null) return;
+        await deps.recordJob(root.id, event);
+      } catch (error) {
+        console.error("[sessions] не удалось сохранить задание копии", {
+          eveSessionId: ctx.session.id,
+          error,
+        });
+      }
+      return;
+    }
 
     try {
       let appSession: BoundAppSession | null | undefined;

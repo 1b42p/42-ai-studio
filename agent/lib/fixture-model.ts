@@ -11,7 +11,7 @@
  *
  * Логика вынесена в чистую функцию, чтобы проверять её без eve и сети.
  */
-import type { MockModelMessage, MockModelRequest, MockModelResponse } from "eve/evals";
+import type { MockModelRequest, MockModelResponse } from "eve/evals";
 
 import { sleep } from "@/lib/sleep";
 
@@ -73,24 +73,55 @@ function parseSlowCommand(message: string): FixtureCommand {
   return { kind: "slow", seconds, text };
 }
 
+/** Маркер, которым eve предваряет сообщение вызывающего в копии агента. */
+const SUBAGENT_MESSAGE_MARKER = "\nCaller message:\n";
+
+/**
+ * Сообщение, которое копия получает от eve, обёрнуто в описание роли. Для
+ * фикстурной модели важна только сама задача: иначе `Эхо:` повторяло бы всю
+ * обёртку, а команда `/tool` внутри неё не распознавалась бы.
+ */
+export function unwrapSubagentMessage(message: string): string {
+  const index = message.lastIndexOf(SUBAGENT_MESSAGE_MARKER);
+  if (index === -1) return message;
+  return message.slice(index + SUBAGENT_MESSAGE_MARKER.length);
+}
+
 /** Разбирает последнее сообщение пользователя в команду фикстуры. */
 export function parseFixtureCommand(message: string): FixtureCommand {
-  if (startsWithCommand(message, "/tool")) return parseToolCommand(message);
-  if (startsWithCommand(message, "/slow")) return parseSlowCommand(message);
-  return { kind: "echo", text: message };
+  const text = unwrapSubagentMessage(message);
+  if (startsWithCommand(text, "/tool")) return parseToolCommand(text);
+  if (startsWithCommand(text, "/slow")) return parseSlowCommand(text);
+  return { kind: "echo", text };
 }
 
 /**
- * Есть ли в запросе результат инструмента позже последнего сообщения
- * пользователя. Поле `toolResults` для этого не годится: оно содержит всю
- * историю, и второй `/tool` в той же сессии ответил бы «готово» без вызова.
+ * Есть ли результат инструмента после последнего сообщения пользователя.
+ * Поле `toolResults` для этого не годится: оно содержит всю историю, и второй
+ * `/tool` в той же сессии ответил бы «готово» без вызова.
+ *
+ * Сравнивать только роль «user» тоже нельзя: eve дописывает в историю
+ * служебные сообщения от имени пользователя — результат задачи
+ * (`<task_result …>`) и заметку `[Tasks]`. Настоящее сообщение ищем по тексту
+ * из `userMessages`, где служебных сообщений нет.
  */
-export function hasToolResultAfterLastUser(messages: readonly MockModelMessage[]): boolean {
-  let lastUserIndex = -1;
-  for (let index = 0; index < messages.length; index += 1) {
-    if (messages[index]?.role === "user") lastUserIndex = index;
+export function hasToolResultAfterLastUser(request: MockModelRequest): boolean {
+  const lastIndex = lastAuthoredUserIndex(request);
+  if (lastIndex === -1) return false;
+  return request.messages.slice(lastIndex + 1).some((message) => message.role === "tool");
+}
+
+/** Индекс последнего настоящего сообщения пользователя в истории модели. */
+function lastAuthoredUserIndex(request: MockModelRequest): number {
+  const authored = request.userMessages.at(-1);
+  if (authored === undefined) return -1;
+
+  for (let index = request.messages.length - 1; index >= 0; index -= 1) {
+    const message = request.messages[index];
+    if (message === undefined) continue;
+    if (message.role === "user" && message.text === authored) return index;
   }
-  return messages.slice(lastUserIndex + 1).some((message) => message.role === "tool");
+  return -1;
 }
 
 /**
@@ -105,7 +136,7 @@ export async function respondToFixture(request: MockModelRequest): Promise<MockM
     case "invalid-json":
       return { text: FIXTURE_INVALID_JSON };
     case "tool":
-      if (hasToolResultAfterLastUser(request.messages)) {
+      if (hasToolResultAfterLastUser(request)) {
         return { text: FIXTURE_TOOL_DONE };
       }
       return { toolCalls: [{ name: command.name, input: command.input }] };

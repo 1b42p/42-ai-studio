@@ -118,14 +118,37 @@ describe("parseFixtureCommand", () => {
 });
 
 describe("hasToolResultAfterLastUser", () => {
+  function history(messages: readonly MockModelMessage[], authored: string): MockModelRequest {
+    // `userMessages` содержат только настоящие сообщения: служебные eve
+    // дописывает от имени пользователя и в это поле не включает.
+    return { ...request(authored, messages), userMessages: [authored] };
+  }
+
   test("ищет результат после последнего сообщения пользователя", () => {
-    expect(hasToolResultAfterLastUser([{ role: "user", text: "раз" }])).toBe(false);
+    expect(hasToolResultAfterLastUser(history([{ role: "user", text: "раз" }], "раз"))).toBe(false);
     expect(
-      hasToolResultAfterLastUser([
-        { role: "user", text: "раз" },
-        { role: "assistant", text: "" },
-        { role: "tool", text: "результат" },
-      ]),
+      hasToolResultAfterLastUser(
+        history(
+          [
+            { role: "user", text: "раз" },
+            { role: "assistant", text: "" },
+            { role: "tool", text: "результат" },
+          ],
+          "раз",
+        ),
+      ),
     ).toBe(true);
+  });
+
+  test("служебный результат задачи от имени пользователя не сбивает поиск", () => {
+    const messages: MockModelMessage[] = [
+      { role: "user", text: "/tool agent" },
+      { role: "assistant", text: "" },
+      { role: "tool", text: "задача запущена" },
+      { role: "user", text: '<task_result id="t1" status="completed">готово</task_result>' },
+      { role: "user", text: "[Tasks]\n<tasks />" },
+    ];
+
+    expect(hasToolResultAfterLastUser(history(messages, "/tool agent"))).toBe(true);
   });
 });

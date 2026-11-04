@@ -51,6 +51,8 @@ export function NewChat({ initialPage, initialQuery, initialError = false }: New
       const id = appSessionId.current;
       return id === null ? {} : { "x-studio-session-id": id };
     },
+    // Подробный ход копий приходит отдельными потоками (#12).
+    followSubagents: true,
   });
 
   /**

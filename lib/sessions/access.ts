@@ -4,9 +4,19 @@
  * Маршруты `/eve/v1/session/*` сами владельца не проверяют, поэтому канал eve
  * делает это в аутентификаторе: на создании — по заголовку
  * `x-studio-session-id`, на остальных — по привязке идентификатора сессии eve.
+ *
+ * Копия агента (#12) — тоже сессия eve: её поток читается теми же учётными
+ * данными. Строка `agent_sessions` разрешает только чтение потока; сообщения,
+ * `cancel`, `clear`, `compact` и `reset` копии ломают задачу корня, поэтому
+ * закрыты.
  */
 import type { User } from "../db/schema";
 import { sleep } from "../sleep";
+import {
+  findAgentSessionByEveId,
+  hasRecentSessionActivity,
+  waitForAgentSession,
+} from "./agent-sessions";
 import {
   claimSessionStart,
   findAppSessionById,
@@ -45,12 +55,26 @@ export function isUuid(value: string): boolean {
 export const BINDING_WAIT_MS = 10_000;
 const BINDING_POLL_MS = 100;
 
+/** Сколько ждать строки `agent_sessions` для только что открытой копии. */
+export const COPY_BINDING_WAIT_MS = 3_000;
+/** Опрос строки копии: событие в потоке появляется раньше записи в базу. */
+export const COPY_BINDING_POLL_MS = 200;
+/** Окно активности пользователя, за которое копию уже могли открыть. */
+export const RECENT_ACTIVITY_WINDOW_MS = 5 * 60_000;
+
+/** Что маршрут делает с сессией eve: читает поток или меняет сессию. */
+export type EveSessionAction = "stream" | "write";
+
 export type EveRoute =
   | { readonly kind: "health" }
   | { readonly kind: "info" }
   | { readonly kind: "other" }
   | { readonly kind: "session-create" }
-  | { readonly kind: "session"; readonly sessionId: string };
+  | {
+      readonly kind: "session";
+      readonly sessionId: string;
+      readonly action: EveSessionAction;
+    };
 
 /**
  * Что это за маршрут eve. Префиксы перед `/eve/v1` игнорируются, поэтому
@@ -61,19 +85,24 @@ export function parseEveRoute(method: string, url: string): EveRoute {
   const marker = "/eve/v1";
   const index = pathname.indexOf(marker);
   const suffix = index === -1 ? pathname : pathname.slice(index + marker.length);
+  const verb = method.toUpperCase();
 
   if (suffix === "/health") return { kind: "health" };
   if (suffix === "/info") return { kind: "info" };
 
   if (suffix === "/session" || suffix === "/session/") {
-    return method.toUpperCase() === "POST" ? { kind: "session-create" } : { kind: "other" };
+    return verb === "POST" ? { kind: "session-create" } : { kind: "other" };
   }
 
-  const match = /^\/session\/([^/]+)(?:\/|$)/.exec(suffix);
+  const match = /^\/session\/([^/]+)(\/.*)?$/.exec(suffix);
   if (match === null || match[1] === undefined) return { kind: "other" };
 
   try {
-    return { kind: "session", sessionId: decodeURIComponent(match[1]) };
+    return {
+      kind: "session",
+      sessionId: decodeURIComponent(match[1]),
+      action: verb === "GET" && match[2] === "/stream" ? "stream" : "write",
+    };
   } catch {
     return { kind: "other" };
   }
@@ -105,31 +134,78 @@ export async function claimSessionStartForUser(
 }
 
 /**
- * Ступень доступа к конкретной сессии eve: она должна быть привязана к сессии
- * приложения этого пользователя. Пока привязки нет, но у пользователя идёт
- * создание сессии (не дольше 60 секунд), ждём привязки до 10 секунд — клиент
- * открывает поток сразу после ответа на создание.
+ * Ступень доступа к конкретной сессии eve. Решения проверяются по порядку,
+ * первое совпадение решает:
+ *
+ * 1. нет входа — отказ ещё до этой функции;
+ * 2. корневая сессия этого пользователя — правила #5 для всех методов;
+ * 3. копия агента этого пользователя — только чтение потока;
+ * 4. известная сессия — чужая, отказ сразу;
+ * 5. неизвестный идентификатор и `GET …/stream`: ждём привязку корня, пока
+ *    у сессии приложения `eve_session_id` пуст (клиент открывает поток сразу
+ *    после создания), затем строку `agent_sessions`, если у пользователя была
+ *    активность за последние пять минут;
+ * 6. остальное — отказ сразу, без ожидания.
  */
-export async function assertEveSessionAccess(user: User, eveSessionId: string): Promise<void> {
-  const bound = await findAppSessionByEveId(eveSessionId);
-  if (bound !== null) {
-    if (bound.userId === user.id) return;
-    throw new SessionAccessError("session_forbidden", "Сессия недоступна");
+export async function assertEveSessionAccess(
+  user: User,
+  eveSessionId: string,
+  action: EveSessionAction = "write",
+): Promise<void> {
+  const root = await findAppSessionByEveId(eveSessionId);
+  if (root !== null) {
+    assertOwner(root.userId, user);
+    return;
   }
 
-  const starting = await findStartingAppSession(user.id);
-  if (starting === null) {
-    throw new SessionAccessError("session_forbidden", "Сессия недоступна");
+  const copy = await findAgentSessionByEveId(eveSessionId);
+  if (copy !== null) {
+    if (action !== "stream") throw forbiddenSession();
+    assertOwner(copy.userId, user);
+    return;
   }
 
+  if (action === "stream") {
+    const starting = await findStartingAppSession(user.id);
+    if (starting !== null) {
+      const bound = await waitForRootBinding(eveSessionId);
+      if (bound !== null) {
+        assertOwner(bound.userId, user);
+        return;
+      }
+    }
+
+    if (await hasRecentSessionActivity(user.id, RECENT_ACTIVITY_WINDOW_MS)) {
+      const opened = await waitForAgentSession(eveSessionId, {
+        timeoutMs: COPY_BINDING_WAIT_MS,
+        pollMs: COPY_BINDING_POLL_MS,
+      });
+      if (opened !== null) {
+        assertOwner(opened.userId, user);
+        return;
+      }
+    }
+  }
+
+  throw forbiddenSession();
+}
+
+/** Владелец проходит, чужой получает отказ без уточнений. */
+function assertOwner(ownerId: string, user: User): void {
+  if (ownerId !== user.id) throw forbiddenSession();
+}
+
+function forbiddenSession(): SessionAccessError {
+  return new SessionAccessError("session_forbidden", "Сессия недоступна");
+}
+
+/** Ждёт привязки идентификатора eve к сессии приложения до 10 секунд. */
+async function waitForRootBinding(eveSessionId: string) {
   const deadline = Date.now() + BINDING_WAIT_MS;
   while (Date.now() < deadline) {
     await sleep(BINDING_POLL_MS);
-    const nowBound = await findAppSessionByEveId(eveSessionId);
-    if (nowBound === null) continue;
-    if (nowBound.userId === user.id) return;
-    throw new SessionAccessError("session_forbidden", "Сессия недоступна");
+    const bound = await findAppSessionByEveId(eveSessionId);
+    if (bound !== null) return bound;
   }
-
-  throw new SessionAccessError("session_forbidden", "Сессия недоступна");
+  return null;
 }
