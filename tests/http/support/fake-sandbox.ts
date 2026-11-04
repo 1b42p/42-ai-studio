@@ -1,5 +1,11 @@
 import { loadConfig } from "../../../lib/config";
-import { FakeStore, type FakeRule, type FakeCreateFailure } from "../../../lib/sandbox/fake-store";
+import {
+  FakeStore,
+  type FakeCreateFailure,
+  type FakeResources,
+  type FakeRule,
+  type FakeUsageFailure,
+} from "../../../lib/sandbox/fake-store";
 
 function store(): FakeStore {
   const config = loadConfig();
@@ -23,8 +29,13 @@ export const fakeSandbox = {
   },
   calls: (appSessionId: string) => store().calls(appSessionId),
   stop: (appSessionId: string) => store().stop(appSessionId),
+  archive: (appSessionId: string) => store().archive(appSessionId),
   killProcess: (appSessionId: string, jobId: string) => store().killProcess(appSessionId, jobId),
   failNextCreate: (kind: FakeCreateFailure) => store().failNextCreate(kind),
+  setQuota: (apiKey: string, quota: FakeResources) => store().setQuota(apiKey, quota),
+  setOrganization: (apiKey: string, organizationId: string) => store().setOrganization(apiKey, organizationId),
+  failUsage: (apiKey: string, failure: FakeUsageFailure | null) => store().failUsage(apiKey, failure),
+  usageCalls: (apiKey?: string) => store().usageCalls(apiKey),
   counters: () => store().counters(),
   reset: () => store().reset(),
 };

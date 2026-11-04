@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants, readFileSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import path from "node:path";
@@ -7,7 +7,20 @@ import { setTimeout as delay } from "node:timers/promises";
 import { emptyReading, JOB_TAIL_BYTES, type JobDirectoryReading } from "./job-directory";
 import { JOB_ID_PATTERN } from "./job-types";
 
-export type FakeCreateFailure = "build_failed" | "unavailable" | "error";
+export type FakeCreateFailure = "build_failed" | "unavailable" | "error" | "unauthorized";
+/** Отказ использования: как ответ Daytona на `/organizations/{id}/usage`. */
+export type FakeUsageFailure = "unauthorized" | "forbidden" | "unavailable";
+/** Ресурсы песочницы и квота ключа в фиктивном слое. */
+export interface FakeResources {
+  cpu: number;
+  memoryGb: number;
+  diskGb: number;
+}
+export interface FakeKeyConfig {
+  quota: FakeResources;
+  organizationId?: string;
+  usageFailure?: FakeUsageFailure;
+}
 export interface FakeRule {
   match: RegExp | string;
   stdout?: string;
@@ -29,6 +42,9 @@ export interface FakeRecord {
   id: string;
   name: string;
   appSessionId: string;
+  /** Секрет ключа, на котором создана песочница; нужен только фиктивному слою. */
+  apiKey: string;
+  resources: FakeResources;
   state: string;
   recoverable?: boolean;
   calls: FakeCall[];
@@ -37,6 +53,8 @@ export interface FakeRecord {
 }
 export interface FakeCounters {
   created: number;
+  /** Все попытки создания, включая отказ по квоте. */
+  createAttempts: number;
   started: number;
   stopped: number;
   deleted: number;
@@ -46,14 +64,52 @@ interface StoreData {
   rules: StoredRule[];
   counters: FakeCounters;
   failNextCreate?: FakeCreateFailure;
+  keys: Record<string, FakeKeyConfig>;
+  usageCalls: Record<string, number>;
 }
+
+const DEFAULT_QUOTA: FakeResources = { cpu: 10, memoryGb: 10, diskGb: 30 };
+export const FAKE_DEFAULT_REGION = "us-east-1";
 
 function initialData(): StoreData {
   return {
     machines: [],
     rules: [],
-    counters: { created: 0, started: 0, stopped: 0, deleted: 0 },
+    counters: { created: 0, createAttempts: 0, started: 0, stopped: 0, deleted: 0 },
+    keys: {},
+    usageCalls: {},
   };
+}
+
+function httpFailure(status: number, text: string): Error & { status: number } {
+  return Object.assign(new Error(text), { status });
+}
+
+function keyConfig(data: StoreData, apiKey: string): FakeKeyConfig {
+  return data.keys[apiKey] ?? { quota: { ...DEFAULT_QUOTA } };
+}
+
+/** У ключа без явной организации — своя, стабильная для одного секрета. */
+function organizationOf(data: StoreData, apiKey: string): string {
+  const configured = keyConfig(data, apiKey).organizationId;
+  if (configured !== undefined) return configured;
+  return `org_${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}`;
+}
+
+/** Что занимает организация: запущенная — всё, остановленная — диск, архивная — ничего. */
+function usageTotals(data: StoreData, organizationId: string): FakeResources {
+  const totals: FakeResources = { cpu: 0, memoryGb: 0, diskGb: 0 };
+  for (const machine of data.machines) {
+    if (machine.state === "destroyed" || machine.state === "build_failed") continue;
+    if (organizationOf(data, machine.apiKey) !== organizationId) continue;
+    if (machine.state === "archived") continue;
+    if (machine.state !== "stopped") {
+      totals.cpu += machine.resources.cpu;
+      totals.memoryGb += machine.resources.memoryGb;
+    }
+    totals.diskGb += machine.resources.diskGb;
+  }
+  return totals;
 }
 
 export function hasCode(error: unknown, code: string): boolean {
@@ -429,16 +485,146 @@ export class FakeStore {
     });
   }
 
-  async create(name: string, appSessionId: string): Promise<{ machine?: FakeRecord; failure?: FakeCreateFailure }> {
+  /** Квота ключа; по умолчанию 10 vCPU, 10 ГиБ памяти и 30 ГиБ диска. */
+  async setQuota(apiKey: string, quota: FakeResources): Promise<void> {
+    await this.transaction((data) => {
+      data.keys[apiKey] = { ...keyConfig(data, apiKey), quota: { ...quota } };
+    });
+  }
+
+  /** Организация ключа: ключи одной организации делят квоту. */
+  async setOrganization(apiKey: string, organizationId: string): Promise<void> {
+    await this.transaction((data) => {
+      data.keys[apiKey] = { ...keyConfig(data, apiKey), organizationId };
+    });
+  }
+
+  /** Заставляет `/usage` (и `/api-keys/current` при 401) отвечать отказом. */
+  async failUsage(apiKey: string, failure: FakeUsageFailure | null): Promise<void> {
+    await this.transaction((data) => {
+      const config = { ...keyConfig(data, apiKey) };
+      if (failure === null) delete config.usageFailure;
+      else config.usageFailure = failure;
+      data.keys[apiKey] = config;
+    });
+  }
+
+  /** Число запросов использования; без ключа — суммарное. */
+  async usageCalls(apiKey?: string): Promise<number> {
+    return this.transaction((data) =>
+      apiKey === undefined
+        ? Object.values(data.usageCalls).reduce((sum, value) => sum + value, 0)
+        : data.usageCalls[apiKey] ?? 0,
+    );
+  }
+
+  /** Организация ключа в форме `GET /api-keys/current`. */
+  async keyOrganization(apiKey: string): Promise<string> {
+    return this.transaction((data) => {
+      const config = keyConfig(data, apiKey);
+      if (config.usageFailure === "unauthorized") {
+        throw httpFailure(401, "Fake Daytona: key expired");
+      }
+      return organizationOf(data, apiKey);
+    });
+  }
+
+  /**
+   * `GET /organizations/{id}/usage` в настоящей форме ответа: несколько
+   * записей `regionUsage`, включая служебный регион `earth` и `linux-vm`.
+   */
+  async organizationUsage(apiKey: string, organizationId: string): Promise<unknown> {
+    return this.transaction((data) => {
+      data.usageCalls[apiKey] = (data.usageCalls[apiKey] ?? 0) + 1;
+      const config = keyConfig(data, apiKey);
+      if (config.usageFailure === "unauthorized") throw httpFailure(401, "Fake Daytona: unauthorized");
+      if (config.usageFailure === "forbidden") throw httpFailure(403, "Fake Daytona: forbidden");
+      if (config.usageFailure === "unavailable") throw httpFailure(503, "Fake Daytona: unavailable");
+      const used = usageTotals(data, organizationId);
+      const quota = config.quota;
+      const entry = {
+        regionId: FAKE_DEFAULT_REGION,
+        sandboxClass: "container",
+        totalCpuQuota: quota.cpu,
+        currentCpuUsage: used.cpu,
+        totalMemoryQuota: quota.memoryGb,
+        currentMemoryUsage: used.memoryGb,
+        totalDiskQuota: quota.diskGb,
+        currentDiskUsage: used.diskGb,
+        maxCpuPerSandbox: null,
+        maxMemoryPerSandbox: null,
+        maxDiskPerSandbox: null,
+        maxCpuPerGpu: null,
+        maxMemoryPerGpu: null,
+        maxDiskPerGpu: null,
+        maxDiskPerNonEphemeralSandbox: null,
+        totalGpuQuota: 0,
+        currentGpuUsage: 0,
+        allowedGpuTypes: [],
+      };
+      return {
+        regionUsage: [
+          { ...entry, regionId: "earth" },
+          { ...entry, sandboxClass: "linux-vm" },
+          entry,
+        ],
+        totalSnapshotQuota: 0,
+        currentSnapshotUsage: 0,
+        totalVolumeQuota: 0,
+        currentVolumeUsage: 0,
+      };
+    });
+  }
+
+  /** `organizationId` песочницы; 404, если машины нет. */
+  async sandboxOrganization(sandboxId: string): Promise<string> {
+    return this.transaction((data) => {
+      const machine = data.machines.find(
+        (record) => record.id === sandboxId && record.state !== "destroyed",
+      );
+      if (machine === undefined) throw fakeNotFound();
+      return organizationOf(data, machine.apiKey);
+    });
+  }
+
+  /** Переводит остановленную песочницу в архив: диск больше не занят. */
+  async archive(appSessionId: string): Promise<void> {
+    await this.transaction((data) => {
+      const machine = this.current(data, appSessionId);
+      if (!machine) throw fakeNotFound();
+      machine.state = "archived";
+    });
+  }
+
+  async create(
+    name: string,
+    appSessionId: string,
+    apiKey: string,
+    resources: FakeResources,
+  ): Promise<{ machine?: FakeRecord; failure?: FakeCreateFailure | "quota" }> {
     return this.transaction(async (data) => {
+      data.counters.createAttempts++;
       if (data.machines.some((machine) => machine.name === name && machine.state !== "destroyed")) {
         throw Object.assign(new Error("Fake Daytona: name exists (dtn_test_secret_value)"), { status: 409 });
       }
       const failure = data.failNextCreate;
       delete data.failNextCreate;
-      if (failure === "unavailable" || failure === "error") return { failure };
+      if (failure === "unavailable" || failure === "error" || failure === "unauthorized") {
+        return { failure };
+      }
+      if (failure === undefined) {
+        const used = usageTotals(data, organizationOf(data, apiKey));
+        const quota = keyConfig(data, apiKey).quota;
+        if (
+          used.cpu + resources.cpu > quota.cpu ||
+          used.memoryGb + resources.memoryGb > quota.memoryGb ||
+          used.diskGb + resources.diskGb > quota.diskGb
+        ) {
+          return { failure: "quota" };
+        }
+      }
       const machine: FakeRecord = {
-        id: randomUUID(), name, appSessionId,
+        id: randomUUID(), name, appSessionId, apiKey, resources,
         state: failure === "build_failed" ? "build_failed" : "started",
         calls: [],
       };

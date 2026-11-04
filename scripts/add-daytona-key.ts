@@ -1,6 +1,8 @@
+import { refreshUsage } from "../agent/lib/daytona-key-pool";
 import { ConfigError, loadConfig } from "../lib/config";
 import { closeDb, getDb } from "../lib/db/client";
 import { daytonaKeys } from "../lib/db/schema";
+import { storedUsage } from "../lib/daytona/usage";
 import { DAYTONA_KEY_PURPOSE, encryptSecret } from "../lib/secrets";
 
 class InputError extends Error {}
@@ -37,6 +39,21 @@ async function main(): Promise<void> {
       apiKeyEncrypted: encryptSecret(secret, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
     }).returning({ id: daytonaKeys.id });
     console.log(`Ключ Daytona добавлен: ${row.id}`);
+    console.log("Права ключа: write:sandboxes и delete:sandboxes (чтение песочниц выдаётся всегда).");
+
+    // Квота принадлежит организации: второй ключ той же организации не
+    // увеличивает доступное место. Ошибку чтения не превращаем в отказ.
+    const usage = await refreshUsage(row.id, { force: true });
+    if (usage?.organizationId != null) {
+      const keys = await getDb()
+        .select({ id: daytonaKeys.id, usage: daytonaKeys.usage })
+        .from(daytonaKeys);
+      const siblings = keys.filter((key) =>
+        key.id !== row.id && storedUsage(key.usage)?.organizationId === usage.organizationId);
+      if (siblings.length > 0) {
+        console.warn("Ключи одной организации делят одну квоту.");
+      }
+    }
   } finally {
     for (const chunk of chunks) chunk.fill(0);
   }

@@ -4,7 +4,13 @@ import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import type { SandboxConnection } from "eve/sandbox/provider";
 
-import { FakeStore, hasCode, type FakeRecord, type StoredRule } from "./fake-store";
+import {
+  FakeStore,
+  hasCode,
+  type FakeRecord,
+  type FakeResources,
+  type StoredRule,
+} from "./fake-store";
 import type { JobDirectoryReading } from "./job-directory";
 
 interface ConnectionCallbacks {
@@ -226,7 +232,7 @@ function fakeProcess(rule: Pick<StoredRule, "stdout" | "stderr" | "exitCode" | "
   };
 }
 
-export function getFakeBackend(directory: string) {
+export function getFakeBackend(directory: string, apiKey: string, resources: FakeResources) {
   const store = new FakeStore(directory);
   return {
     get: async (idOrName: string): Promise<FakeMachine> => {
@@ -234,10 +240,15 @@ export function getFakeBackend(directory: string) {
       return new FakeMachineHandle(store, record);
     },
     create: async ({ name, appSessionId }: { name: string; appSessionId: string }): Promise<FakeMachine> => {
-      const { machine, failure } = await store.create(name, appSessionId);
+      const { machine, failure } = await store.create(name, appSessionId, apiKey, resources);
+      if (failure === "quota") {
+        // Та же форма, по которой провайдер узнаёт исчерпанную квоту Daytona.
+        throw Object.assign(new Error("Total CPU/memory/disk limit exceeded"), { status: 400 });
+      }
       if (failure) {
+        const status = failure === "unavailable" ? 503 : failure === "unauthorized" ? 401 : 400;
         throw Object.assign(new Error(`Fake Daytona ${failure}: dtn_test_secret_value`), {
-          status: failure === "unavailable" ? 503 : 400,
+          status,
           ...(machine ? { sandboxId: machine.id } : {}),
         });
       }
