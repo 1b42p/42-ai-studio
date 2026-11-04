@@ -418,6 +418,7 @@ export function createDaytonaLifecycle() {
           if (opened === undefined) {
             const attempts = Math.max(1, await enabledKeyCount());
             let lastError: unknown;
+            let created: DaytonaMachine | undefined;
             try {
               for (let attempt = 0; attempt < attempts; attempt += 1) {
                 const picked = await pickKey(need, { appSessionId: session.id });
@@ -440,15 +441,21 @@ export function createDaytonaLifecycle() {
                   if (errorStatus(error) === 401) { await markKeyUnauthorized(picked.key.id); continue; }
                   throw error;
                 }
+                created = machine;
                 const state = { keyId: picked.key.id, sandboxId: machine.id };
                 if (await checkpointMachine(session.id, picked.key.id, machine)) {
                   opened = { machine, state };
+                  created = undefined;
                   break;
                 }
                 await discardMachine(picked.key.id, machine);
+                created = undefined;
               }
             } catch (error) {
-              await releaseReservation(session.id);
+              // Если машина уже создана, но запись id сорвалась, резерв
+              // оставляем восстановимым по имени, а не помечаем gone.
+              if (created === undefined) await releaseReservation(session.id);
+              else await clearLaunchReservation(session.id);
               throw error;
             }
             if (opened === undefined) {
