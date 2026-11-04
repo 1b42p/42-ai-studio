@@ -379,11 +379,14 @@ export function createDaytonaLifecycle() {
             const [key] = await sql<Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deletedAt">[]>`
               select id, api_key_encrypted as "apiKeyEncrypted", deleted_at as "deletedAt"
               from daytona_keys where id = ${existing.daytonaKeyId}`;
-            if (key !== undefined && key.apiKeyEncrypted !== DELETED_KEY_MARKER && key.deletedAt === null) {
+            if (key !== undefined && key.apiKeyEncrypted !== DELETED_KEY_MARKER) {
               const backend = daytonaBackend(
                 key.id,
                 decryptSecret(key.apiKeyEncrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
               );
+              // У мягко удалённого ключа шифротекст ещё есть: созданную до
+              // падения машину нужно найти и убрать, а не оставить сиротой.
+              const deleted = key.deletedAt !== null;
               try {
                 await backend.get(name);
                 const machine = await provision(
@@ -393,9 +396,8 @@ export function createDaytonaLifecycle() {
                   artifact,
                   existing.daytonaSandboxId,
                 );
-                const state = { keyId: key.id, sandboxId: machine.id };
-                if (await checkpointMachine(session.id, key.id, machine)) {
-                  opened = { machine, state };
+                if (!deleted && await checkpointMachine(session.id, key.id, machine)) {
+                  opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
                 } else {
                   await discardMachine(key.id, machine);
                 }

@@ -571,6 +571,41 @@ test("машина, созданная до записи id, восстанав�
   }
 }, 60_000);
 
+test("машина удалённого ключа, не записанная до падения, убирается при восстановлении", async () => {
+  const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });
+  const b = await createDaytonaKey({ label: "B", apiKey: KEY_B });
+  await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+  await fakeSandbox.setQuota(KEY_B, ONE_SLOT);
+  const user = await createUser();
+  const eveSessionId = randomUUID();
+  const [session] = await db().insert(appSessions).values({ userId: user.id, eveSessionId }).returning();
+  const name = `studio-${createHash("sha256").update(eveSessionId).digest("hex").slice(0, 32)}`;
+  const backend = getFakeBackend(loadConfig().fakeSandboxDir!, KEY_A, ONE_SLOT);
+  await backend.create({ name, appSessionId: session!.id });
+  await db().insert(sandboxes).values({
+    appSessionId: session!.id,
+    daytonaKeyId: a.id,
+    daytonaSandboxId: "",
+    state: "starting",
+    startingSince: new Date(),
+    startingKind: "create",
+  });
+  await db().update(daytonaKeys).set({ deletedAt: new Date() }).where(eq(daytonaKeys.id, a.id));
+
+  const started = await createDaytonaLifecycle().start(sessionContext(eveSessionId), undefined, ARTIFACT);
+  try {
+    expect(started.state.keyId).toBe(b.id);
+    expect(await sandboxRow(session!.id)).toMatchObject({ daytonaKeyId: b.id, state: "started" });
+    expect((await fakeSandbox.counters()).created).toBe(2);
+    expect((await fakeSandbox.counters()).deleted).toBe(1);
+
+    expect(await deleteKey(a.id)).toEqual({ remaining: 0 });
+    expect((await keyRow(a.id)).apiKeyEncrypted).toBe("deleted");
+  } finally {
+    await started.connection.close?.();
+  }
+}, 60_000);
+
 test("десять одновременных стартов не занимают весь пул соединений", async () => {
   await createDaytonaKey({ apiKey: KEY_A });
   await fakeSandbox.setQuota(KEY_A, { cpu: 10, memoryGb: 10, diskGb: 30 });
