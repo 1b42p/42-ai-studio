@@ -18,10 +18,12 @@ import {
   migrationJournalCount,
   resetDatabase,
 } from "./support/db";
+import { startEdgeTtsServer, type EdgeTtsServer } from "./support/edge-tts-server";
 import { startOidcIssuer, type OidcIssuer } from "./support/oidc-issuer";
 
 let app: AppHandle | undefined;
 let oidcIssuer: OidcIssuer | undefined;
+let edgeTts: EdgeTtsServer | undefined;
 
 /** Создаёт тестовую базу через служебную базу `postgres`, если её ещё нет. */
 async function ensureDatabase(databaseUrl: string): Promise<void> {
@@ -62,6 +64,9 @@ export async function setup(project: TestProject): Promise<void> {
     throw new Error("журнал миграций пуст: миграции не применились");
   }
 
+  const edgePort = config.edgeTtsWssUrl === undefined ? 59101 : Number(new URL(config.edgeTtsWssUrl).port);
+  edgeTts = await startEdgeTtsServer(edgePort);
+
   oidcIssuer = await startOidcIssuer(config.telegramOidcIssuer, {
     appUrl: config.appUrl,
     clientId: config.telegramClientId ?? "",
@@ -81,5 +86,6 @@ export async function setup(project: TestProject): Promise<void> {
 export async function teardown(): Promise<void> {
   await app?.stop();
   await oidcIssuer?.close();
+  await edgeTts?.close();
   await closeDb();
 }

@@ -46,6 +46,20 @@ const retryMedia: BrowserCommand<[string]> = async (context, pattern) => {
   });
 };
 
+/** Отдаёт короткий mp3 на запросы медиа, чтобы плеер не срывался в ошибку. */
+const serveAudio: BrowserCommand<[]> = async (context) => {
+  if (context.provider.name !== "playwright") {
+    throw new Error("Подмена медиа доступна только с провайдером Playwright");
+  }
+  const body = readFileSync(
+    fileURLToPath(new URL("tests/render/fixtures/tiny.mp3", import.meta.url)),
+  );
+  await context.page.unroute("**/api/media/**");
+  await context.page.route("**/api/media/**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "audio/mpeg", body });
+  });
+};
+
 /** Все запросы медиа — 404: вторая ошибка показывает карточку скачивания. */
 const failMedia: BrowserCommand<[string]> = async (context, pattern) => {
   if (context.provider.name !== "playwright") {
@@ -62,6 +76,7 @@ declare module "vitest/browser" {
     emulateColorScheme: (colorScheme: "light" | "dark") => Promise<void>;
     failMedia: (pattern: string) => Promise<void>;
     retryMedia: (pattern: string) => Promise<void>;
+    serveAudio: () => Promise<void>;
   }
 }
 
@@ -80,7 +95,7 @@ export default defineConfig({
       provider: playwright(),
       headless: true,
       instances: [{ browser: "chromium" }],
-      commands: { emulateColorScheme, failMedia, retryMedia },
+      commands: { emulateColorScheme, failMedia, retryMedia, serveAudio },
     },
   },
 });

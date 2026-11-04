@@ -103,6 +103,10 @@ export interface AppConfig {
   readonly uploadMaxBytes: number;
   /** Абсолютный путь; обязателен только в тестовом режиме. */
   readonly fakeSandboxDir: string | undefined;
+  /** WebSocket синтеза Edge TTS. Пусто — адрес библиотеки. */
+  readonly edgeTtsWssUrl: string | undefined;
+  /** Список голосов Edge TTS. Пусто — адрес библиотеки. */
+  readonly edgeTtsVoicesUrl: string | undefined;
 }
 
 /** Значение из `.env.example`: в production не годится в качестве секрета. */
@@ -235,6 +239,15 @@ const envSchema = z.object({
     })
     .optional()
     .default("high"),
+  EDGE_TTS_WSS_URL: envUrl
+    .refine((value) => {
+      const protocol = new URL(value).protocol;
+      return protocol === "ws:" || protocol === "wss:";
+    }, "ожидается URL с ws:// или wss://")
+    .optional(),
+  EDGE_TTS_VOICES_URL: envUrl
+    .refine((value) => /^https?:\/\//.test(value), "ожидается URL с http:// или https://")
+    .optional(),
 });
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -371,6 +384,8 @@ export function parseConfig(env: EnvRecord): AppConfig {
     mediaCopyMaxBytes: data.MEDIA_COPY_MAX_BYTES,
     uploadMaxBytes: data.UPLOAD_MAX_BYTES,
     fakeSandboxDir: data.FAKE_SANDBOX_DIR === undefined ? undefined : resolve(data.FAKE_SANDBOX_DIR),
+    edgeTtsWssUrl: data.EDGE_TTS_WSS_URL,
+    edgeTtsVoicesUrl: data.EDGE_TTS_VOICES_URL,
   };
 }
 

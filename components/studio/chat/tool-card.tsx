@@ -5,6 +5,7 @@ import { WrenchIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { EditFileCard } from "@/components/studio/chat/edit-file-card";
+import { SpeakCard } from "@/components/studio/chat/speak-card";
 import { TerminalCard } from "@/components/studio/chat/terminal-card";
 import { TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 
@@ -17,6 +18,7 @@ export interface ToolCardProps {
 const toolCards: ReadonlyMap<string, ComponentType<ToolCardProps>> = new Map([
   ["bash", TerminalCard],
   ["edit_file", EditFileCard],
+  ["speak", SpeakCard],
 ]);
 
 function FallbackToolCard({ part }: ToolCardProps) {
