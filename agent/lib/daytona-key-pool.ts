@@ -332,6 +332,24 @@ export interface DeleteKeyResult {
   readonly remaining: number;
 }
 
+/** Запоминает машину до сетевого удаления; повторная запись безопасна. */
+export async function rememberPendingDeletion(keyId: string, sandboxId: string): Promise<void> {
+  await getDb()
+    .insert(pendingSandboxDeletions)
+    .values({ daytonaKeyId: keyId, daytonaSandboxId: sandboxId })
+    .onConflictDoNothing();
+}
+
+/** Убирает машину из очереди после подтверждённого удаления или 404. */
+export async function forgetPendingDeletion(keyId: string, sandboxId: string): Promise<void> {
+  await getDb()
+    .delete(pendingSandboxDeletions)
+    .where(and(
+      eq(pendingSandboxDeletions.daytonaKeyId, keyId),
+      eq(pendingSandboxDeletions.daytonaSandboxId, sandboxId),
+    ));
+}
+
 /**
  * Мягко удаляет ключ: `deleted_at`, `enabled = false`, затем по возможности
  * удаляет его песочницы. Шифротекст затирается маркером `deleted` только когда
@@ -421,28 +439,15 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
   for (const [sandboxId, rowIds] of targets) {
     // Идентификатор запоминается до сетевого удаления: падение процесса
     // между запросом и подтверждением не потеряет машину.
-    await db
-      .insert(pendingSandboxDeletions)
-      .values({ daytonaKeyId: keyId, daytonaSandboxId: sandboxId })
-      .onConflictDoNothing();
+    await rememberPendingDeletion(keyId, sandboxId);
     try {
       const machine = await backend.get(sandboxId);
       await machine.delete();
-      await db
-        .delete(pendingSandboxDeletions)
-        .where(and(
-          eq(pendingSandboxDeletions.daytonaKeyId, keyId),
-          eq(pendingSandboxDeletions.daytonaSandboxId, sandboxId),
-        ));
+      await forgetPendingDeletion(keyId, sandboxId);
       await markGone(rowIds, sandboxId);
     } catch (error) {
       if (isMissingSandbox(error)) {
-        await db
-          .delete(pendingSandboxDeletions)
-          .where(and(
-            eq(pendingSandboxDeletions.daytonaKeyId, keyId),
-            eq(pendingSandboxDeletions.daytonaSandboxId, sandboxId),
-          ));
+        await forgetPendingDeletion(keyId, sandboxId);
         await markGone(rowIds, sandboxId);
       } else {
         remaining += 1;

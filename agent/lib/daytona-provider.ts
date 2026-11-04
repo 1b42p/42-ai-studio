@@ -18,9 +18,11 @@ import {
   DELETED_KEY_MARKER,
   enabledKeyCount,
   exhaustPool,
+  forgetPendingDeletion,
   isQuotaExceeded,
   markKeyUnauthorized,
   pickKey,
+  rememberPendingDeletion,
 } from "./daytona-key-pool";
 
 const HOME_MARKER = "/__eve_home__";
@@ -165,6 +167,31 @@ function releaseReservation(appSessionId: string): Promise<void> {
  */
 function clearLaunchReservation(appSessionId: string): Promise<void> {
   return updateReservation(appSessionId, { startingSince: null, startingKind: null });
+}
+
+/** Ключ удалили или отозвали, пока машина создавалась. */
+async function keyWasDeleted(keyId: string): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ deletedAt: daytonaKeys.deletedAt, apiKeyEncrypted: daytonaKeys.apiKeyEncrypted })
+    .from(daytonaKeys)
+    .where(eq(daytonaKeys.id, keyId))
+    .limit(1);
+  return row === undefined || row.deletedAt !== null || row.apiKeyEncrypted === DELETED_KEY_MARKER;
+}
+
+/**
+ * Машину, созданную на уже удалённом ключе, нельзя оставлять сессии: она
+ * сразу попадает в pending, чтобы повторный `deleteKey` её нашёл, даже если
+ * удаление сейчас сорвётся.
+ */
+async function discardMachine(keyId: string, machine: DaytonaMachine): Promise<void> {
+  await rememberPendingDeletion(keyId, machine.id);
+  try {
+    await machine.delete();
+    await forgetPendingDeletion(keyId, machine.id);
+  } catch (error) {
+    console.error("[sandbox] cleanup_pending", errorStatus(error) ?? "transport");
+  }
 }
 
 function sandboxStateForLoss(state: string | undefined) {
@@ -339,12 +366,16 @@ export function createDaytonaLifecycle() {
                   artifact,
                   existing.daytonaSandboxId,
                 );
-                const state = { keyId: key.id, sandboxId: machine.id };
-                await sql`update sandboxes set daytona_key_id = ${key.id},
-                  daytona_sandbox_id = ${machine.id}, state = ${sandboxState(machine.state)},
-                  starting_since = null, starting_kind = null, last_active_at = now()
-                  where app_session_id = ${session.id}`;
-                opened = { machine, state };
+                if (await keyWasDeleted(key.id)) {
+                  await discardMachine(key.id, machine);
+                } else {
+                  const state = { keyId: key.id, sandboxId: machine.id };
+                  await sql`update sandboxes set daytona_key_id = ${key.id},
+                    daytona_sandbox_id = ${machine.id}, state = ${sandboxState(machine.state)},
+                    starting_since = null, starting_kind = null, last_active_at = now()
+                    where app_session_id = ${session.id}`;
+                  opened = { machine, state };
+                }
               } catch (error) {
                 if (!isMissingSandbox(error)) throw error;
               }
@@ -375,6 +406,10 @@ export function createDaytonaLifecycle() {
                   if (isQuotaExceeded(error)) { await exhaustPool(picked.key.id); continue; }
                   if (errorStatus(error) === 401) { await markKeyUnauthorized(picked.key.id); continue; }
                   throw error;
+                }
+                if (await keyWasDeleted(picked.key.id)) {
+                  await discardMachine(picked.key.id, machine);
+                  continue;
                 }
                 const state = { keyId: picked.key.id, sandboxId: machine.id };
                 await sql`update sandboxes set daytona_key_id = ${picked.key.id},

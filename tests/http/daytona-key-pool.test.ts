@@ -72,6 +72,17 @@ async function sandboxRow(appSessionId: string) {
   return rows[0];
 }
 
+/** Ждёт строку-резерв, которую `pickKey` создаёт до машины. */
+async function waitForReservation(appSessionId: string): Promise<void> {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const [row] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, appSessionId));
+    if (row?.state === "starting" && row.daytonaSandboxId === "") return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("Резерв не появился");
+}
+
 async function keyRow(id: string): Promise<DaytonaKey> {
   const [row] = await db().select().from(daytonaKeys).where(eq(daytonaKeys.id, id));
   expect(row, `Нет ключа ${id}`).toBeDefined();
@@ -385,6 +396,36 @@ describe("отключение и удаление", () => {
     expect(await deleteKey(a.id)).toEqual({ remaining: 0 });
     expect((await keyRow(a.id)).apiKeyEncrypted).toBe("deleted");
     expect((await fakeSandbox.counters()).deleted).toBe(1);
+  }, 60_000);
+
+  test("удаление ключа во время создания уводит сессию на другой ключ", async () => {
+    const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });
+    const b = await createDaytonaKey({ label: "B", apiKey: KEY_B });
+    await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+    await fakeSandbox.setQuota(KEY_B, ONE_SLOT);
+    const user = await createUser();
+    const eveSessionId = randomUUID();
+    const [session] = await db().insert(appSessions).values({ userId: user.id, eveSessionId }).returning();
+    await fakeSandbox.setCreateDelay(1200);
+    const lifecycle = createDaytonaLifecycle();
+    const starting = lifecycle.start(sessionContext(eveSessionId), undefined, ARTIFACT);
+    try {
+      await waitForReservation(session!.id);
+      expect(await deleteKey(a.id)).toEqual({ remaining: 1 });
+
+      const opened = await starting;
+      await opened.connection.close?.();
+      expect(opened.state.keyId).toBe(b.id);
+      expect(await sandboxRow(session!.id)).toMatchObject({ daytonaKeyId: b.id, state: "started" });
+      expect((await fakeSandbox.counters()).created).toBe(2);
+      expect((await fakeSandbox.counters()).deleted).toBe(1);
+
+      expect(await deleteKey(a.id)).toEqual({ remaining: 0 });
+      expect((await keyRow(a.id)).apiKeyEncrypted).toBe("deleted");
+    } catch (error) {
+      await starting.catch(() => {});
+      throw error;
+    }
   }, 60_000);
 
   test("неудалённое удаление запоминается и повторяется после смены песочницы", async () => {

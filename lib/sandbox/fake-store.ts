@@ -67,6 +67,8 @@ interface StoreData {
   counters: FakeCounters;
   failNextCreate?: FakeCreateFailure;
   failNextDelete?: FakeDeleteFailure;
+  /** Задержка создания, чтобы тест успел удалить ключ во время старта. */
+  createDelayMs: number;
   keys: Record<string, FakeKeyConfig>;
   usageCalls: Record<string, number>;
 }
@@ -79,6 +81,7 @@ function initialData(): StoreData {
     machines: [],
     rules: [],
     counters: { created: 0, createAttempts: 0, started: 0, stopped: 0, deleted: 0 },
+    createDelayMs: 0,
     keys: {},
     usageCalls: {},
   };
@@ -472,6 +475,11 @@ export class FakeStore {
     await this.transaction((data) => { data.failNextDelete = kind; });
   }
 
+  /** Задерживает создание: тест успевает удалить ключ во время старта. */
+  async setCreateDelay(ms: number): Promise<void> {
+    await this.transaction((data) => { data.createDelayMs = Math.max(0, ms); });
+  }
+
   /** Забирает назначенный отказ удаления; следующий вызов удалит машину. */
   async consumeDeleteFailure(): Promise<FakeDeleteFailure | undefined> {
     return this.transaction((data) => {
@@ -626,6 +634,7 @@ export class FakeStore {
       if (data.machines.some((machine) => machine.name === name && machine.state !== "destroyed")) {
         throw Object.assign(new Error("Fake Daytona: name exists (dtn_test_secret_value)"), { status: 409 });
       }
+      if (data.createDelayMs > 0) await delay(data.createDelayMs);
       const failure = data.failNextCreate;
       delete data.failNextCreate;
       if (failure === "unavailable" || failure === "error" || failure === "unauthorized") {
