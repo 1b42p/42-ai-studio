@@ -52,8 +52,8 @@ describe("GET /eve/v1/info", () => {
 
     // #8: правила вставки файлов видны в инструкциях агента.
     const text = await response.text();
-    expect(text).toContain("Файлы в ответе");
-    expect(text).toContain("out/final.mp4");
+    expect(text).toContain("coffee-promo/out/coffee-promo.mp4");
+    expect(text).toContain("Относительные пути считаются от");
     expect(text).toContain("20 ссылок");
   });
 });

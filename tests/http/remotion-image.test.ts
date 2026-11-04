@@ -163,15 +163,20 @@ test("навык sandbox-environment описывает среду песочн�
   }
 });
 
-test("инструкции агента содержат правила песочницы и прежние правила файлов", () => {
+test("инструкции видеографа сохраняют правила песочницы и файлов в пределах 200 строк", () => {
   const instructions = readRepo("agent/instructions.md");
+  expect(instructions.trimEnd().split("\n").length).toBeLessThanOrEqual(200);
+  for (const section of ["Роль", "Язык", "Уточнения", "План", "Порядок", "Проверка кадров", "Ответ", "Правки", "Неудача", "Ресурсы", "Инструменты"]) {
+    expect(instructions).toContain(`# ${section}\n`);
+  }
   expect(instructions).toContain("sandbox-environment");
-  expect(instructions).toContain("встраивается");
+  expect(instructions).toContain("frame-review");
   expect(instructions).toContain("серверными инструментами");
-  expect(instructions).toContain("командой `bash`");
+  expect(instructions).toContain("через `bash`");
   expect(instructions).toContain("read_page");
   expect(instructions).toContain("web_search");
-  expect(instructions).toContain("Файлы в ответе");
   expect(instructions).toContain("Правки файлов");
-  expect(instructions).toContain("out/final.mp4");
+  expect(instructions).toContain("[ролик](coffee-promo/out/coffee-promo.mp4)");
+  expect(instructions).toContain("Относительные пути считаются от `/workspace`");
+  expect(instructions).not.toMatch(/ask_question|download_video/);
 });
