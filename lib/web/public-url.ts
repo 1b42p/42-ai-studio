@@ -54,6 +54,17 @@ const BLOCKED_SUFFIXES = [
 
 export type UrlRejectReason = "bad_url" | "blocked_address";
 
+export interface UrlPolicy {
+  schemes: readonly ("http:" | "https:")[];
+  ports: "web" | "any";
+  /** Точное исключение «хост:порт» для локального сервера тестов. */
+  allowHosts?: readonly string[];
+}
+
+export function hostPort(url: URL): string {
+  return `${url.hostname}:${url.port || (url.protocol === "https:" ? "443" : "80")}`;
+}
+
 export function isBlockedIp(ip: string): boolean {
   const family = isIP(ip);
   if (family === 4) return blockedV4.check(ip, "ipv4");
@@ -83,6 +94,7 @@ function hostnameBlocked(hostname: string): boolean {
  */
 export function parseOutboundUrl(
   input: string,
+  policy: UrlPolicy = { schemes: ["http:", "https:"], ports: "web" },
 ): { ok: true; url: URL } | { ok: false; reason: UrlRejectReason } {
   if (input.length === 0 || input.length > 2048) return { ok: false, reason: "bad_url" };
   let url: URL;
@@ -91,11 +103,12 @@ export function parseOutboundUrl(
   } catch {
     return { ok: false, reason: "bad_url" };
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return { ok: false, reason: "bad_url" };
+  if (!policy.schemes.some((scheme) => scheme === url.protocol)) return { ok: false, reason: "bad_url" };
   if (url.username !== "" || url.password !== "") return { ok: false, reason: "bad_url" };
   if (url.port === "0") return { ok: false, reason: "bad_url" };
+  if (policy.allowHosts?.includes(hostPort(url))) return { ok: true, url };
   if (hostnameBlocked(url.hostname)) return { ok: false, reason: "blocked_address" };
   const defaultPort = url.protocol === "https:" ? "443" : "80";
-  if (url.port !== "" && url.port !== defaultPort) return { ok: false, reason: "bad_url" };
+  if (policy.ports === "web" && url.port !== "" && url.port !== defaultPort) return { ok: false, reason: "bad_url" };
   return { ok: true, url };
 }

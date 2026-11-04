@@ -12,7 +12,15 @@ import { selectAgentModel } from "./lib/agent-model";
  * запущен с другим окружением.
  */
 export default defineAgent({
-  build: { externalDependencies: ["@daytona/sdk"] },
+  build: {
+    externalDependencies: [
+      "@daytona/sdk",
+      "jsdom",
+      "@mozilla/readability",
+      "turndown",
+      "@joplin/turndown-plugin-gfm",
+    ],
+  },
   // Встроенные инструменты подключают те тикеты, которым они нужны, явно.
   defaultTools: false,
   limits: {

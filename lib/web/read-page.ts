@@ -3,18 +3,15 @@
  * поэтому документацию агент читает здесь. Перенаправления проверяются заново,
  * соединение идёт только на адрес, который только что прошёл проверку.
  */
-import { lookup as dnsLookup } from "node:dns/promises";
-import http from "node:http";
-import https from "node:https";
-import { isIP } from "node:net";
-import type { LookupFunction } from "node:net";
-
-import { isBlockedIp, parseOutboundUrl } from "./public-url";
+import { extractPage } from "./page-extraction";
+import { parseOutboundUrl, safeFetch, SafeFetchError, type OutboundPolicy } from "./safe-fetch";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_REDIRECTS = 5;
 const OVERALL_TIMEOUT_MS = 30_000;
-const CONNECT_TIMEOUT_MS = 10_000;
+const HTML_MAX_BYTES = 2 * 1024 * 1024;
+const CACHE_TTL_MS = 10 * 60_000;
+const CACHE_MAX_PAGES = 20;
 
 const MARKDOWN_ACCEPT = "text/markdown, text/html;q=0.9, text/plain;q=0.8, */*;q=0.1";
 const HTML_ACCEPT = "text/html, application/xhtml+xml;q=0.9, text/plain;q=0.8, */*;q=0.1";
@@ -51,9 +48,13 @@ export interface ReadPageResult {
   url: string;
   finalUrl: string;
   title: string;
+  byline: string | null;
+  siteName: string | null;
+  publishedTime: string | null;
+  lang: string | null;
   host: string;
   contentType: string;
-  extraction: "page" | "raw";
+  extraction: "article" | "page" | "raw";
   content: string;
   offset: number;
   nextOffset: number | null;
@@ -68,20 +69,10 @@ export interface ReadPagePolicy {
   signal?: AbortSignal;
 }
 
-interface ResolvedAddress {
-  address: string;
-  family: 4 | 6;
-}
-
 function hostOf(url: URL): string {
   let name = url.hostname.replace(/\.$/, "");
   if (name.startsWith("[") && name.endsWith("]")) name = name.slice(1, -1);
   return name;
-}
-
-function hostPort(url: URL): string {
-  const port = url.port !== "" ? url.port : url.protocol === "https:" ? "443" : "80";
-  return `${url.hostname}:${port}`;
 }
 
 function badUrl(): PageToolError {
@@ -129,170 +120,36 @@ function httpError(status: number): PageToolError {
   return new PageToolError("read_page_http_error", `Сайт ответил ошибкой ${status}.`);
 }
 
-async function resolveHost(url: URL, policy: ReadPagePolicy): Promise<ResolvedAddress[]> {
-  const host = hostOf(url);
-  if (policy.allowHosts?.includes(hostPort(url))) {
-    return [{ address: "127.0.0.1", family: 4 }];
-  }
-  const literal = isIP(host);
-  if (literal === 4 || literal === 6) {
-    if (isBlockedIp(host)) throw blocked(host);
-    return [{ address: host, family: literal }];
-  }
-  let ips: readonly string[];
-  try {
-    ips = policy.resolveDns
-      ? await policy.resolveDns(host)
-      : (await dnsLookup(host, { all: true, verbatim: true })).map((entry) => entry.address);
-  } catch {
-    throw notFound(host);
-  }
-  if (ips.length === 0) throw notFound(host);
-  if (ips.some((ip) => isBlockedIp(ip))) throw blocked(host);
-  return ips.map((address) => {
-    const family = isIP(address);
-    if (family !== 4 && family !== 6) throw blocked(host);
-    return { address, family };
-  });
-}
-
-function lookupFor(
-  url: URL,
-  policy: ReadPagePolicy,
-  onError: (error: PageToolError) => void,
-): LookupFunction {
-  return ((hostname, options, callback) => {
-    void resolveHost(url, policy).then(
-      (addresses) => {
-        const all = typeof options === "object" && options.all === true;
-        if (all) {
-          callback(null, addresses);
-          return;
-        }
-        const first = addresses[0];
-        if (!first) {
-          const error = notFound(hostOf(url));
-          onError(error);
-          callback(Object.assign(error, { code: "ENOTFOUND" }), "", 4);
-          return;
-        }
-        callback(null, first.address, first.family);
-      },
-      (error: unknown) => {
-        const pageError = error instanceof PageToolError ? error : unreachable(hostOf(url));
-        onError(pageError);
-        callback(Object.assign(pageError, { code: "ENOTFOUND" }), "", 4);
-      },
-    );
-  }) as LookupFunction;
-}
-
-interface RawResponse {
-  status: number;
-  headers: http.IncomingHttpHeaders;
-  body: Buffer;
-}
-
-function headerValue(headers: http.IncomingHttpHeaders, name: string): string {
-  const value = headers[name];
-  if (Array.isArray(value)) return value[0] ?? "";
-  return value ?? "";
-}
-
-function requestOnce(
-  url: URL,
-  accept: string,
-  policy: ReadPagePolicy,
-  signal: AbortSignal,
-): Promise<RawResponse> {
-  const lib = url.protocol === "https:" ? https : http;
-  const host = hostOf(url);
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(unreachable(host));
-      return;
-    }
-    let lookupError: PageToolError | undefined;
-    const req = lib.request(
-      url,
-      {
-        method: "GET",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; 42AIStudio/1.0)",
-          Accept: accept,
-          "Accept-Language": "ru,en;q=0.8",
-          "Accept-Encoding": "identity",
-        },
-        lookup: lookupFor(url, policy, (error) => {
-          lookupError = error;
-        }),
-        rejectUnauthorized: true,
-        signal,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        let total = 0;
-        res.on("data", (chunk: Buffer | string) => {
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          total += buffer.length;
-          if (total > MAX_BYTES) {
-            res.destroy();
-            req.destroy();
-            reject(new PageToolError("read_page_too_large", "Страница слишком большая для чтения."));
-            return;
-          }
-          chunks.push(buffer);
-        });
-        res.on("end", () => {
-          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) });
-        });
-        res.on("error", () => reject(unreachable(host)));
-      },
-    );
-    req.setTimeout(CONNECT_TIMEOUT_MS, () => {
-      req.destroy();
-      reject(unreachable(host));
-    });
-    req.on("error", (error: NodeJS.ErrnoException) => {
-      if (lookupError) {
-        reject(lookupError);
-        return;
-      }
-      if (error instanceof PageToolError) {
-        reject(error);
-        return;
-      }
-      const code = error.code ?? "";
-      if (code.includes("CERT") || code.includes("TLS") || code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") {
-        reject(tlsError(host));
-        return;
-      }
-      reject(unreachable(host));
-    });
-    req.end();
-  });
-}
-
 function decodeBody(body: Buffer, contentType: string): string {
   if (body.length >= 3 && body[0] === 0xef && body[1] === 0xbb && body[2] === 0xbf) {
     return new TextDecoder("utf-8", { fatal: false }).decode(body.subarray(3));
   }
-  const fromHeader = /charset=("?)([^";]+)\1/i.exec(contentType)?.[2]?.trim();
-  if (fromHeader) {
+  if (body[0] === 0xff && body[1] === 0xfe) return new TextDecoder("utf-16le").decode(body.subarray(2));
+  if (body[0] === 0xfe && body[1] === 0xff) return new TextDecoder("utf-16be").decode(body.subarray(2));
+  const fromHeader = /charset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^;\s]+))/i.exec(contentType);
+  const headerCharset = fromHeader?.[1] ?? fromHeader?.[2] ?? fromHeader?.[3];
+  if (headerCharset) {
     try {
-      return new TextDecoder(fromHeader).decode(body);
+      return new TextDecoder(headerCharset.trim()).decode(body);
     } catch {
       // Неизвестное имя кодировки: дальше как UTF-8.
     }
   }
-  const head = body.subarray(0, 4096).toString("latin1");
-  const fromMeta = /<meta[^>]+charset=["']?\s*([^"'>\s/]+)/i.exec(head)?.[1];
-  if (fromMeta) {
-    try {
-      return new TextDecoder(fromMeta).decode(body);
-    } catch {
-      // То же: браузеры в этом случае тоже остаются на UTF-8.
+  const head = body.subarray(0, 4096).toString("latin1").replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+  for (const tag of head.matchAll(/<meta\s+[^>]*>/gi)) {
+    const attrs = new Map<string, string>();
+    for (const attr of tag[0].slice(5).matchAll(/([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g)) {
+      const name = attr[1].toLowerCase();
+      if (!attrs.has(name)) attrs.set(name, attr[2] ?? attr[3] ?? attr[4] ?? "");
     }
+    const fromMeta = attrs.get("charset") ?? (attrs.get("http-equiv")?.toLowerCase() === "content-type"
+      ? /charset\s*=\s*["']?([^\s;"']+)/i.exec(attrs.get("content") ?? "")?.[1] : undefined);
+    if (!fromMeta) continue;
+    try {
+      let encoding = new TextDecoder(fromMeta.trim()).encoding;
+      if (encoding === "utf-16le" || encoding === "utf-16be") encoding = "utf-8";
+      return new TextDecoder(encoding).decode(body);
+    } catch { /* Неизвестное имя: ищем следующее объявление, иначе UTF-8. */ }
   }
   return new TextDecoder("utf-8", { fatal: false }).decode(body);
 }
@@ -304,38 +161,6 @@ function mediaType(contentType: string, url: URL): string {
   return "application/octet-stream";
 }
 
-function cleanText(text: string): string {
-  return text
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function htmlText(html: string): { title: string; text: string } {
-  const without = html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, "")
-    .replace(/<template\b[^>]*>[\s\S]*?<\/template>/gi, "")
-    .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, "")
-    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, "");
-  const title = cleanText(/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(without)?.[1] ?? "");
-  const text = cleanText(
-    without
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, "\"")
-      .replace(/&#39;/g, "'"),
-  );
-  return { title, text };
-}
-
 function markdownTitle(text: string): string {
   const front = /^title:\s*(.+)$/m.exec(text)?.[1]?.trim();
   if (front) return front.replace(/^["']|["']$/g, "");
@@ -344,7 +169,8 @@ function markdownTitle(text: string): string {
 }
 
 function sliceContent(text: string, offset: number, maxChars: number): { content: string; nextOffset: number | null } {
-  if (offset > text.length) {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > text.length ||
+    (offset > 0 && offset < text.length && /[\uD800-\uDBFF]/.test(text[offset - 1]) && /[\uDC00-\uDFFF]/.test(text[offset]))) {
     throw new PageToolError("read_page_bad_offset", "Страница закончилась, продолжать нечего.");
   }
   if (offset === text.length) return { content: "", nextOffset: null };
@@ -366,101 +192,136 @@ function sliceContent(text: string, offset: number, maxChars: number): { content
   return { content, nextOffset: cut < text.length ? cut : null };
 }
 
-function acceptUrl(input: string, policy: ReadPagePolicy): URL {
-  let url: URL;
-  try {
-    url = new URL(input);
-  } catch {
-    throw badUrl();
-  }
-  if (policy.allowHosts?.includes(hostPort(url))) {
-    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username !== "" || url.password !== "") {
-      throw badUrl();
-    }
-    return url;
-  }
-  const parsed = parseOutboundUrl(url.href);
-  if (!parsed.ok) throw parsed.reason === "blocked_address" ? blocked(hostOf(url)) : badUrl();
+function acceptUrl(input: string, policy: OutboundPolicy): URL {
+  const parsed = parseOutboundUrl(input, policy);
+  if (!parsed.ok) throw new SafeFetchError(parsed.reason);
+  parsed.url.hash = "";
   return parsed.url;
+}
+
+type CachedPage = Omit<ReadPageResult, "url" | "offset" | "nextOffset" | "totalChars">;
+const cache = new Map<string, { page: CachedPage; expiresAt: number }>();
+const resolvers = new WeakMap<NonNullable<ReadPagePolicy["resolveDns"]>, number>();
+let nextResolver = 0;
+
+function cacheKey(url: string, extract: string, policy: ReadPagePolicy): string {
+  let resolverId = 0;
+  if (policy.resolveDns) {
+    resolverId = resolvers.get(policy.resolveDns) ?? ++nextResolver;
+    resolvers.set(policy.resolveDns, resolverId);
+  }
+  return JSON.stringify([url, extract, [...(policy.allowHosts ?? [])].sort(), resolverId]);
+}
+
+function translateError(error: unknown, host: string): PageToolError {
+  if (error instanceof PageToolError) return error;
+  if (error instanceof SafeFetchError) {
+    switch (error.reason) {
+      case "bad_url": return badUrl();
+      case "blocked_address": return blocked(host);
+      case "dns_not_found": return notFound(host);
+      case "tls": return tlsError(host);
+      case "too_large": return new PageToolError("read_page_too_large", "Страница слишком большая для чтения.");
+      case "too_many_redirects": return new PageToolError("read_page_too_many_redirects", "Слишком много перенаправлений.");
+      case "redirect_loop": return new PageToolError("read_page_redirect_loop", "Перенаправления зациклены.");
+    }
+  }
+  return unreachable(host);
 }
 
 export async function readPage(input: ReadPageInput, policy: ReadPagePolicy = {}): Promise<ReadPageResult> {
   const offset = input.offset ?? 0;
   const maxChars = input.maxChars ?? 20_000;
-  const timer = AbortSignal.timeout(OVERALL_TIMEOUT_MS);
-  const signal = policy.signal ? AbortSignal.any([policy.signal, timer]) : timer;
-
-  let current = acceptUrl(input.url, policy);
-  let accept = MARKDOWN_ACCEPT;
-  let markdownRetried = false;
-  const seen = new Set<string>();
-  let redirects = 0;
-
-  for (;;) {
-    if (seen.has(current.href)) {
-      throw new PageToolError("read_page_redirect_loop", "Перенаправления зациклены.");
+  const controller = new AbortController();
+  const deadline = setTimeout(() => controller.abort(), OVERALL_TIMEOUT_MS);
+  const signal = policy.signal ? AbortSignal.any([policy.signal, controller.signal]) : controller.signal;
+  const outbound: OutboundPolicy = {
+    schemes: ["http:", "https:"], ports: "web", maxRedirects: MAX_REDIRECTS,
+    timeoutMs: OVERALL_TIMEOUT_MS, maxBytes: MAX_BYTES,
+    allowHosts: policy.allowHosts ? [...policy.allowHosts] : undefined, resolveDns: policy.resolveDns,
+  };
+  let host = "сайт";
+  try {
+    signal.throwIfAborted();
+    try { host = hostOf(new URL(input.url)); } catch { /* Без полного адреса в журнале. */ }
+    if (input.url.length > 2000) throw badUrl();
+    const url = acceptUrl(input.url, outbound);
+    const extract = input.extract ?? "auto";
+    // Размер окна проверяется и у прямых потребителей, не только схемой eve.
+    if (!Number.isSafeInteger(maxChars) || maxChars < 1000 || maxChars > 40_000) {
+      throw new PageToolError("read_page_bad_request", "Укажите maxChars от 1000 до 40000.");
     }
-    seen.add(current.href);
-    if (!policy.allowHosts?.includes(hostPort(current))) await resolveHost(current, policy);
-    const response = await requestOnce(current, accept, policy, signal);
-    const status = response.status;
-    if (status === 404 && !markdownRetried && accept === MARKDOWN_ACCEPT) {
-      markdownRetried = true;
-      accept = HTML_ACCEPT;
-      seen.delete(current.href);
-      continue;
-    }
-    if (status >= 300 && status < 400 && [301, 302, 303, 307, 308].includes(status)) {
-      redirects += 1;
-      if (redirects > MAX_REDIRECTS) {
-        throw new PageToolError("read_page_too_many_redirects", "Слишком много перенаправлений.");
+    const key = cacheKey(url.href, extract, outbound);
+    for (const [key, entry] of cache) if (entry.expiresAt <= Date.now()) cache.delete(key);
+    const cached = cache.get(key);
+    let page: CachedPage;
+    if (cached) {
+      // Повторная проверка не позволяет обойти политику сохранённым finalUrl.
+      acceptUrl(cached.page.finalUrl, outbound);
+      cache.delete(key);
+      cache.set(key, cached);
+      page = cached.page;
+    } else {
+      const fetchPage = (target: string, accept: string, maxRedirects = MAX_REDIRECTS) => safeFetch(target, {
+        method: "GET", signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; 42AIStudio/1.0)",
+          Accept: accept,
+          "Accept-Language": "ru,en;q=0.8",
+        },
+      }, { ...outbound, maxRedirects }).catch((error: unknown) => {
+        if (maxRedirects === 0 && error instanceof SafeFetchError && error.reason === "redirect") {
+          throw new SafeFetchError("too_many_redirects");
+        }
+        throw error;
+      });
+      let response = await fetchPage(url.href, MARKDOWN_ACCEPT);
+      // Только одна HTML-попытка на весь вызов, с тем же общим дедлайном.
+      if (response.status === 404) {
+        response = await fetchPage(response.finalUrl, HTML_ACCEPT, MAX_REDIRECTS - response.redirects);
       }
-      const location = headerValue(response.headers, "location");
-      if (location === "") throw unreachable(hostOf(current));
-      let next: URL;
-      try {
-        next = new URL(location, current);
-      } catch {
-        throw badUrl();
+      if (response.status < 200 || response.status >= 300) throw httpError(response.status);
+      const finalUrl = acceptUrl(response.finalUrl, outbound);
+      const header = response.headers.get("content-type") ?? "";
+      const type = mediaType(header, finalUrl);
+      const raw = RAW_TYPES.has(type);
+      if (!raw && type !== "text/html" && type !== "application/xhtml+xml") {
+        throw new PageToolError("read_page_unsupported_type",
+          `Этот тип файла (${type}) инструмент не читает. Файл от пользователя читается из песочницы, видео скачивает download_video.`);
       }
-      current = acceptUrl(next.href, policy);
-      accept = MARKDOWN_ACCEPT;
-      markdownRetried = false;
-      continue;
+      const oversizedHtml = !raw && response.body.byteLength > HTML_MAX_BYTES;
+      const decoded = decodeBody(raw ? response.body : response.body.subarray(0, HTML_MAX_BYTES), header);
+      const extracted = raw ? {
+        title: markdownTitle(decoded), byline: null, siteName: null, publishedTime: null, lang: null,
+        extraction: "raw" as const, content: decoded, textLength: decoded.trim().length,
+      } : await extractPage(decoded, finalUrl.href, oversizedHtml ? "page" : extract, signal);
+      signal.throwIfAborted();
+      if (extracted.textLength < 50) {
+        throw new PageToolError("read_page_empty", "На странице нет читаемого текста: возможно, её содержимое строится скриптами или закрыто входом.");
+      }
+      const { textLength: _textLength, ...fields } = extracted;
+      page = { ...fields, finalUrl: finalUrl.href, host: hostOf(finalUrl), contentType: type };
+      // Сначала проверяем offset: неуспешный вызов ничего не кладёт в кэш.
+      sliceContent(page.content, offset, maxChars);
+      cache.set(key, { page, expiresAt: Date.now() + CACHE_TTL_MS });
+      while (cache.size > CACHE_MAX_PAGES) cache.delete(cache.keys().next().value!);
     }
-    if (status < 200 || status >= 300) throw httpError(status);
-
-    const contentType = headerValue(response.headers, "content-type");
-    const type = mediaType(contentType, current);
-    if (type !== "text/html" && type !== "application/xhtml+xml" && !RAW_TYPES.has(type)) {
-      throw new PageToolError(
-        "read_page_unsupported_type",
-        `Этот тип файла (${type}) инструмент не читает. Файл от пользователя читается из песочницы, видео скачивает download_video.`,
-      );
-    }
-    const decoded = decodeBody(response.body, contentType);
-    const raw = RAW_TYPES.has(type);
-    const title = raw ? markdownTitle(decoded) : htmlText(decoded).title;
-    const text = cleanText(raw ? decoded : htmlText(decoded).text);
-    if (text.length < 50) {
-      throw new PageToolError(
-        "read_page_empty",
-        "На странице нет читаемого текста: возможно, её содержимое строится скриптами или закрыто входом.",
-      );
-    }
-    const sliced = sliceContent(text, offset, maxChars);
+    signal.throwIfAborted();
+    const sliced = sliceContent(page.content, offset, maxChars);
     return {
+      ...page,
       url: input.url,
-      finalUrl: current.href,
-      title,
-      host: hostOf(current),
-      contentType: type,
-      extraction: raw ? "raw" : "page",
       content: sliced.content,
       offset,
       nextOffset: sliced.nextOffset,
-      totalChars: text.length,
+      totalChars: page.content.length,
     };
+  } catch (error) {
+    const failure = translateError(error, host);
+    console.warn("[read-page]", { host, code: failure.code });
+    throw failure;
+  } finally {
+    clearTimeout(deadline);
   }
 }
 

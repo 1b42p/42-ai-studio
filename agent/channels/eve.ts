@@ -1,5 +1,5 @@
 /**
- * Канал eve: единственный аутентификатор — наша серверная сессия входа.
+ * Канал eve: серверная сессия входа и отдельный локальный режим оценок.
  * `localDev()`, `vercelOidc()` и `placeholderAuth()` не подключаются: иначе
  * тесты доступа ничего бы не доказывали.
  *
@@ -11,9 +11,12 @@ import { ForbiddenError, type AuthFn, type AuthResult } from "eve/channels/auth"
 import { eveChannel } from "eve/channels/eve";
 
 import { fetchUserAttachment } from "@/agent/lib/attachment-fetch";
+import { authenticateEval } from "../lib/eval-auth";
 import { getUserFromRequest } from "@/lib/auth/request";
 import { loadConfig, readUploadMaxBytes } from "@/lib/config";
 import type { User } from "@/lib/db/schema";
+import { findAgentSessionByEveId } from "@/lib/sessions/agent-sessions";
+import { findAppSessionByEveId } from "@/lib/sessions/service";
 import {
   APP_SESSION_HEADER,
   assertEveSessionAccess,
@@ -72,6 +75,21 @@ export function sessionAuthFor(
 
 export function studioAuth(): AuthFn<Request> {
   return async (request): Promise<AuthResult | null> => {
+    const evalPrincipal = authenticateEval(request, loadConfig());
+    if (evalPrincipal !== null) {
+      const route = parseEveRoute(request.method, request.url);
+      // Eval-token не даёт доступ к пользовательским корням и копиям.
+      // Только чтение: оценки не создают строки в пользовательской БД.
+      if (route.kind === "session") {
+        const root = await findAppSessionByEveId(route.sessionId);
+        const copy = root === null ? await findAgentSessionByEveId(route.sessionId) : null;
+        if (root !== null || copy !== null) {
+          throw new ForbiddenError({ code: "session_forbidden", message: "Сессия недоступна" });
+        }
+      }
+      return evalPrincipal;
+    }
+
     const user = await resolveAuthenticatedUser(request);
     if (user === null) return null;
 

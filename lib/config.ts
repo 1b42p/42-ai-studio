@@ -65,6 +65,9 @@ export interface AppConfig {
   readonly appUrl: string;
   /** Тестовые подмены (появятся в следующих тикетах). */
   readonly appTestMode: boolean;
+  /** Изолированные оценки настоящей модели; только локально, не в production. */
+  readonly appEvalMode: boolean;
+  readonly eveEvalAuthToken: string | undefined;
   /** Порт основного экземпляра приложения в HTTP-тестах. */
   readonly testAppPort: number;
   /** Каталог сборки Next.js. */
@@ -91,6 +94,8 @@ export interface AppConfig {
   readonly agentModelContextTokens: number | undefined;
   /** Уровень рассуждения модели. */
   readonly agentReasoning: AgentReasoning;
+  /** Необязательная модель судьи; используется процессом eve eval, не агентом. */
+  readonly evalJudgeModel: string | undefined;
   /** Ключ шифрования секретов в базе: 32 байта в каноническом base64. */
   readonly secretsEncryptionKey: string;
   readonly daytonaApiUrl: string;
@@ -199,6 +204,8 @@ const envSchema = z.object({
     "не должен заканчиваться на /",
   ),
   APP_TEST_MODE: envBoolean.optional().default(false),
+  APP_EVAL_MODE: envBoolean.optional().default(false),
+  EVE_EVAL_AUTH_TOKEN: envString.min(24, "токен должен быть не короче 24 символов").optional(),
   TEST_APP_PORT: z.coerce
     .number({ error: "ожидается целое число от 1 до 65535" })
     .int("ожидается целое число от 1 до 65535")
@@ -232,6 +239,7 @@ const envSchema = z.object({
   AGENT_MODEL: envString.optional(),
   AGENT_MODEL_BASE_URL: envUrl.optional(),
   AGENT_MODEL_API_KEY: envString.optional(),
+  EVAL_JUDGE_MODEL: envString.trim().optional(),
   AGENT_MODEL_CONTEXT_TOKENS: z.coerce
     .number({ error: "ожидается целое число не меньше 8000" })
     .int("ожидается целое число не меньше 8000")
@@ -245,6 +253,7 @@ const envSchema = z.object({
     .default("high"),
   TAVILY_API_KEY: envString.optional(),
   TAVILY_API_URL: envUrl
+    .refine((value) => /^https?:\/\//.test(value), "ожидается URL с http:// или https://")
     .refine((value) => !value.endsWith("/"), "не должен заканчиваться на /")
     .optional()
     .default("https://api.tavily.com"),
@@ -312,6 +321,12 @@ export function parseConfig(env: EnvRecord): AppConfig {
       addIssue("APP_TEST_MODE", "тестовые подмены запрещены при NODE_ENV=production");
     }
 
+    if (data.APP_EVAL_MODE) {
+      if (production) addIssue("APP_EVAL_MODE", "оценки запрещены при NODE_ENV=production");
+      if (!isLocalHost(data.APP_URL)) addIssue("APP_URL", "оценки разрешены только на localhost, 127.0.0.1 или [::1]");
+      if (!data.EVE_EVAL_AUTH_TOKEN) addIssue("EVE_EVAL_AUTH_TOKEN", "обязательна при APP_EVAL_MODE=1");
+    }
+
     if (production) {
       if (data.TELEGRAM_CLIENT_ID === undefined) {
         addIssue("TELEGRAM_CLIENT_ID", "обязательна при NODE_ENV=production");
@@ -348,7 +363,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
       addIssue("AGENT_MODEL", "обязательна вне APP_TEST_MODE=1");
     }
 
-    if (!data.APP_TEST_MODE && data.TAVILY_API_URL.startsWith("http://")) {
+    if (!data.APP_TEST_MODE && !data.TAVILY_API_URL.startsWith("https://")) {
       addIssue("TAVILY_API_URL", "адрес должен быть https:// вне APP_TEST_MODE=1");
     }
 
@@ -376,6 +391,8 @@ export function parseConfig(env: EnvRecord): AppConfig {
     s3ForcePathStyle: data.S3_FORCE_PATH_STYLE,
     appUrl: data.APP_URL,
     appTestMode: data.APP_TEST_MODE,
+    appEvalMode: data.APP_EVAL_MODE,
+    eveEvalAuthToken: data.EVE_EVAL_AUTH_TOKEN,
     testAppPort: data.TEST_APP_PORT,
     nextDistDir: data.NEXT_DIST_DIR,
     telegramClientId: data.TELEGRAM_CLIENT_ID,
@@ -389,6 +406,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     agentModelApiKey: data.AGENT_MODEL_API_KEY,
     agentModelContextTokens: data.AGENT_MODEL_CONTEXT_TOKENS,
     agentReasoning: data.AGENT_REASONING,
+    evalJudgeModel: data.EVAL_JUDGE_MODEL,
     secretsEncryptionKey: data.SECRETS_ENCRYPTION_KEY,
     daytonaApiUrl: data.DAYTONA_API_URL,
     sandboxCpu: data.SANDBOX_CPU,
@@ -437,6 +455,44 @@ export function loadConfig(): AppConfig {
     cachedConfig = parseConfig(process.env);
   }
   return cachedConfig;
+}
+
+export interface EvalJudgeConfig {
+  readonly model: string | undefined;
+  readonly baseUrl: string | undefined;
+  readonly apiKey: string | undefined;
+}
+
+// Процесс оценок может обращаться к удалённому приложению: его судье не нужны
+// DATABASE_URL, S3, Telegram, ключи песочницы или окно контекста модели агента.
+const evalJudgeSchema = envSchema.pick({
+  EVAL_JUDGE_MODEL: true,
+  AGENT_MODEL_BASE_URL: true,
+  AGENT_MODEL_API_KEY: true,
+});
+
+export function parseEvalJudgeConfig(env: EnvRecord): EvalJudgeConfig {
+  const result = evalJudgeSchema.safeParse({
+    EVAL_JUDGE_MODEL: env.EVAL_JUDGE_MODEL?.trim() || undefined,
+    AGENT_MODEL_BASE_URL: env.AGENT_MODEL_BASE_URL?.trim() || undefined,
+    AGENT_MODEL_API_KEY: env.AGENT_MODEL_API_KEY?.trim() || undefined,
+  });
+  if (!result.success) throw new ConfigError(formatIssues(result.error));
+  const data = result.data;
+  if (data.EVAL_JUDGE_MODEL && data.AGENT_MODEL_BASE_URL && !data.AGENT_MODEL_API_KEY) {
+    throw new ConfigError(["AGENT_MODEL_API_KEY: нужна судье вместе с AGENT_MODEL_BASE_URL"]);
+  }
+  return {
+    model: data.EVAL_JUDGE_MODEL,
+    baseUrl: data.AGENT_MODEL_BASE_URL,
+    apiKey: data.AGENT_MODEL_API_KEY,
+  };
+}
+
+/** Узкая конфигурация процесса eve eval; не загружает конфигурацию приложения. */
+export function loadEvalJudgeConfig(): EvalJudgeConfig {
+  loadDotenvFiles();
+  return parseEvalJudgeConfig(process.env);
 }
 
 /**

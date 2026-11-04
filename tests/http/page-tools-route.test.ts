@@ -5,11 +5,13 @@ import { beforeEach, expect, test } from "vitest";
 import { createSessionAs, sendAndWait } from "./support/chat";
 import { createDaytonaKey, createUser, resetDatabase } from "./support/db";
 import { fakeSandbox } from "./support/fake-sandbox";
+import { tavilyStub } from "./support/tavily";
 
 beforeEach(async () => {
   await resetDatabase();
   await fakeSandbox.reset();
   await createDaytonaKey();
+  await tavilyStub.reset();
 });
 
 function toolResult(events: readonly MessageStreamEvent[], name: string) {
@@ -21,7 +23,7 @@ function toolResult(events: readonly MessageStreamEvent[], name: string) {
   return event!.data;
 }
 
-test("read_page отказывается читать внутренний адрес, web_search без ключа объясняет это", async () => {
+test("read_page отказывается читать внутренний адрес, web_search получает источники с сервера", async () => {
   const user = await createUser();
   const { id } = await createSessionAs(user);
 
@@ -36,6 +38,8 @@ test("read_page отказывается читать внутренний ад�
     await sendAndWait(user, id, '/tool web_search {"query":"remotion captions"}'),
     "web_search",
   );
-  expect(search.status).toBe("failed");
-  expect(search.error?.message ?? JSON.stringify(search)).toContain("не задан ключ");
+  expect(search.status).toBe("completed");
+  expect(search.result.kind === "tool-result" && search.result.output).toMatchObject({
+    results: expect.arrayContaining([expect.objectContaining({ title: "Captions", host: "www.remotion.dev" })]),
+  });
 });

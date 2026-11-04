@@ -4,13 +4,13 @@ import { z } from "zod";
 import { readPage, readPageModelText } from "@/lib/web/read-page";
 
 const DOC_RULE =
-  "Адрес http или https. Документацию Remotion читай как https://www.remotion.dev/docs/<страница>.md; путеводитель — https://www.remotion.dev/llms.txt, остальные страницы ищи ссылками, web_search или в https://www.remotion.dev/sitemap.xml и дописывай .md. Если адрес с .md отвечает 404, читай тот же адрес без .md. Длинную страницу продолжай полем offset.";
+  "Адрес http или https. Перед вызовом для документации Remotion обязательно добавь .md к пути страницы: https://www.remotion.dev/docs/<страница>.md. Адрес без .md разрешён только после 404 на Markdown-адрес. Путеводитель — https://www.remotion.dev/llms.txt, остальные страницы ищи ссылками, web_search или в https://www.remotion.dev/sitemap.xml. Длинную страницу продолжай полем offset.";
 
 function hostLabel(url: string): string {
   try {
     return new URL(url).hostname;
   } catch {
-    return url.slice(0, 80);
+    return "неверный адрес";
   }
 }
 
@@ -22,15 +22,19 @@ export default defineTool({
     url: z.string().max(2000).describe(DOC_RULE),
     offset: z.number().int().min(0).optional().describe("С какого знака продолжить, из nextOffset прошлого вызова."),
     maxChars: z.number().int().min(1000).max(40_000).optional().describe("Сколько знаков вернуть, по умолчанию 20000."),
-    extract: z.enum(["auto", "page"]).optional().describe("auto — текст страницы, page — вся страница."),
+    extract: z.enum(["auto", "page"]).optional().describe("auto — основной текст статьи, page — вся страница, включая меню и подвал."),
   }),
   outputSchema: z.object({
     url: z.string(),
     finalUrl: z.string(),
     title: z.string(),
+    byline: z.string().nullable(),
+    siteName: z.string().nullable(),
+    publishedTime: z.string().nullable(),
+    lang: z.string().nullable(),
     host: z.string(),
     contentType: z.string(),
-    extraction: z.enum(["page", "raw"]),
+    extraction: z.enum(["article", "page", "raw"]),
     content: z.string(),
     offset: z.number(),
     nextOffset: z.number().nullable(),

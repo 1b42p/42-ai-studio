@@ -2,7 +2,26 @@
  * Поиск через API Tavily. Ключ остаётся на сервере: в текст ошибки, журнал
  * и ответ инструмента он не попадает. Без ключа поиск не делает запрос.
  */
-import { PageToolError } from "./read-page";
+import { setTimeout as delay } from "node:timers/promises";
+import { z } from "zod";
+
+const SEARCH_ERRORS = {
+  web_search_not_configured: "Поиск в вебе не настроен: не задан ключ. Сообщите оператору сервиса.",
+  web_search_auth: "Поиск отклонил ключ доступа. Сообщите оператору сервиса.",
+  web_search_quota: "Лимит поиска исчерпан. Сообщите оператору сервиса; пока ищите без поиска или попросите пользователя дать ссылки.",
+  web_search_rate_limited: "Поиск ограничил частоту запросов. Подождите минуту и повторите.",
+  web_search_bad_request: "Поиск не принял запрос. Переформулируйте его короче.",
+  web_search_unavailable: "Поиск сейчас недоступен. Повторите позже или попросите пользователя дать ссылки.",
+} as const;
+
+type SearchErrorCode = keyof typeof SEARCH_ERRORS;
+
+export class SearchToolError extends Error {
+  constructor(readonly code: SearchErrorCode) {
+    super(SEARCH_ERRORS[code]);
+    this.name = "SearchToolError";
+  }
+}
 
 export interface WebSearchInput {
   query: string;
@@ -39,26 +58,21 @@ export interface WebSearchClient {
 
 const RETRY_STATUSES = new Set([500, 502, 503, 504]);
 
-function searchError(code: string, message: string): PageToolError {
-  return new PageToolError(code, message);
+function checkCancelled(signal?: AbortSignal): void {
+  // Причина отмены может содержать секреты вызывающей стороны.
+  if (signal?.aborted) throw new DOMException("Поиск отменён.", "AbortError");
 }
 
-function sleepDefault(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(searchError("web_search_unavailable", "Поиск сейчас недоступен. Повторите позже или попросите пользователя дать ссылки."));
-      return;
-    }
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(searchError("web_search_unavailable", "Поиск сейчас недоступен. Повторите позже или попросите пользователя дать ссылки."));
-      },
-      { once: true },
-    );
-  });
+async function pause(ms: number, client: WebSearchClient): Promise<void> {
+  checkCancelled(client.signal);
+  try {
+    if (client.sleep) await client.sleep(ms);
+    else await delay(ms, undefined, { signal: client.signal });
+  } catch {
+    checkCancelled(client.signal);
+    throw new SearchToolError("web_search_unavailable");
+  }
+  checkCancelled(client.signal);
 }
 
 function retryAfterMs(header: string | null): number {
@@ -78,41 +92,51 @@ function hostOf(url: string): string {
   }
 }
 
-interface TavilyResponse {
-  request_id?: unknown;
-  results?: unknown;
+const tavilyResponseSchema = z.object({
+  request_id: z.string().optional(),
+  results: z.array(z.object({
+    title: z.string(),
+    url: z.string().refine((value) => {
+      try { return ["http:", "https:"].includes(new URL(value).protocol); }
+      catch { return false; }
+    }),
+    content: z.string(),
+    score: z.number().finite(),
+    published_date: z.string().nullable().optional(),
+  })),
+});
+
+function redact(value: string, apiKey: string): string {
+  return value.replaceAll(apiKey, "[скрыто]");
 }
 
-function parseResults(query: string, payload: TavilyResponse): WebSearchResult {
-  const rows = Array.isArray(payload.results) ? payload.results : [];
-  const results: WebSearchHit[] = [];
-  for (const row of rows) {
-    if (typeof row !== "object" || row === null) continue;
-    const record = row as Record<string, unknown>;
-    const url = typeof record.url === "string" ? record.url : "";
-    const content = typeof record.content === "string" ? record.content : "";
-    results.push({
-      title: typeof record.title === "string" ? record.title : url,
-      url,
-      host: hostOf(url),
-      snippet: content.slice(0, 1000),
-      publishedDate: typeof record.published_date === "string" ? record.published_date : null,
-      score: typeof record.score === "number" ? record.score : 0,
-    });
-  }
+function requestIdOf(payload: unknown, response: Response, apiKey: string): string | null {
+  const bodyId = payload !== null && typeof payload === "object" && "request_id" in payload
+    ? payload.request_id : undefined;
+  const value = bodyId ?? response.headers.get("x-request-id");
+  // Это идентификатор, не свободный текст сервиса; ограничение защищает журнал.
+  return typeof value === "string" && /^[\w.-]{1,128}$/.test(value) && !value.includes(apiKey) ? value : null;
+}
+
+function parseResults(query: string, payload: z.infer<typeof tavilyResponseSchema>, apiKey: string): WebSearchResult {
   return {
-    query,
-    results,
-    requestId: typeof payload.request_id === "string" ? payload.request_id : "",
+    query: redact(query, apiKey),
+    results: payload.results.map((row) => ({
+      title: redact(row.title, apiKey),
+      url: redact(row.url, apiKey),
+      host: redact(hostOf(row.url), apiKey),
+      snippet: redact(row.content, apiKey).slice(0, 1000),
+      publishedDate: row.published_date == null ? null : redact(row.published_date, apiKey),
+      score: row.score,
+    })),
+    requestId: redact(payload.request_id ?? "", apiKey),
   };
 }
 
 export async function searchWeb(input: WebSearchInput, client: WebSearchClient): Promise<WebSearchResult> {
   if (client.apiKey === undefined || client.apiKey === "") {
-    throw searchError(
-      "web_search_not_configured",
-      "Поиск в вебе не настроен: не задан ключ. Сообщите оператору сервиса.",
-    );
+    console.warn("[web_search]", { code: "web_search_not_configured", status: null, requestId: null });
+    throw new SearchToolError("web_search_not_configured");
   }
   const endpoint = `${client.apiUrl.replace(/\/$/, "")}/search`;
   const body: Record<string, unknown> = {
@@ -130,13 +154,10 @@ export async function searchWeb(input: WebSearchInput, client: WebSearchClient):
     body.include_domains = input.includeDomains;
   }
   const doFetch = client.fetch ?? fetch;
-  const pause = client.sleep ?? ((ms: number) => sleepDefault(ms, client.signal));
-  let attempt = 0;
-  let rateLimits = 0;
-
-  for (;;) {
-    attempt += 1;
-    let response: Response;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    checkCancelled(client.signal);
+    let response: Response | undefined;
+    let payload: unknown;
     try {
       response = await doFetch(endpoint, {
         method: "POST",
@@ -148,69 +169,30 @@ export async function searchWeb(input: WebSearchInput, client: WebSearchClient):
         redirect: "manual",
         signal: client.signal ? AbortSignal.any([client.signal, AbortSignal.timeout(20_000)]) : AbortSignal.timeout(20_000),
       });
+      payload = await response.json();
     } catch {
-      if (attempt < 3) {
-        await pause(attempt === 1 ? 1_000 : 3_000);
-        continue;
-      }
-      throw searchError(
-        "web_search_unavailable",
-        "Поиск сейчас недоступен. Повторите позже или попросите пользователя дать ссылки.",
-      );
+      // Нельзя журналировать исключение fetch/JSON: оно может содержать ключ
+      // или целое тело ответа. Классификация ниже использует только статус.
+      checkCancelled(client.signal);
     }
-    if (response.status >= 300 && response.status < 400) {
-      throw searchError(
-        "web_search_unavailable",
-        "Поиск сейчас недоступен. Повторите позже или попросите пользователя дать ссылки.",
-      );
+    checkCancelled(client.signal);
+    const status = response?.status ?? null;
+    const requestId = response ? requestIdOf(payload, response, client.apiKey) : null;
+    const parsed = response?.ok ? tavilyResponseSchema.safeParse(payload) : undefined;
+    if (parsed?.success) {
+      console.info("[web_search]", { code: "web_search_ok", status, requestId, attempt });
+      return parseResults(input.query, parsed.data, client.apiKey);
     }
-    if (response.status === 429) {
-      if (rateLimits < 2) {
-        rateLimits += 1;
-        await pause(retryAfterMs(response.headers.get("retry-after")));
-        continue;
-      }
-      throw searchError("web_search_rate_limited", "Поиск ограничил частоту запросов. Подождите минуту и повторите.");
-    }
-    if (RETRY_STATUSES.has(response.status)) {
-      if (attempt < 3) {
-        await pause(attempt === 1 ? 1_000 : 3_000);
-        continue;
-      }
-      throw searchError(
-        "web_search_unavailable",
-        "Поиск сейчас недоступен. Повторите позже или попросите пользователя дать ссылки.",
-      );
-    }
-    if (response.status === 401) {
-      throw searchError("web_search_auth", "Поиск отклонил ключ доступа. Сообщите оператору сервиса.");
-    }
-    if (response.status === 432 || response.status === 433) {
-      throw searchError(
-        "web_search_quota",
-        "Лимит поиска исчерпан. Сообщите оператору сервиса; пока ищите без поиска или попросите пользователя дать ссылки.",
-      );
-    }
-    if (response.status === 400 || response.status === 422) {
-      throw searchError("web_search_bad_request", "Поиск не принял запрос. Переформулируйте его короче.");
-    }
-    if (!response.ok) {
-      throw searchError(
-        "web_search_unavailable",
-        "Поиск сейчас недоступен. Повторите позже или попросите пользователя дать ссылки.",
-      );
-    }
-    let payload: TavilyResponse;
-    try {
-      payload = await response.json() as TavilyResponse;
-    } catch {
-      throw searchError(
-        "web_search_unavailable",
-        "Поиск сейчас недоступен. Повторите позже или попросите пользователя дать ссылки.",
-      );
-    }
-    return parseResults(input.query, payload);
+    const code: SearchErrorCode = status === 401 ? "web_search_auth"
+      : status === 432 || status === 433 ? "web_search_quota"
+      : status === 400 || status === 422 ? "web_search_bad_request"
+      : status === 429 ? "web_search_rate_limited" : "web_search_unavailable";
+    console.warn("[web_search]", { code, status, requestId, attempt });
+    const retry = status === null || status === 429 || RETRY_STATUSES.has(status) || response?.ok;
+    if (!retry || attempt === 3) throw new SearchToolError(code);
+    await pause(status === 429 ? retryAfterMs(response!.headers.get("retry-after")) : attempt === 1 ? 1_000 : 3_000, client);
   }
+  throw new SearchToolError("web_search_unavailable");
 }
 
 export function webSearchModelText(result: WebSearchResult): string {

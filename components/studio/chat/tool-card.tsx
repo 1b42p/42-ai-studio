@@ -6,8 +6,10 @@ import type { ComponentType } from "react";
 
 import { AgentCopyCard } from "@/components/studio/chat/agent-copy-card";
 import { EditFileCard } from "@/components/studio/chat/edit-file-card";
+import { ReadPageCard } from "@/components/studio/chat/read-page-card";
 import { SpeakCard } from "@/components/studio/chat/speak-card";
 import { TerminalCard } from "@/components/studio/chat/terminal-card";
+import { WebSearchCard } from "@/components/studio/chat/web-search-card";
 import { TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 
 export interface ToolCardProps {
@@ -24,6 +26,8 @@ const toolCards: ReadonlyMap<string, ComponentType<ToolCardProps>> = new Map([
   ["bash", TerminalCard],
   ["edit_file", EditFileCard],
   ["speak", SpeakCard],
+  ["web_search", WebSearchCard],
+  ["read_page", ReadPageCard],
   // Встроенная копия корня приходит с `toolName: "eve:subagent:agent"`,
   // поэтому выбор карточки идёт по `toolMetadata.eve.name`.
   ["agent", AgentCopyCard],
