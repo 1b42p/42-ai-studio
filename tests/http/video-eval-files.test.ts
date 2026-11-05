@@ -46,6 +46,20 @@ async function tool(target: ClientSession, name: string, input: object) {
 
 const CREATE_PROJECT = "cp -r /opt/remotion/src /workspace/src && cp /opt/remotion/package.json /opt/remotion/tsconfig.json /opt/remotion/remotion.config.ts /workspace/ && ln -s /opt/remotion/node_modules /workspace/node_modules";
 
+test("кадры: предварительная проверка находит пустой JPEG без модели и кодировщика", async () => {
+  const target = await session("render-failure");
+  const fixture = "from PIL import Image; Image.new('RGB', (64, 64), (30, 12, 6)).save('/workspace/blank.jpeg')";
+  expect(await tool(target, "bash", { command: `python3 -c ${JSON.stringify(fixture)}` })).toMatchObject({
+    status: "completed", result: { output: { exitCode: 0 } },
+  });
+  const checked = await tool(target, "bash", {
+    command: 'python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py" /workspace/blank.jpeg',
+  });
+  expect(checked).toMatchObject({ status: "completed", result: { output: {
+    exitCode: 1, stdout: expect.stringContaining('"suspect": "uniform"'),
+  } } });
+}, 60_000);
+
 test("оценки видео: чтение после правки видит новое содержимое, bash читает тот же файл", async () => {
   const target = await session();
   const filePath = "/workspace/project/notes.txt";
@@ -84,6 +98,44 @@ test("оценки видео: неизвестные файлы и команд
     status: "completed", result: { output: { content: expect.stringContaining("You are designing a video, not a webpage.") } },
   });
 }, 60_000);
+
+test("кадры: предварительная проверка различает тёмное содержимое, пустые и нечитаемые файлы", async () => {
+  const target = await session("render-failure");
+  const fixtures = `from pathlib import Path
+from PIL import Image, ImageDraw
+for name, color in [('black', (0,0,0)), ('white', (255,255,255)), ('color', (70,30,10))]:
+    Image.new('RGB', (64,64), color).save('/workspace/' + name + '.jpeg')
+for name, color in [('dark', (100,110,120)), ('near-black', (4,4,4))]:
+    image = Image.new('RGB', (64,64), (0,0,0))
+    ImageDraw.Draw(image).rectangle((16,16,48,48), fill=color)
+    image.save('/workspace/' + name + '.jpeg', quality=100)
+Path('/workspace/corrupt.jpeg').write_bytes(b'not an image')
+Path('/workspace/empty').mkdir()
+`;
+  expect(await tool(target, "edit_file", { filePath: "/workspace/fixtures.py", newString: fixtures })).toMatchObject({ status: "completed" });
+  expect(await tool(target, "bash", { command: "python3 /workspace/fixtures.py" })).toMatchObject({
+    status: "completed", result: { output: { exitCode: 0 } },
+  });
+  const script = 'python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py"';
+  for (const name of ["black", "white", "color", "near-black"]) {
+    const checked = await tool(target, "bash", { command: `${script} /workspace/${name}.jpeg` });
+    expect(checked).toMatchObject({ status: "completed", result: { output: { exitCode: 1 } } });
+  }
+  const valid = await tool(target, "bash", { command: `sha256sum dark.jpeg && ${script} dark.jpeg && sha256sum dark.jpeg` });
+  expect(valid).toMatchObject({ status: "completed", result: { output: {
+    exitCode: 0, stdout: expect.stringContaining('"suspect": null'),
+  } } });
+  const output = (valid.result.output as { stdout: string }).stdout.trim().split("\n");
+  expect(output[0]).toBe(output.at(-1));
+  expect(await tool(target, "read_file", { filePath: "/workspace/dark.jpeg" })).toMatchObject({
+    status: "completed", result: { output: { file: { mediaType: "image/jpeg", width: 64, height: 64 } } },
+  });
+  for (const path of ["corrupt.jpeg", "missing.jpeg", "empty/*.jpeg", ""]) {
+    expect(await tool(target, "bash", { command: `${script} ${path}` })).toMatchObject({
+      status: "completed", result: { output: { exitCode: 2 } },
+    });
+  }
+}, 90_000);
 
 test("оценки видео: отказ кодировщика действует и на полный рендер, и на сборку JPEG через FFmpeg", async () => {
   const target = await session("render-failure");

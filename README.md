@@ -102,7 +102,7 @@ npm run daytona:add-key -- основной < /путь/к/файлу-с-клю�
 после ручных прогонов их удаляют командой
 `npm run daytona:cleanup -- <appSessionId>` (или `-- --all`). Удаление строки
 `sandboxes` или пользователя машину в Daytona не удаляет.
-Команды работают от root. Образ `agent/sandbox/Dockerfile` содержит Python 3.12,
+Команды работают от root. Образ `agent/sandbox/Dockerfile` содержит Python 3.12 с Pillow,
 Node 24, библиотеки Chrome, шрифты с кириллицей и эмодзи и шаблон Remotion
 4.0.538 в `/opt/remotion`. Chrome Headless Shell ставится при сборке командой
 `npx remotion browser ensure` и лежит в `/opt/remotion/node_modules/.remotion`.
