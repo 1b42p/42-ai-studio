@@ -53,6 +53,12 @@ Python-библиотеку со своими потоками (ONNX Runtime у 
 
 `ffmpeg` и `ffprobe` вызывай только как `npx remotion ffmpeg` и `npx remotion ffprobe`. Шрифты бери из образа, из `@remotion/google-fonts` (хосты `fonts.googleapis.com` и `fonts.gstatic.com`) или пакетом `@fontsource/*` из npm.
 
+В шаблоне `src/index.ts` уже вызывает `registerRoot(RemotionRoot)`.
+В `src/Root.tsx` экспортируй `RemotionRoot` с композициями; регистрация
+остаётся единственным вызовом в `src/index.ts`. При ошибке повторной
+регистрации найди все вызовы `registerRoot` в исходниках и убери лишний.
+Структура: [registerRoot](https://www.remotion.dev/docs/register-root.md).
+
 ## Приоритет
 
 Если официальный навык Remotion расходится с этим навыком, действует этот навык. Для проверочных кадров действует `frame-review`. Ссылки официальных навыков на «Remotion Best Practices» пропускай: каталога `remotion-best-practices` нет. Перед разметкой прочитай `remotion-interactivity/timeline-structure.md`: навык установлен, и ссылки `remotion-markup` на него открываются. Транскрибацию Whisper из `transcribe-captions.md` и пакет `@remotion/whisper-webgpu` не выполняй: субтитры строятся из таймингов озвучки. Нужные навыки загружай по именам: `remotion-create`, `remotion-docs`, `remotion-markup`, `remotion-multimedia`, `remotion-render`, `remotion-captions`, `remotion-interactivity`.
