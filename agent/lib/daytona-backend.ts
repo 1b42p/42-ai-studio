@@ -50,7 +50,11 @@ function wrap(sandbox: Sandbox): DaytonaMachine {
 export function daytonaBackend(keyId: string, secret: string): DaytonaBackend {
   const config = loadConfig();
   if (config.appTestMode) {
-    return getFakeBackend(config.fakeSandboxDir!);
+    return getFakeBackend(config.fakeSandboxDir!, secret, {
+      cpu: config.sandboxCpu,
+      memoryGb: config.sandboxMemoryGb,
+      diskGb: config.sandboxDiskGb,
+    });
   }
   const cacheKey = `${keyId}:${createHash("sha256").update(secret).digest("hex")}`;
   let client = clients.get(cacheKey);

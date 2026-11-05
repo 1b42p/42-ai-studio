@@ -4,7 +4,13 @@ import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import type { SandboxConnection } from "eve/sandbox/provider";
 
-import { FakeStore, hasCode, type FakeRecord, type StoredRule } from "./fake-store";
+import {
+  FakeStore,
+  hasCode,
+  type FakeRecord,
+  type FakeResources,
+  type StoredRule,
+} from "./fake-store";
 import type { JobDirectoryReading } from "./job-directory";
 
 interface ConnectionCallbacks {
@@ -55,6 +61,12 @@ class FakeMachineHandle implements FakeMachine {
   async delete(): Promise<void> {
     try {
       if (this.state === "destroyed") return;
+      const failure = await this.store.consumeDeleteFailure();
+      if (failure !== undefined) {
+        throw Object.assign(new Error(`Fake Daytona delete ${failure}`), {
+          status: failure === "unavailable" ? 503 : 400,
+        });
+      }
       await this.store.setState(this.id, "destroyed");
     } catch (error) {
       if (!(error instanceof Error && "status" in error && error.status === 404)) throw error;
@@ -226,18 +238,29 @@ function fakeProcess(rule: Pick<StoredRule, "stdout" | "stderr" | "exitCode" | "
   };
 }
 
-export function getFakeBackend(directory: string) {
+export function getFakeBackend(directory: string, apiKey: string, resources: FakeResources) {
   const store = new FakeStore(directory);
   return {
     get: async (idOrName: string): Promise<FakeMachine> => {
+      const failure = await store.consumeGetFailure();
+      if (failure !== undefined) {
+        throw Object.assign(new Error(`Fake Daytona get ${failure}`), {
+          status: failure === "unauthorized" ? 401 : 503,
+        });
+      }
       const record = await store.transaction((data) => store.find(data, idOrName));
       return new FakeMachineHandle(store, record);
     },
     create: async ({ name, appSessionId }: { name: string; appSessionId: string }): Promise<FakeMachine> => {
-      const { machine, failure } = await store.create(name, appSessionId);
+      const { machine, failure } = await store.create(name, appSessionId, apiKey, resources);
+      if (failure === "quota") {
+        // Та же форма, по которой провайдер узнаёт исчерпанную квоту Daytona.
+        throw Object.assign(new Error("Total CPU/memory/disk limit exceeded"), { status: 400 });
+      }
       if (failure) {
+        const status = failure === "unavailable" ? 503 : failure === "unauthorized" ? 401 : 400;
         throw Object.assign(new Error(`Fake Daytona ${failure}: dtn_test_secret_value`), {
-          status: failure === "unavailable" ? 503 : 400,
+          status,
           ...(machine ? { sandboxId: machine.id } : {}),
         });
       }

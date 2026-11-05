@@ -173,12 +173,21 @@ export const daytonaKeys = pgTable("daytona_keys", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   usage: jsonb("usage").$type<Record<string, unknown>>(),
   usageCheckedAt: timestamp("usage_checked_at", { withTimezone: true }),
+  /**
+   * До какого времени пул организации считается исчерпанным после отказа
+   * Daytona по квоте. Хранится отдельно от `usage`, чтобы обновление
+   * использования не затирало отметку.
+   */
+  exhaustedUntil: timestamp("exhausted_until", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const sandboxState = pgEnum("sandbox_state", [
   "starting", "started", "stopped", "archived", "gone",
 ]);
+
+/** Вид запуска, под который строка `sandboxes` держит место в квоте пула. */
+export const sandboxLaunch = pgEnum("sandbox_launch", ["create", "wake", "restore"]);
 
 export const sandboxes = pgTable("sandboxes", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -187,6 +196,10 @@ export const sandboxes = pgTable("sandboxes", {
   daytonaKeyId: uuid("daytona_key_id").notNull().references(() => daytonaKeys.id),
   daytonaSandboxId: text("daytona_sandbox_id").notNull(),
   state: sandboxState("state").notNull(),
+  /** Когда строка перешла в `starting`; данные Daytona отстают от изменения. */
+  startingSince: timestamp("starting_since", { withTimezone: true }),
+  /** Что резервирует строка в квоте пула: создание, пробуждение или восстановление. */
+  startingKind: sandboxLaunch("starting_kind"),
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -196,6 +209,32 @@ export type NewDaytonaKey = typeof daytonaKeys.$inferInsert;
 export type Sandbox = typeof sandboxes.$inferSelect;
 export type NewSandbox = typeof sandboxes.$inferInsert;
 export type SandboxState = (typeof sandboxState.enumValues)[number];
+export type SandboxLaunch = (typeof sandboxLaunch.enumValues)[number];
+
+/**
+ * Машина, которую не удалось удалить при удалении ключа. Идентификатор
+ * переживает переход сессии на новую песочницу, иначе повторная операция
+ * удаления потеряет машину и затрёт шифротекст ключа.
+ */
+export const pendingSandboxDeletions = pgTable(
+  "pending_sandbox_deletions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    daytonaKeyId: uuid("daytona_key_id")
+      .notNull()
+      .references(() => daytonaKeys.id, { onDelete: "cascade" }),
+    daytonaSandboxId: text("daytona_sandbox_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("pending_sandbox_deletions_key_sandbox_idx").on(
+      table.daytonaKeyId,
+      table.daytonaSandboxId,
+    ),
+  ],
+);
+
+export type PendingSandboxDeletion = typeof pendingSandboxDeletions.$inferSelect;
 
 /** Вид медиа: загрузка, медиа инструмента, файл ответа, превью сессии. */
 export const mediaKind = pgEnum("media_kind", [

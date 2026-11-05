@@ -33,7 +33,11 @@ export function sandboxSessionFrom(machine: FakeMachine): SandboxSession {
 
 /** Машина фиктивной песочницы для сессии приложения. */
 export async function fakeMachineFor(appSessionId: string): Promise<FakeMachine> {
-  const backend = getFakeBackend(loadConfig().fakeSandboxDir!);
+  const backend = getFakeBackend(loadConfig().fakeSandboxDir!, "dtn_test_secret_value", {
+    cpu: 0,
+    memoryGb: 0,
+    diskGb: 0,
+  });
   return backend.create({
     name: `media-${randomUUID()}`,
     appSessionId,
