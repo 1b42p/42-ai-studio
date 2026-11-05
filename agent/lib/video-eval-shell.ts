@@ -28,6 +28,11 @@ function failure(message: string, exitCode = 1): JustBashCommandResult {
   return { exitCode, stdout: "", stderr: `video-eval: ${message}\n` };
 }
 
+function encodingFailure(output: string, message: string): JustBashCommandResult {
+  const result = failure(message);
+  return { ...result, stderr: result.stderr + videoEvalReceipt(output, loadConfig().eveEvalAuthToken!, 1) + "\n" };
+}
+
 function unsupported(command: string): JustBashCommandResult {
   return failure(`unsupported command: ${command}. This environment checks invocation protocol, not native execution.`, 127);
 }
@@ -309,7 +314,7 @@ async function render(kind: "render" | "still", args: string[], ctx: Context): P
   if (kind === "still" && frames!.length !== 1) throw new Error("--frame must select exactly one frame");
   if (!images && !/\.mp4$/i.test(output)) throw new Error("only MP4 video output is supported; use --sequence for images");
   if (kind === "still" && !(imageFormat === "png" ? /\.png$/i : /\.jpe?g$/i).test(output)) throw new Error("still output extension must match --image-format");
-  if (!images && await renderFails(ctx)) return failure("render failed while encoding the composition; MP4 was not created.");
+  if (!images && await renderFails(ctx)) return encodingFailure(output, "render failed while encoding the composition; MP4 was not created.");
   const sourceHash = createHash("sha256").update(JSON.stringify([...files])).digest("hex");
   const fixture = { protocolOnly: true, ...metadata, width, height, sourceHash, scale, imageFormat, jpegQuality: quality };
   const overwrite = flags.get("overwrite") !== "false";
@@ -393,7 +398,7 @@ async function remotion(args: string[], ctx: Context): Promise<JustBashCommandRe
       const options = rest.filter((arg) => arg !== "-hide_banner");
       if (options.length === 1 && options[0] === "-version") return success("ffmpeg version 7.1 (video-eval invocation-protocol fixture; no binary)\n");
       if (options.length === 1 && options[0] === "-encoders") return success("Encoders (video-eval protocol fixture, not a capability check):\n V..... libx264 H.264\n A..... aac AAC\n");
-      if (await renderFails(ctx)) return failure("ffmpeg encoding failed; MP4 was not created.");
+      if (await renderFails(ctx)) return encodingFailure(pathFromCwd(ctx, rest.at(-1) ?? ""), "ffmpeg encoding failed; MP4 was not created.");
       return unsupported("remotion ffmpeg encoding");
     }
     return unsupported(`remotion ${command ?? ""}`);

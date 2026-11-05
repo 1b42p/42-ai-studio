@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 import type { EveEvalStreamEvent, EveEvalToolCall, EveEvalTurn } from "eve/evals";
-import { videoEvalArtifacts } from "../../lib/video-eval/receipts";
+import { videoEvalArtifacts, videoEvalRenderResults } from "../../lib/video-eval/receipts";
 
 export function isFullRender(command: unknown): boolean {
   return typeof command === "string" && commands(command).some((argv) => videoOutput(argv) !== undefined);
@@ -124,4 +124,12 @@ export function framesBeforeFullRender(events: readonly EveEvalStreamEvent[]): b
 
 export function fullRenderCalls(turn: EveEvalTurn): readonly EveEvalToolCall[] {
   return turn.toolCalls.filter((call) => call.name === "bash" && isFullRender(call.input.command));
+}
+
+export function encodingFailed(call: EveEvalToolCall): boolean {
+  const token = process.env.EVE_EVAL_AUTH_TOKEN?.trim();
+  if (!token || call.status !== "completed" || typeof call.output !== "object" || call.output === null) return false;
+  const output = call.output as { stdout?: unknown; stderr?: unknown };
+  const results = videoEvalRenderResults([output.stdout, output.stderr].filter((value) => typeof value === "string").join("\n"), token);
+  return results.length > 0 && results.every((result) => result.exitCode === 1);
 }

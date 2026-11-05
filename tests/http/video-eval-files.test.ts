@@ -6,7 +6,7 @@ import { startApp, type AppHandle } from "./support/app";
 import { createUser } from "./support/db";
 import { loginAs } from "./support/auth";
 import { startEveDev, type EveDevServer } from "./support/eve-dev";
-import { videoEvalArtifacts } from "../../lib/video-eval/receipts";
+import { videoEvalArtifacts, videoEvalRenderResults } from "../../lib/video-eval/receipts";
 
 const sessions: ClientSession[] = [];
 const modes = new WeakMap<ClientSession, string>();
@@ -91,6 +91,15 @@ test("оценки видео: отказ кодировщика действу�
   expect(await tool(target, "bash", { command: "test -s out/final.mp4" })).toMatchObject({
     status: "completed", result: { output: { exitCode: 1 } },
   });
+  const caughtFailure = await tool(target, "bash", {
+    command: 'npx remotion render src/index.ts Main out/caught.mp4 2>&1 | tail -30; echo "---LS---"; ls -la out/ 2>/dev/null || true',
+  });
+  expect(caughtFailure).toMatchObject({ status: "completed", result: { output: { exitCode: 0 } } });
+  const caughtOutput = (caughtFailure.result.output as { stdout: string }).stdout;
+  expect(videoEvalRenderResults(caughtOutput, loadConfig().eveEvalAuthToken!)).toEqual([
+    { path: "/workspace/out/caught.mp4", exitCode: 1 },
+  ]);
+  expect(videoEvalArtifacts(caughtOutput, loadConfig().eveEvalAuthToken!)).toEqual([]);
   expect(await tool(target, "edit_file", {
     filePath: "/workspace/.eve/video-eval.json", oldString: '"renderFails":true', newString: '"renderFails":false',
   })).toMatchObject({ status: "completed" });

@@ -1,7 +1,7 @@
 import { defineEval, type EveEvalToolCall } from "eve/evals";
 import { satisfies } from "eve/evals/expect";
 import { VIDEO_REQUEST, videoSession } from "./fixtures";
-import { fullRenderCalls, videoLinks } from "./observations";
+import { encodingFailed, fullRenderCalls, videoLinks } from "./observations";
 
 export default Array.from({ length: 3 }, () => defineEval({
   description: "Неудачный полный рендер не повторяется бесконечно и не выдаётся за готовое видео.",
@@ -13,10 +13,8 @@ export default Array.from({ length: 3 }, () => defineEval({
     const attempts = fullRenderCalls(turn);
     t.check(attempts, satisfies((calls: readonly EveEvalToolCall[]) => calls.length >= 1 && calls.length <= 5,
       "От одной до пяти bash-команд кодирования видео, включая FFmpeg, без кадров и ffprobe"));
-    t.check(attempts, satisfies((calls: readonly EveEvalToolCall[]) => calls.every((call) =>
-      call.status === "completed" && typeof call.output === "object" && call.output !== null &&
-      "exitCode" in call.output && call.output.exitCode === 1),
-    "Каждая попытка полного рендера получила ожидаемый exitCode 1"));
+    t.check(attempts, satisfies((calls: readonly EveEvalToolCall[]) => calls.every(encodingFailed),
+      "Исполнитель подтвердил exitCode 1 каждой попытки кодирования, независимо от статуса shell-цепочки"));
     t.check(videoLinks(turn.message), satisfies((links: string[]) => links.length === 0,
       "После отказа кодировщика нет ссылки на несуществующий MP4"));
     t.judge("Все попытки полного рендера завершились ошибкой; MP4 не создан. " +
