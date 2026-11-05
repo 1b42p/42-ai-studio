@@ -17,7 +17,17 @@ beforeAll(async () => {
   eve = await startEveDev({ APP_VIDEO_EVAL_SANDBOX: "1", EVE_DEV_STATE_DIR: `.tmp/eve-video-eval-${process.pid}` });
   app = await startApp({ env: { APP_VIDEO_EVAL_SANDBOX: "1", EVE_BASE_URL: eve.url } });
   client = new Client({ host: app.url, auth: { bearer: loadConfig().eveEvalAuthToken! }, redirect: "manual" });
-});
+  // Eve prepares the Docker template on first sandbox access, not on listening.
+  const warmup = await session("render-failure");
+  try {
+    expect(await tool(warmup, "bash", { command: "python3 -c 'import PIL; print(PIL.__version__)'" })).toMatchObject({
+      status: "completed", result: { output: { exitCode: 0, stdout: expect.stringContaining("13.0.0") } },
+    });
+  } finally {
+    await warmup.reset();
+    sessions.splice(sessions.indexOf(warmup), 1);
+  }
+}, 240_000);
 afterAll(async () => { await app?.stop(); await eve?.stop(); });
 
 afterEach(async () => {
@@ -56,8 +66,9 @@ test("кадры: предварительная проверка находит
     command: 'python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py" /workspace/blank.jpeg',
   });
   expect(checked).toMatchObject({ status: "completed", result: { output: {
-    exitCode: 1, stdout: expect.stringContaining('"suspect": "uniform"'),
+    exitCode: 1, stdout: expect.stringContaining("Исправьте композицию"),
   } } });
+  expect(checked.result.output).toMatchObject({ stdout: expect.stringContaining('"suspect": "uniform"') });
 }, 60_000);
 
 test("оценки видео: чтение после правки видит новое содержимое, bash читает тот же файл", async () => {
