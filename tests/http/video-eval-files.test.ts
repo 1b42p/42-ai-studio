@@ -1,4 +1,5 @@
 import { Client, type ClientSession } from "eve/client";
+import type { EveEvalStreamEvent } from "eve/evals";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
 
 import { loadConfig } from "../../lib/config";
@@ -7,6 +8,7 @@ import { createUser } from "./support/db";
 import { loginAs } from "./support/auth";
 import { startEveDev, type EveDevServer } from "./support/eve-dev";
 import { videoEvalArtifacts, videoEvalRenderResults } from "../../lib/video-eval/receipts";
+import { framesBeforeFullRender, videoLinks } from "../../evals/video/observations";
 
 const sessions: ClientSession[] = [];
 const modes = new WeakMap<ClientSession, string>();
@@ -41,11 +43,12 @@ async function session(mode = "standard") {
   return created.session;
 }
 
-async function tool(target: ClientSession, name: string, input: object) {
+async function tool(target: ClientSession, name: string, input: object, events?: EveEvalStreamEvent[]) {
   const result = await (await target.send(`/tool ${name} ${JSON.stringify(input)}`, {
     headers: { "x-studio-video-eval": modes.get(target) ?? "standard" },
   })).result();
   expect(result.status).toBe("waiting");
+  events?.push(...result.events);
   const event = result.events.find((item) => item.type === "action.result" &&
     item.data.result.kind === "tool-result" && item.data.result.toolName === name);
   if (event?.type !== "action.result" || event.data.result.kind !== "tool-result") {
@@ -55,6 +58,41 @@ async function tool(target: ClientSession, name: string, input: object) {
 }
 
 const CREATE_PROJECT = "cp -r /opt/remotion/src /workspace/src && cp /opt/remotion/package.json /opt/remotion/tsconfig.json /opt/remotion/remotion.config.ts /workspace/ && ln -s /opt/remotion/node_modules /workspace/node_modules";
+
+test("оценки видео: перед рендером нужны четыре разных изображения, а не расширения и повторы", async () => {
+  const target = await session("render-failure");
+  await tool(target, "bash", { command: CREATE_PROJECT });
+  expect(await tool(target, "bash", {
+    command: "npx remotion render src/index.ts Main out/frames --frames=0,1,2,3 --image-format=jpeg --jpeg-quality=90",
+  })).toMatchObject({ result: { output: { exitCode: 0 } } });
+  const repeated: EveEvalStreamEvent[] = [];
+  for (let i = 0; i < 4; i++) {
+    await tool(target, "read_file", { filePath: "/workspace/out/frames/element-0.jpeg" }, repeated);
+  }
+  await tool(target, "bash", { command: "npx remotion render src/index.ts Main out/repeated.mp4" }, repeated);
+  expect(framesBeforeFullRender(repeated)).toBe(false);
+
+  const text: EveEvalStreamEvent[] = [];
+  for (let i = 0; i < 4; i++) {
+    const filePath = `/workspace/text-${i}.jpeg`;
+    await tool(target, "edit_file", { filePath, newString: "Это текст, не изображение" });
+    await tool(target, "read_file", { filePath }, text);
+  }
+  await tool(target, "bash", { command: "npx remotion render src/index.ts Main out/text.mp4" }, text);
+  expect(framesBeforeFullRender(text)).toBe(false);
+
+  const images: EveEvalStreamEvent[] = [];
+  for (let i = 0; i < 4; i++) {
+    expect(await tool(target, "read_file", { filePath: `/workspace/out/frames/element-${i}.jpeg` }, images))
+      .toMatchObject({ result: { output: { file: { mediaType: "image/jpeg" } } } });
+  }
+  await tool(target, "bash", { command: "npx remotion render src/index.ts Main out/images.mp4" }, images);
+  expect(framesBeforeFullRender(images)).toBe(true);
+  expect(videoLinks("[ролик](//workspace/out/images.mp4)")).toEqual([]);
+  expect(videoLinks("[ролик](out/images.mp4)")).toEqual(["/workspace/out/images.mp4"]);
+  expect(videoLinks("Ролик готов.\n\n[video]: out/images.mp4")).toEqual([]);
+  expect(videoLinks("[ролик][video]\n\n[video]: out/images.mp4")).toEqual(["/workspace/out/images.mp4"]);
+}, 120_000);
 
 test("кадры: предварительная проверка находит пустой JPEG без модели и кодировщика", async () => {
   const target = await session("render-failure");

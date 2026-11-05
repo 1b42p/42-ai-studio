@@ -1,5 +1,6 @@
 import { posix } from "node:path";
 import type { EveEvalStreamEvent, EveEvalToolCall, EveEvalTurn } from "eve/evals";
+import { parseSandboxLinks, resolveSandboxFilePath } from "../../lib/media/sandbox-path";
 import { videoEvalArtifacts, videoEvalRenderResults } from "../../lib/video-eval/receipts";
 
 export function isFullRender(command: unknown): boolean {
@@ -52,15 +53,8 @@ export function workspacePath(path: string, cwd = "/workspace"): string | undefi
 
 /** Путь ссылки нормализуется от /workspace, как в приложении, а не от cwd bash. */
 export function videoLinks(message: string | undefined): string[] {
-  const links: string[] = [];
-  for (const match of (message ?? "").matchAll(/!?\[[^\]\n]*\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["'][^\n]*?["'])?\s*\)/g)) {
-    if (match[0].startsWith("!")) continue;
-    try {
-      const path = workspacePath(decodeURIComponent((match[1] ?? match[2]).split(/[?#]/, 1)[0]));
-      if (path && /\.mp4$/iu.test(path)) links.push(path);
-    } catch { /* Неверное процентное кодирование не превращается в файл. */ }
-  }
-  return links;
+  return parseSandboxLinks(message ?? "", { includeUnusedDefinitions: false }).flatMap((link) =>
+    link.kind === "file" && /\.mp4$/iu.test(link.path) ? [link.path] : []);
 }
 
 /** Подписанное подтверждение записи, а не успешный exitCode всей shell-цепочки. */
@@ -108,15 +102,22 @@ export function framesBeforeFullRender(events: readonly EveEvalStreamEvent[]): b
     if (event.type === "actions.requested") {
       const actions = event.data.actions.filter((action) => action.kind === "tool-call");
       if (actions.some((action) => action.toolName === "bash" && isFullRender(action.input.command))) {
-        return completedFrames.size >= 3;
+        return completedFrames.size >= 4;
       }
       for (const action of actions) {
-        if (action.toolName === "read_file" && isFramePath(action.input.filePath)) requestedFrames.add(action.callId);
+        if (action.toolName === "read_file") requestedFrames.add(action.callId);
       }
     }
     if (event.type === "action.result" && event.data.result.kind === "tool-result" &&
       event.data.status === "completed" && requestedFrames.has(event.data.result.callId)) {
-      completedFrames.add(event.data.result.callId);
+      const output = event.data.result.output;
+      if (typeof output !== "object" || output === null || !("path" in output) ||
+        typeof output.path !== "string" || !("file" in output) ||
+        typeof output.file !== "object" || output.file === null ||
+        !("mediaType" in output.file) || typeof output.file.mediaType !== "string" ||
+        !output.file.mediaType.startsWith("image/")) continue;
+      const path = resolveSandboxFilePath(output.path);
+      if (path.kind === "file") completedFrames.add(path.path);
     }
   }
   return false; // Нет полного рендера — нет успеха по одному лишь ffprobe или набору кадров.

@@ -12,8 +12,8 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.succeeded();
     t.loadedSkill("frame-review");
     t.eventsSatisfy("До работы опубликован план ролика", planBeforeWork);
-    t.calledTool("read_file", { input: { filePath: isFramePath }, count: (count) => count >= 3 });
-    t.eventsSatisfy("Три кадра прочитаны до первого полного рендера", framesBeforeFullRender);
+    t.calledTool("read_file", { input: { filePath: isFramePath }, count: (count) => count >= 4 });
+    t.eventsSatisfy("Четыре разных изображения прочитаны до первого полного рендера", framesBeforeFullRender);
     const rendered = renderOutputs(turn.toolCalls);
     t.check(videoLinks(turn.message), satisfies((links: string[]) =>
       links.length > 0 && links.some((link) => rendered.includes(link)),

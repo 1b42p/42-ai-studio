@@ -136,8 +136,13 @@ export function resolveSandboxPath(rawUrl: string): SandboxPathResult {
  * Адреса файлов песочницы из Markdown: ссылки, картинки, определения и
  * ссылки-определения. Уникальные пути в порядке появления; обычные ссылки
  * (со схемой или от чужого хоста) пропускаются.
+ * `includeUnusedDefinitions: false` оставляет только ссылки и картинки,
+ * встречающиеся в тексте, без неиспользованных определений.
  */
-export function parseSandboxLinks(markdown: string): SandboxLink[] {
+export function parseSandboxLinks(
+  markdown: string,
+  options: { includeUnusedDefinitions?: boolean } = {},
+): SandboxLink[] {
   const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown) as Root;
 
   const definitions = new Map<string, string>();
@@ -161,8 +166,10 @@ export function parseSandboxLinks(markdown: string): SandboxLink[] {
     switch (node.type) {
       case "link":
       case "image":
-      case "definition":
         collect(node.url);
+        break;
+      case "definition":
+        if (options.includeUnusedDefinitions !== false) collect(node.url);
         break;
       case "linkReference":
       case "imageReference":
