@@ -7,6 +7,7 @@ import { sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { getStorage } from "@/lib/s3";
+import { loadConfig } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 
@@ -48,5 +49,8 @@ export async function GET(): Promise<Response> {
     checks: { database, storage },
   };
 
-  return Response.json(body, { status: body.status === "ok" ? 200 : 503 });
+  return Response.json(body, {
+    status: body.status === "ok" ? 200 : 503,
+    ...(loadConfig().appVideoEvalSandbox ? { headers: { "x-studio-video-eval": "1" } } : {}),
+  });
 }

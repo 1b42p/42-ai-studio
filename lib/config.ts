@@ -67,6 +67,7 @@ export interface AppConfig {
   readonly appTestMode: boolean;
   /** Изолированные оценки настоящей модели; только локально, не в production. */
   readonly appEvalMode: boolean;
+  readonly appVideoEvalSandbox: boolean;
   readonly eveEvalAuthToken: string | undefined;
   /** Порт основного экземпляра приложения в HTTP-тестах. */
   readonly testAppPort: number;
@@ -205,6 +206,7 @@ const envSchema = z.object({
   ),
   APP_TEST_MODE: envBoolean.optional().default(false),
   APP_EVAL_MODE: envBoolean.optional().default(false),
+  APP_VIDEO_EVAL_SANDBOX: envBoolean.optional().default(false),
   EVE_EVAL_AUTH_TOKEN: envString.min(24, "токен должен быть не короче 24 символов").optional(),
   TEST_APP_PORT: z.coerce
     .number({ error: "ожидается целое число от 1 до 65535" })
@@ -326,6 +328,9 @@ export function parseConfig(env: EnvRecord): AppConfig {
       if (!isLocalHost(data.APP_URL)) addIssue("APP_URL", "оценки разрешены только на localhost, 127.0.0.1 или [::1]");
       if (!data.EVE_EVAL_AUTH_TOKEN) addIssue("EVE_EVAL_AUTH_TOKEN", "обязательна при APP_EVAL_MODE=1");
     }
+    if (data.APP_VIDEO_EVAL_SANDBOX && !data.APP_EVAL_MODE) {
+      addIssue("APP_VIDEO_EVAL_SANDBOX", "требует APP_EVAL_MODE=1");
+    }
 
     if (production) {
       if (data.TELEGRAM_CLIENT_ID === undefined) {
@@ -392,6 +397,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     appUrl: data.APP_URL,
     appTestMode: data.APP_TEST_MODE,
     appEvalMode: data.APP_EVAL_MODE,
+    appVideoEvalSandbox: data.APP_VIDEO_EVAL_SANDBOX,
     eveEvalAuthToken: data.EVE_EVAL_AUTH_TOKEN,
     testAppPort: data.TEST_APP_PORT,
     nextDistDir: data.NEXT_DIST_DIR,
@@ -518,6 +524,19 @@ export function readUploadMaxBytes(): number {
   if (!parsed.success) {
     const reason = parsed.error.issues[0]?.message ?? "некорректное значение";
     throw new ConfigError([`UPLOAD_MAX_BYTES: ${reason}`]);
+  }
+  return parsed.data;
+}
+
+/** Выбор провайдера при discovery/build без обязательных настроек базы и S3. */
+export function readVideoEvalSandbox(): boolean {
+  loadDotenvFiles();
+  const raw = process.env.APP_VIDEO_EVAL_SANDBOX?.trim();
+  const parsed = envBoolean.optional().default(false).safeParse(raw || undefined);
+  if (!parsed.success) throw new ConfigError(["APP_VIDEO_EVAL_SANDBOX: ожидается 1, 0, true или false"]);
+  if (parsed.data) {
+    // Включённая подмена требует полной проверки локального eval-окружения.
+    parseConfig(process.env);
   }
   return parsed.data;
 }

@@ -1,12 +1,9 @@
 import { posix } from "node:path";
 import type { EveEvalStreamEvent, EveEvalToolCall, EveEvalTurn } from "eve/evals";
-
-// Ограничиваем --frames текущей shell-командой: следующий render может быть полным.
-// ffprobe и still сюда не попадают. Один pattern используется и в stubs, и в проверках.
-export const FULL_RENDER_PATTERN = String.raw`\bremotion["']?\s+["']?render\b(?![^;&|\n]*--frames(?:=|\s|["']|$))`;
+import { videoEvalArtifacts } from "../../lib/video-eval/receipts";
 
 export function isFullRender(command: unknown): boolean {
-  return typeof command === "string" && new RegExp(FULL_RENDER_PATTERN).test(command);
+  return typeof command === "string" && commands(command).some((argv) => videoOutput(argv) !== undefined);
 }
 
 export function isFramePath(path: unknown): boolean {
@@ -23,6 +20,28 @@ function commands(command: string): string[][] {
       (_, double: string | undefined, single: string | undefined) => single ?? double!.replace(/\\(["\\$`])/g, "$1")));
   }
   return result.filter((part) => part.length > 0);
+}
+
+/** Любое кодирование MP4, в том числе диапазон кадров и альтернативная сборка FFmpeg. */
+function videoOutput(argv: string[]): string | undefined {
+  const remotion = argv.findIndex((word) => posix.basename(word) === "remotion");
+  const ffmpeg = argv.findIndex((word) => posix.basename(word) === "ffmpeg");
+  const render = remotion >= 0 && argv[remotion + 1] === "render";
+  if (!render && ffmpeg < 0) return undefined;
+  if (render && argv.some((word) => word === "--sequence" || word === "--sequence=true")) return undefined;
+  if (render) {
+    const framesFlag = argv.findIndex((word) => word === "--frames" || word.startsWith("--frames="));
+    const frames = framesFlag < 0 ? undefined : argv[framesFlag].split("=")[1] ?? argv[framesFlag + 1];
+    if (frames !== undefined && !frames.includes("-")) return undefined;
+  }
+  const output = argv.at(-1);
+  if (ffmpeg >= 0 && /\.mp4$/iu.test(output ?? "")) return output;
+  if (render) {
+    const outputFlag = argv.findIndex((word) => word === "--output" || word.startsWith("--output="));
+    if (outputFlag >= 0) return argv[outputFlag].split("=")[1] ?? argv[outputFlag + 1];
+    return argv.slice(remotion + 2).find((word) => /\.mp4$/iu.test(word));
+  }
+  return undefined;
 }
 
 export function workspacePath(path: string, cwd = "/workspace"): string | undefined {
@@ -44,23 +63,17 @@ export function videoLinks(message: string | undefined): string[] {
   return links;
 }
 
-/** У bash каждый вызов начинается в /workspace; cd действует внутри одной команды. */
+/** Подписанное подтверждение записи, а не успешный exitCode всей shell-цепочки. */
 export function renderOutputs(calls: readonly EveEvalToolCall[]): string[] {
   const outputs: string[] = [];
+  const token = process.env.EVE_EVAL_AUTH_TOKEN?.trim();
+  if (!token) return outputs;
   for (const call of calls) {
-    if (call.name !== "bash" || typeof call.input.command !== "string") continue;
-    let cwd = "/workspace";
-    for (const argv of commands(call.input.command)) {
-      const cd = argv.indexOf("cd");
-      if (cd >= 0 && argv[cd + 1]) cwd = posix.resolve(cwd, argv[cd + 1]);
-      const remotion = argv.findIndex((word) => posix.basename(word) === "remotion");
-      if (remotion < 0 || argv[remotion + 1] !== "render" ||
-        argv.some((word) => word === "--frames" || word.startsWith("--frames="))) continue;
-      for (const word of argv.slice(remotion + 2)) {
-        if (word.startsWith("-") || !/\.mp4$/iu.test(word)) continue;
-        const path = workspacePath(word, cwd);
-        if (path) outputs.push(path);
-      }
+    if (call.name !== "bash" || call.status !== "completed" || typeof call.output !== "object" ||
+      call.output === null || !("stdout" in call.output) || typeof call.output.stdout !== "string") continue;
+    for (const output of videoEvalArtifacts(call.output.stdout, token)) {
+      const path = workspacePath(output);
+      if (path) outputs.push(path);
     }
   }
   return outputs;
