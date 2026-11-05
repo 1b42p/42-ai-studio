@@ -225,6 +225,33 @@ test("оценки видео: отказ кодировщика действу�
   });
 }, 180_000);
 
+test("оценки видео: рендер через nohup подтверждается после завершения дочернего процесса", async () => {
+  const target = await session();
+  await tool(target, "bash", { command: CREATE_PROJECT });
+  const launched = await tool(target, "bash", {
+    command: "mkfifo /workspace/render-ready.txt /workspace/render-finished.txt; nohup bash -c 'npx remotion render src/index.ts Main out/detached.mp4 > out.log 2>&1; code=$?; printf \"ready\\n\" > /workspace/render-ready.txt; printf \"%s\\n\" \"$code\" > /workspace/render-finished.txt; exit \"$code\"' > detached.log 2>&1 < /dev/null &",
+  });
+  expect(launched).toMatchObject({ status: "completed", result: { output: { exitCode: 0 } } });
+  expect(videoEvalArtifacts((launched.result.output as { stdout: string }).stdout, loadConfig().eveEvalAuthToken!)).toEqual([]);
+  expect(await tool(target, "read_file", { filePath: "/workspace/render-ready.txt" })).toMatchObject({
+    status: "completed", result: { output: { content: "1: ready" } },
+  });
+  const pending = await tool(target, "bash", {
+    command: "npx remotion ffprobe -v error -show_entries stream=codec_name -of default=nw=1 out/detached.mp4",
+  });
+  expect(pending).toMatchObject({ result: { output: { exitCode: 0 } } });
+  expect(videoEvalArtifacts((pending.result.output as { stdout: string }).stdout, loadConfig().eveEvalAuthToken!)).toEqual([]);
+  expect(await tool(target, "read_file", { filePath: "/workspace/render-finished.txt" })).toMatchObject({
+    status: "completed", result: { output: { content: "1: 0" } },
+  });
+  const completed = await tool(target, "bash", {
+    command: "npx remotion ffprobe -v error -show_entries stream=codec_name,width,height -of default=nw=1 out/detached.mp4",
+  });
+  expect(completed).toMatchObject({ result: { output: { exitCode: 0 } } });
+  expect(videoEvalArtifacts((completed.result.output as { stdout: string }).stdout, loadConfig().eveEvalAuthToken!))
+    .toEqual(["/workspace/out/detached.mp4"]);
+}, 90_000);
+
 test("оценки видео: частые опросы фонового задания не блокируют последующее подтверждение MP4", async () => {
   const target = await session();
   expect(await tool(target, "bash", { command: CREATE_PROJECT })).toMatchObject({ status: "completed", result: { output: { exitCode: 0 } } });

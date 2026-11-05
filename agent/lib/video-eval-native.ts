@@ -32,10 +32,10 @@ const save = (p, value) => {
   fs.renameSync(p + '.new', p);
 };
 const workspace = p => p.startsWith('/workspace/');
-const emptyState = () => ({version: 2, active: {}, jobs: {}, baseline: null, invalid: false, cache: {}, signed: {}, logOffset: 0});
+const emptyState = () => ({version: 3, active: {}, jobs: {}, groups: {}, baseline: null, invalid: false, cache: {}, signed: {}, logOffset: 0});
 const loadState = () => {
   const state = read(STATE, emptyState());
-  if (state.version !== 2) throw new Error('Native observer format changed; recreate the eval sandbox');
+  if (state.version !== 3) throw new Error('Native observer format changed; recreate the eval sandbox');
   return state;
 };
 const budget = () => ({deadline: Date.now() + 12000, bytes: 0, probes: 0});
@@ -89,12 +89,38 @@ async function videos(state, b) {
 
 // A live registered command never expires merely because 30 seconds elapsed.
 // PID start time plus boot id prevents a reused PID from retaining its lease.
-function processIdentity(pid) {
+function processFields(pid) {
   try {
     const stat = fs.readFileSync('/proc/' + pid + '/stat', 'utf8');
     const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
-    return fields[0] === 'Z' ? null : fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim() + ':' + fields[19];
-  } catch { return null; }
+    return fields;
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ESRCH') return null;
+    throw error;
+  }
+}
+function processIdentity(pid) {
+  const fields = processFields(pid);
+  return fields && fields[0] !== 'Z' ? fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim() + ':' + fields[19] : null;
+}
+function groupSnapshot() {
+  const live = new Set(), zombies = new Set(), identities = [];
+  const entries = fs.readdirSync('/proc').filter(name => /^\d+$/.test(name)).sort((a, b) => Number(a) - Number(b));
+  if (entries.length > 10000) throw new Error('Native process observation exceeds entry limit');
+  for (const pid of entries) {
+    const fields = processFields(pid);
+    identities.push(fields ? [pid, fields[2], fields[19], fields[0] === 'Z'] : [pid]);
+    if (fields) (fields[0] === 'Z' ? zombies : live).add(fields[2]);
+  }
+  return {live, zombies, identities: JSON.stringify(identities)};
+}
+function groupExists(group) {
+  try { process.kill(-Number(group), 0); return true; }
+  catch (error) {
+    if (error.code === 'ESRCH') return false;
+    if (error.code === 'EPERM') return true;
+    throw error;
+  }
 }
 const alive = item => item.pid && item.start && processIdentity(item.pid) === item.start;
 const exited = directory => {
@@ -106,6 +132,7 @@ const exited = directory => {
 function recover(state) {
   for (const [id, item] of Object.entries(state.active)) {
     if (item.pid ? !alive(item) : Date.now() - item.created > LEASE_MS) {
+      if (item.group) state.groups[item.group] = true;
       delete state.active[id]; state.invalid = true;
     }
   }
@@ -113,7 +140,15 @@ function recover(state) {
     if (item.directory && exited(item.directory)) delete state.jobs[key];
     else if (!alive(item)) { delete state.jobs[key]; state.invalid = true; }
   }
-  if (state.invalid && !Object.keys(state.active).length && !Object.keys(state.jobs).length) {
+  if (Object.keys(state.groups).length) {
+    const first = groupSnapshot(), second = groupSnapshot();
+    for (const group of Object.keys(state.groups)) {
+      if (second.live.has(group)) continue;
+      const zombieOnly = first.identities === second.identities && second.zombies.has(group);
+      if (!groupExists(group) || zombieOnly) delete state.groups[group];
+    }
+  }
+  if (state.invalid && !Object.keys(state.active).length && !Object.keys(state.jobs).length && !Object.keys(state.groups).length) {
     state.baseline = null; state.invalid = false;
   }
 }
@@ -122,6 +157,8 @@ function finish(state, id, aborted) {
   const item = state.active[id];
   if (!item) return;
   delete state.active[id];
+  // nohup and shell '&' keep the command's process group after its shell exits.
+  if (item.group) state.groups[item.group] = true;
   if (aborted) {
     state.invalid = true;
     // Even failed cleanup cannot declare a still-live command's bytes ready.
@@ -242,7 +279,7 @@ async function after(input) {
   // A valid header in a still-being-written MP4 is not completed encoding.
   // One oldest content baseline covers the whole concurrent batch; polling
   // neither appends snapshots nor consumes a pending-observation slot.
-  if (!Object.keys(state.active).length && !Object.keys(state.jobs).length && state.baseline && !state.invalid) {
+  if (!Object.keys(state.active).length && !Object.keys(state.jobs).length && !Object.keys(state.groups).length && state.baseline && !state.invalid) {
     const b = budget();
     try {
       const current = await videos(state, b);
@@ -279,7 +316,7 @@ async function after(input) {
     recover(state);
     // Enforce the limit before launching a new command, after reaping exits.
     // Existing jobs remain observable and are never discarded to meet a cap.
-    if (Object.keys(state.active).length + Object.keys(state.jobs).length >= MAX_COMMANDS) {
+    if (Object.keys(state.active).length + Object.keys(state.jobs).length + Object.keys(state.groups).length >= MAX_COMMANDS) {
       save(STATE, state);
       throw new Error('Too many live native video commands (64)');
     }
@@ -295,6 +332,7 @@ async function after(input) {
       if (!item) throw new Error('Native observation lease expired before command start');
       item.pid = Number(process.argv[4]);
       item.start = processIdentity(item.pid);
+      item.group = processFields(item.pid)?.[2];
       if (!item.start) throw new Error('Cannot identify native command process');
     } else finish(state, input.id, action === 'abort');
     save(STATE, state);
