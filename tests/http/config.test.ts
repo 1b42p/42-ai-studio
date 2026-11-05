@@ -78,7 +78,7 @@ describe("parseConfig", () => {
     expect(parseConfig({ ...env, APP_TEST_MODE: "1" }).appEvalMode).toBe(true);
   });
 
-  test("виртуальная среда видео требует локального режима оценок и запрещена в production", () => {
+  test("отдельная среда видео требует локального режима оценок и запрещена в production", () => {
     expect(parseConfig(validEnv()).appVideoEvalSandbox).toBe(false);
     expect(issuesOf({ ...validEnv(), APP_VIDEO_EVAL_SANDBOX: "1" }).join()).toContain("APP_VIDEO_EVAL_SANDBOX");
     const env = { ...validEnv(), APP_VIDEO_EVAL_SANDBOX: "1", APP_EVAL_MODE: "1", EVE_EVAL_AUTH_TOKEN: "eval-only-token-0123456789abcdef" };

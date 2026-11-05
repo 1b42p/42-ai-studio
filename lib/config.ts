@@ -528,7 +528,7 @@ export function readUploadMaxBytes(): number {
   return parsed.data;
 }
 
-/** Выбор провайдера при discovery/build без обязательных настроек базы и S3. */
+/** Выбор локального провайдера оценок при discovery/build. */
 export function readVideoEvalSandbox(): boolean {
   loadDotenvFiles();
   const raw = process.env.APP_VIDEO_EVAL_SANDBOX?.trim();
