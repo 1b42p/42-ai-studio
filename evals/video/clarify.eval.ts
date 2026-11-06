@@ -2,12 +2,12 @@ import { defineEval } from "eve/evals";
 import { includes } from "eve/evals/expect";
 import { VIDEO_EVAL_TIMEOUT_MS, VIDEO_REQUEST, videoSession } from "./fixtures";
 
-export default Array.from({ length: 3 }, () => defineEval({
+export default Array.from({ length: 3 }, (_, index) => defineEval({
   timeoutMs: VIDEO_EVAL_TIMEOUT_MS,
   description: "Недосказанная просьба вызывает вопросы; полная — работу без повторных вопросов.",
   tags: ["video", "clarify"],
   async test(t) {
-    const session = await videoSession(t);
+    const session = await videoSession(t, { caseId: `video/clarify/${String(index).padStart(4, "0")}` });
     const clarification = await session.send("Сделай ролик");
     clarification.succeeded();
     clarification.notCalledTool("bash");
@@ -19,7 +19,7 @@ export default Array.from({ length: 3 }, () => defineEval({
       "Не начинает производство ролика и не выдаёт его за готовый.",
     { on: clarification.message ?? "" }).gate(0.8);
 
-    const production = await clarification.session.send(VIDEO_REQUEST);
+    const production = await session.send(VIDEO_REQUEST);
     production.succeeded();
     production.calledTool("bash");
     t.judge("Пользователь дал полную просьбу о 30-секундном вертикальном ролике 9:16 " +

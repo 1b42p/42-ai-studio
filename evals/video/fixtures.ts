@@ -1,5 +1,6 @@
 import type { EveEvalContext, ToolStub } from "eve/evals";
 import { blockedRead, emptySearch } from "../web/fixtures";
+import { resumableSession } from "../support/resumable-session";
 
 export const VIDEO_REQUEST = "Сделай 30-секундный вертикальный ролик 9:16 о пользе утренней зарядки, без озвучки, три сцены.";
 export const VIDEO_EVAL_TIMEOUT_MS = 60 * 60 * 1000;
@@ -21,7 +22,7 @@ function videoStubs(): readonly ToolStub[] {
 }
 
 /** Файлы исполняются в выделенной виртуальной среде; внешние инструменты изолированы. */
-export async function videoSession(t: EveEvalContext, { renderFails = false } = {}) {
+export async function videoSession(t: EveEvalContext, { caseId, renderFails = false }: { caseId: string; renderFails?: boolean }) {
   const health = await t.target.fetch("/api/health");
   if (health.headers.get("x-studio-video-eval") !== "1") {
     throw new Error("Оценкам видео нужен выделенный локальный сервер с APP_VIDEO_EVAL_SANDBOX=1.");
@@ -42,5 +43,5 @@ export async function videoSession(t: EveEvalContext, { renderFails = false } = 
     throw new Error(`Не все инструменты изолированы подменами: ${uncovered.map(({ name }) => name).join(", ")}; dynamic: ${info.tools.dynamic.length}`);
   }
   // eve__skill не подменяется: инструкции загружаются из настоящих навыков агента.
-  return t.session({ stubs, headers: { "x-studio-video-eval": renderFails ? "render-failure" : "standard" } });
+  return resumableSession(t, caseId, { stubs, headers: { "x-studio-video-eval": renderFails ? "render-failure" : "standard" } });
 }

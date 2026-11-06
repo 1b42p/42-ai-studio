@@ -11,6 +11,7 @@
  */
 import * as nextEnv from "@next/env";
 import { resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { isValidSecretsEncryptionKey } from "./secrets";
@@ -242,6 +243,7 @@ const envSchema = z.object({
   AGENT_MODEL_BASE_URL: envUrl.optional(),
   AGENT_MODEL_API_KEY: envString.optional(),
   EVAL_JUDGE_MODEL: envString.trim().optional(),
+  EVAL_CHECKPOINT_DIR: envString.optional(),
   AGENT_MODEL_CONTEXT_TOKENS: z.coerce
     .number({ error: "ожидается целое число не меньше 8000" })
     .int("ожидается целое число не меньше 8000")
@@ -499,6 +501,22 @@ export function parseEvalJudgeConfig(env: EnvRecord): EvalJudgeConfig {
 export function loadEvalJudgeConfig(): EvalJudgeConfig {
   loadDotenvFiles();
   return parseEvalJudgeConfig(process.env);
+}
+
+export function readEvalCheckpointDirectory(): string | undefined {
+  loadDotenvFiles();
+  const value = process.env.EVAL_CHECKPOINT_DIR?.trim();
+  return value ? resolve(value) : undefined;
+}
+
+/** Non-secret identity: model, provider, reasoning, and sandbox mode, never credentials. */
+export function evalRuntimeFingerprint(config = loadConfig()): string {
+  return createHash("sha256").update(JSON.stringify({
+    model: config.agentModel, baseUrl: config.agentModelBaseUrl,
+    context: config.agentModelContextTokens, reasoning: config.agentReasoning,
+    fixture: config.appTestMode, videoSandbox: config.appVideoEvalSandbox,
+    cpu: config.sandboxCpu, memory: config.sandboxMemoryGb, disk: config.sandboxDiskGb,
+  })).digest("hex");
 }
 
 /**

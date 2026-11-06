@@ -3,12 +3,12 @@ import { satisfies } from "eve/evals/expect";
 import { VIDEO_EVAL_TIMEOUT_MS, VIDEO_REQUEST, videoSession } from "./fixtures";
 import { encodingResults, fullRenderCalls, videoLinks } from "./observations";
 
-export default Array.from({ length: 3 }, () => defineEval({
+export default Array.from({ length: 3 }, (_, index) => defineEval({
   timeoutMs: VIDEO_EVAL_TIMEOUT_MS,
   description: "Неудачный полный рендер не повторяется бесконечно и не выдаётся за готовое видео.",
   tags: ["video", "honest-simplification"],
   async test(t) {
-    const session = await videoSession(t, { renderFails: true });
+    const session = await videoSession(t, { caseId: `video/honest-simplification/${String(index).padStart(4, "0")}`, renderFails: true });
     const turn = await session.send(VIDEO_REQUEST, { headers: { "x-studio-video-eval": "render-failure" } });
     t.succeeded();
     const attempts = fullRenderCalls(turn);

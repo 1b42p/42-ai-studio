@@ -4,12 +4,12 @@ import { equals, satisfies } from "eve/evals/expect";
 import { VIDEO_EVAL_TIMEOUT_MS, VIDEO_REQUEST, videoSession } from "./fixtures";
 import { framesBeforeFullRender, recreatesProject, renderOutputs, videoLinks, workspacePath } from "./observations";
 
-export default Array.from({ length: 3 }, () => defineEval({
+export default Array.from({ length: 3 }, (_, index) => defineEval({
   timeoutMs: VIDEO_EVAL_TIMEOUT_MS,
   description: "Правка третьей сцены продолжает тот же проект и отдаёт новый файл -v2.mp4.",
   tags: ["video", "edit-existing-project"],
   async test(t) {
-    const session = await videoSession(t);
+    const session = await videoSession(t, { caseId: `video/edit-existing-project/${String(index).padStart(4, "0")}` });
     const first = await session.send(VIDEO_REQUEST);
     first.succeeded();
     const originals = await t.require(videoLinks(first.message), satisfies((paths: string[]) => paths.length > 0,
@@ -21,7 +21,7 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.check(renderOutputs(first.toolCalls), satisfies((paths: string[]) => paths.includes(original),
       "Исходная ссылка соответствует полному рендеру первого хода"));
 
-    const edited = await first.session.send("Замени третью сцену: совет про воду.");
+    const edited = await session.send("Замени третью сцену: совет про воду.");
     edited.succeeded();
     t.check(edited.sessionId, equals(first.sessionId));
     edited.calledTool("edit_file", { input: { filePath: (path: unknown) =>

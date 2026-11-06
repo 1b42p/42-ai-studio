@@ -3,12 +3,12 @@ import { satisfies } from "eve/evals/expect";
 import { VIDEO_EVAL_TIMEOUT_MS, VIDEO_REQUEST, videoSession } from "./fixtures";
 import { framesBeforeFullRender, isFramePath, planBeforeWork, renderOutputs, videoLinks } from "./observations";
 
-export default Array.from({ length: 3 }, () => defineEval({
+export default Array.from({ length: 3 }, (_, index) => defineEval({
   timeoutMs: VIDEO_EVAL_TIMEOUT_MS,
   description: "До полного рендера загружен frame-review и просмотрены опорные кадры; в ответе MP4.",
   tags: ["video", "frame-review"],
   async test(t) {
-    const session = await videoSession(t);
+    const session = await videoSession(t, { caseId: `video/frame-review/${String(index).padStart(4, "0")}` });
     const turn = await session.send(VIDEO_REQUEST);
     t.succeeded();
     t.loadedSkill("frame-review");
