@@ -1,9 +1,10 @@
 import { defineEval, type EveEvalToolCall } from "eve/evals";
 import { satisfies } from "eve/evals/expect";
-import { VIDEO_REQUEST, videoSession } from "./fixtures";
+import { VIDEO_EVAL_TIMEOUT_MS, VIDEO_REQUEST, videoSession } from "./fixtures";
 import { encodingResults, fullRenderCalls, videoLinks } from "./observations";
 
 export default Array.from({ length: 3 }, () => defineEval({
+  timeoutMs: VIDEO_EVAL_TIMEOUT_MS,
   description: "Неудачный полный рендер не повторяется бесконечно и не выдаётся за готовое видео.",
   tags: ["video", "honest-simplification"],
   async test(t) {

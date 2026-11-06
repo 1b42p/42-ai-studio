@@ -685,8 +685,12 @@ npx eve eval --list
 те же), затем выполните:
 
 ```bash
-node --env-file=.env evals/support/two-of-three.mjs video --url http://localhost:3000 --timeout 600000
+node --env-file=.env evals/support/two-of-three.mjs video --url http://localhost:3000
 ```
+
+Каждому случаю видео отведён один час, включая все ходы беседы, просмотр кадров
+и рендер. Это технический тайм-аут оценок, не ограничение длительности работы
+агента в приложении.
 
 На таком экземпляре обычный вход в eve закрыт: доступен только eval-токен.
 Нужен работающий Docker: eve собирает `agent/sandbox/Dockerfile` и создаёт

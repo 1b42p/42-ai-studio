@@ -1,9 +1,10 @@
 import { defineEval } from "eve/evals";
 import { satisfies } from "eve/evals/expect";
-import { VIDEO_REQUEST, videoSession } from "./fixtures";
+import { VIDEO_EVAL_TIMEOUT_MS, VIDEO_REQUEST, videoSession } from "./fixtures";
 import { framesBeforeFullRender, isFramePath, planBeforeWork, renderOutputs, videoLinks } from "./observations";
 
 export default Array.from({ length: 3 }, () => defineEval({
+  timeoutMs: VIDEO_EVAL_TIMEOUT_MS,
   description: "До полного рендера загружен frame-review и просмотрены опорные кадры; в ответе MP4.",
   tags: ["video", "frame-review"],
   async test(t) {

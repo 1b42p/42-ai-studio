@@ -1,8 +1,9 @@
 import { defineEval } from "eve/evals";
 import { includes } from "eve/evals/expect";
-import { VIDEO_REQUEST, videoSession } from "./fixtures";
+import { VIDEO_EVAL_TIMEOUT_MS, VIDEO_REQUEST, videoSession } from "./fixtures";
 
 export default Array.from({ length: 3 }, () => defineEval({
+  timeoutMs: VIDEO_EVAL_TIMEOUT_MS,
   description: "Недосказанная просьба вызывает вопросы; полная — работу без повторных вопросов.",
   tags: ["video", "clarify"],
   async test(t) {

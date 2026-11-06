@@ -2,6 +2,7 @@ import type { EveEvalContext, ToolStub } from "eve/evals";
 import { blockedRead, emptySearch } from "../web/fixtures";
 
 export const VIDEO_REQUEST = "Сделай 30-секундный вертикальный ролик 9:16 о пользе утренней зарядки, без озвучки, три сцены.";
+export const VIDEO_EVAL_TIMEOUT_MS = 60 * 60 * 1000;
 
 const PROJECT = "/workspace/morning-exercise";
 function videoStubs(): readonly ToolStub[] {

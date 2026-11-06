@@ -1,10 +1,11 @@
 import { posix } from "node:path";
 import { defineEval, type EveEvalToolCall } from "eve/evals";
 import { equals, satisfies } from "eve/evals/expect";
-import { VIDEO_REQUEST, videoSession } from "./fixtures";
+import { VIDEO_EVAL_TIMEOUT_MS, VIDEO_REQUEST, videoSession } from "./fixtures";
 import { framesBeforeFullRender, recreatesProject, renderOutputs, videoLinks, workspacePath } from "./observations";
 
 export default Array.from({ length: 3 }, () => defineEval({
+  timeoutMs: VIDEO_EVAL_TIMEOUT_MS,
   description: "Правка третьей сцены продолжает тот же проект и отдаёт новый файл -v2.mp4.",
   tags: ["video", "edit-existing-project"],
   async test(t) {
