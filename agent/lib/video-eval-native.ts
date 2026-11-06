@@ -13,10 +13,10 @@ const fs = require('node:fs');
 const fsp = fs.promises;
 const path = require('node:path');
 const crypto = require('node:crypto');
-const {spawnSync} = require('node:child_process');
+const {spawn, spawnSync} = require('node:child_process');
 const ROOT = '/opt/studio-video-eval';
 const STATE = '/tmp/studio-video-eval-state.json';
-const LOG = '/tmp/studio-video-eval-encoder-failures.jsonl';
+const LOG = '/tmp/studio-video-eval-encoders.jsonl';
 const MODE = '/tmp/studio-video-eval-mode.json';
 const LEASE_MS = 120000;
 const MAX_COMMANDS = 64;
@@ -32,20 +32,20 @@ const save = (p, value) => {
   fs.renameSync(p + '.new', p);
 };
 const workspace = p => p.startsWith('/workspace/');
-const emptyState = () => ({version: 3, active: {}, jobs: {}, groups: {}, baseline: null, invalid: false, cache: {}, signed: {}, logOffset: 0});
+const emptyState = () => ({version: 4, active: {}, jobs: {}, groups: {}, baseline: null, batch: null, encodings: [], invalid: false, cache: {}, signed: {}, logOffset: 0});
 const loadState = () => {
   const state = read(STATE, emptyState());
-  if (state.version !== 3) throw new Error('Native observer format changed; recreate the eval sandbox');
+  if (state.version !== 4) throw new Error('Native observer format changed; recreate the eval sandbox');
   return state;
 };
 const budget = () => ({deadline: Date.now() + 12000, bytes: 0, probes: 0});
 const checkTime = b => { if (Date.now() >= b.deadline) throw new Error('Native video observation time budget exceeded'); };
 const stamp = (real, s) => [real, s.dev, s.ino, s.size, s.ctimeNs, s.mtimeNs].join(':');
 
-async function fingerprint(p, state, b) {
+async function fingerprint(p, state, b, includeTemporary = false) {
   checkTime(b);
   const real = await fsp.realpath(p);
-  if (!workspace(real)) return null;
+  if (!includeTemporary && !workspace(real)) return null;
   const s = await fsp.stat(real, {bigint: true});
   if (!s.isFile()) return null;
   const metadata = stamp(real, s);
@@ -149,7 +149,7 @@ function recover(state) {
     }
   }
   if (state.invalid && !Object.keys(state.active).length && !Object.keys(state.jobs).length && !Object.keys(state.groups).length) {
-    state.baseline = null; state.invalid = false;
+    state.baseline = null; state.batch = null; state.encodings = []; state.invalid = false;
   }
 }
 
@@ -191,7 +191,13 @@ async function prepare() {
       if (r.status !== 0) throw new Error('Cannot capture native ffmpeg diagnostics: ' + p);
       outputs[flag] = {stdout: r.stdout, stderr: r.stderr};
     }
-    diagnostics.push({path: p, outputs});
+    // Keep $ORIGIN shared-library lookup unchanged. The only real executable
+    // lives at this controlled sibling path, removed in the failure mode.
+    const executable = p + '.studio-video-eval-native';
+    fs.renameSync(p, executable);
+    const index = diagnostics.length;
+    fs.writeFileSync(p, '#!/bin/sh\nexec /usr/bin/node ' + ROOT + '/observe.cjs encoder ' + index + ' "$@"\n', {mode: 0o755});
+    diagnostics.push({path: p, executable, outputs});
   }
   save(ROOT + '/binaries.json', {diagnostics, probe});
   for (const [name, target] of [['ffmpeg', diagnostics[0].path], ['ffprobe', probe]]) {
@@ -214,22 +220,86 @@ async function initialize(fails) {
   if (fails) {
     for (const target of diagnostics) {
       // Remove the executable itself, not a rename to a discoverable backup.
-      const wrapper = '#!/usr/bin/node\n' +
-        'const fs=require("node:fs"),path=require("node:path"),crypto=require("node:crypto");\n' +
-        'const args=process.argv.slice(2), d=' + JSON.stringify(target.outputs) + ';\n' +
-        'const flags=args.filter(a=>a!=="-hide_banner");\n' +
-        'if(flags.length===1 && d[flags[0]]){process.stdout.write(d[flags[0]].stdout);process.stderr.write(d[flags[0]].stderr);process.exit(0);}\n' +
-        'const output=[...args].reverse().find(a=>/\\.mp4$/i.test(a));\n' +
-        'fs.appendFileSync(' + JSON.stringify(LOG) + ',JSON.stringify({id:crypto.randomUUID(),path:output?path.resolve(output):"/tmp/native-encoding",exitCode:1})+"\\n");\n' +
-        'process.stderr.write("Injected video encoding failure (native eval).\\n");process.exit(1);\n';
-      fs.unlinkSync(target.path);
-      fs.writeFileSync(target.path, wrapper, {mode: 0o755});
+      fs.rmSync(target.executable, {force: true});
     }
     // These paths are in this session's disposable container, never on the host.
     fs.rmSync('/root/.npm', {recursive: true, force: true});
   }
   if (!fs.existsSync(STATE)) save(STATE, emptyState());
   save(MODE, {renderFails: fails});
+}
+
+// Runs instead of each prepared FFmpeg executable, without a shell or detached
+// process group. Its close event, never bash's exit/text, is encoding evidence.
+async function encoder(index, args) {
+  const target = read(ROOT + '/binaries.json').diagnostics[index];
+  if (!target) throw new Error('Unknown prepared encoder');
+  const flags = args.filter(a => a !== '-hide_banner');
+  if (flags.length === 1 && target.outputs[flags[0]]) {
+    process.stdout.write(target.outputs[flags[0]].stdout);
+    process.stderr.write(target.outputs[flags[0]].stderr);
+    return;
+  }
+  const batch = loadState().batch;
+  const output = [...args].reverse().find(a => /\.mp4$/i.test(a));
+  const entry = {id: crypto.randomUUID(), batch, path: output ? path.resolve(output) : '/tmp/native-encoding',
+    code: null, signal: null, error: null, outputs: []};
+  const journal = () => fs.appendFileSync(LOG, JSON.stringify(entry) + '\n');
+  if (read(MODE, null)?.renderFails) {
+    entry.code = 1;
+    journal();
+    process.stderr.write('Injected video encoding failure (native eval).\n');
+    process.exitCode = 1;
+    return;
+  }
+  // Operands only locate files to inspect; neither an argv spelling nor a
+  // zero exit by itself is proof. Input operands cannot attest copied MP4s
+  // during a successful image/frame extraction. Extensionless Remotion temp
+  // outputs are hashed too, before its caller can rename/delete them.
+  const inputs = new Set(args.filter((_, i) => args[i - 1] === '-i').map(a => path.resolve(a)));
+  const candidates = [...new Set(args.filter(a => a && !a.startsWith('-')).map(a => path.resolve(a)))];
+  const metadata = p => {
+    try { const s = fs.statSync(p, {bigint: true}); return s.isFile() ? stamp(fs.realpathSync(p), s) : null; }
+    catch (error) { if (['ENOENT', 'ENOTDIR', 'ENAMETOOLONG', 'EACCES', 'ELOOP'].includes(error.code)) return null; throw error; }
+  };
+  const before = new Map(candidates.filter(p => !inputs.has(p)).slice(0, 128).map(p => [p, metadata(p)]));
+  const child = spawn(target.executable, args, {stdio: 'inherit', detached: false, argv0: target.path});
+  // FFmpeg installs SIGINT/SIGTERM handlers even if a background shell ignored
+  // them. Keep that behavior, but preserve nohup's inherited SIGHUP ignore.
+  // Group signals also reach the child in the caller's process group.
+  const ignored = BigInt('0x' + fs.readFileSync('/proc/self/status', 'utf8').match(/^SigIgn:\s*([\da-f]+)/mi)[1]);
+  const signals = require('node:os').constants.signals;
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGQUIT']) {
+    if (['SIGINT', 'SIGTERM'].includes(signal) || !(ignored & (1n << BigInt(signals[signal] - 1)))) process.on(signal, () => {
+      if (child.exitCode === null && child.signalCode === null) child.kill(signal);
+    });
+  }
+  child.on('error', error => { entry.error = error.code || error.message; });
+  await new Promise(resolve => child.on('close', (code, signal) => {
+    // A failed spawn can report a negative libuv error, not a native exit code.
+    entry.code = code !== null && code >= 0 ? code : null;
+    entry.signal = signal;
+    resolve();
+  }));
+  try {
+    const b = budget(), local = {cache: {}};
+    for (const [p, prior] of before) {
+      if (metadata(p) === prior) continue;
+      const fp = await fingerprint(p, local, b, true);
+      if (fp) entry.outputs.push({path: p, content: fp.content});
+    }
+    journal();
+  } catch (error) {
+    // Incomplete attribution must not turn any unobserved bytes into success.
+    entry.outputs = [];
+    journal();
+    process.stderr.write('Native encoder observation incomplete: ' + error.message + '\n');
+  }
+  if (entry.signal) {
+    process.removeAllListeners(entry.signal);
+    process.kill(process.pid, entry.signal);
+  }
+  process.exitCode = entry.code ?? (entry.signal ? 128 + signals[entry.signal] : 1);
 }
 
 function validVideo(p, probe, b) {
@@ -262,18 +332,27 @@ async function after(input) {
   save(STATE, state);
   const results = [];
   let warning;
-  // Guest journal is evidence of the non-adversarial fault injection, not a
-  // security boundary. Only the server adds an authenticated receipt to it.
+  // Guest journal is native process evidence, not a security boundary. Only
+  // the server adds authenticated receipts, normalized to exitCode 0 or 1.
   if (fs.existsSync(LOG)) {
     const size = fs.statSync(LOG).size;
-    if (size > 1024 * 1024 || size < state.logOffset) throw new Error('Invalid encoder failure journal');
-    const text = fs.readFileSync(LOG, 'utf8');
-    const end = text.lastIndexOf('\n') + 1;
-    for (const line of text.slice(state.logOffset, end).split('\n').filter(Boolean).slice(0, 128)) {
+    if (size > 1024 * 1024 || size < state.logOffset) throw new Error('Invalid encoder journal');
+    const bytes = fs.readFileSync(LOG);
+    const end = bytes.lastIndexOf(10) + 1;
+    for (const line of bytes.subarray(state.logOffset, end).toString('utf8').split('\n').filter(Boolean).slice(0, 128)) {
       const item = JSON.parse(line);
-      if (item.exitCode !== 1 || typeof item.path !== 'string') throw new Error('Invalid encoder failure');
-      results.push({path: item.path, exitCode: 1});
-      state.logOffset += line.length + 1;
+      if (typeof item.path !== 'string' || (item.batch !== null && typeof item.batch !== 'string') ||
+        (item.code !== null && (!Number.isInteger(item.code) || item.code < 0 || item.code > 255)) ||
+        (item.signal !== null && typeof item.signal !== 'string') || !Array.isArray(item.outputs) ||
+        item.outputs.length > 128 || item.outputs.some(fp => typeof fp.path !== 'string' ||
+          typeof fp.content !== 'string' || !/^\d+:[a-f0-9]{64}$/.test(fp.content))) throw new Error('Invalid encoder outcome');
+      const exitCode = item.code === 0 && item.signal === null && !item.error ? 0 : 1;
+      if (exitCode === 1) results.push({path: item.path, exitCode});
+      if (state.batch && item.batch === state.batch) {
+        if (state.encodings.length >= 1024) throw new Error('Too many encoder outcomes in native observation batch');
+        state.encodings.push({...item, exitCode});
+      }
+      state.logOffset += Buffer.byteLength(line) + 1;
     }
   }
   // A valid header in a still-being-written MP4 is not completed encoding.
@@ -284,8 +363,15 @@ async function after(input) {
     try {
       const current = await videos(state, b);
       const {probe} = read(ROOT + '/binaries.json');
+      // Content survives Remotion's temporary-file rename; the batch id keeps
+      // old successful encodes from proving later copied/touched artifacts.
+      const successful = new Set(), failed = new Set();
+      for (const item of state.encodings) for (const fp of item.outputs) {
+        (item.exitCode === 0 ? successful : failed).add(fp.content);
+      }
       for (const [p, fp] of Object.entries(current)) {
         if (state.signed[p] === fp.content || state.baseline[p] === fp.content) continue;
+        if (!successful.has(fp.content) || failed.has(fp.content)) continue;
         if (validVideo(p, probe, b)) {
           const now = await fingerprint(p, state, b);
           if (now?.metadata === fp.metadata && now.content === fp.content) {
@@ -300,7 +386,7 @@ async function after(input) {
       // and failure receipts, and report the bounded observer's limitation.
       warning = error.message;
     }
-    state.baseline = null;
+    state.baseline = null; state.batch = null; state.encodings = [];
   }
   save(STATE, state);
   process.stdout.write(JSON.stringify({results, warning}));
@@ -308,6 +394,7 @@ async function after(input) {
 
 (async () => {
   const action = process.argv[2];
+  if (action === 'encoder') { await encoder(Number(process.argv[3]), process.argv.slice(4)); return; }
   const input = JSON.parse(process.argv[3] || '{}');
   if (action === 'prepare') await prepare();
   else if (action === 'initialize') await initialize(input.renderFails);
@@ -321,8 +408,11 @@ async function after(input) {
       throw new Error('Too many live native video commands (64)');
     }
     try {
-      if (!state.baseline) state.baseline = Object.fromEntries(
-        Object.entries(await videos(state, budget())).map(([p, fp]) => [p, fp.content]));
+      if (!state.baseline) {
+        state.baseline = Object.fromEntries(Object.entries(await videos(state, budget())).map(([p, fp]) => [p, fp.content]));
+        state.batch = crypto.randomUUID();
+        state.encodings = [];
+      }
       state.active[input.id] = {created: Date.now()};
     } finally { save(STATE, state); }
   } else if (action === 'attach' || action === 'finish' || action === 'abort') {

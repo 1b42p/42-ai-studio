@@ -58,6 +58,88 @@ async function tool(target: ClientSession, name: string, input: object, events?:
 }
 
 const CREATE_PROJECT = "cp -r /opt/remotion/src /workspace/src && cp /opt/remotion/package.json /opt/remotion/tsconfig.json /opt/remotion/remotion.config.ts /workspace/ && ln -s /opt/remotion/node_modules /workspace/node_modules";
+const CREATE_JPEG = "python3 -c 'from PIL import Image; Image.new(\"RGB\", (64,64), (70,30,10)).save(\"/workspace/input.jpeg\")'";
+
+test("оценки видео: SIGINT оставляет читаемый MP4, но скрытый ненулевой исход FFmpeg не подтверждает успех", async () => {
+  const target = await session();
+  const script = String.raw`
+const assert = require('node:assert/strict');
+const {spawn, spawnSync} = require('node:child_process');
+const output = '/workspace/partial.mp4';
+const probe = () => {
+  const result = spawnSync('ffprobe', ['-v', 'error', '-count_packets', '-show_entries',
+    'stream=codec_type,width,height,nb_read_packets:format=duration,format_name', '-of', 'json', output],
+    {encoding: 'utf8', timeout: 3000});
+  if (result.status !== 0) return false;
+  const data = JSON.parse(result.stdout);
+  return data.format?.format_name?.split(',').includes('mp4') && Number(data.format?.duration) > 0 &&
+    data.streams?.some(s => s.codec_type === 'video' && s.width > 0 && s.height > 0 && Number(s.nb_read_packets) > 0);
+};
+const child = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-nostats', '-y',
+  '-f', 'image2pipe', '-vcodec', 'mjpeg', '-r', '30', '-i', 'pipe:0', '-pix_fmt', 'yuv420p',
+  '-c:v', 'libx264', '-threads', '1', '-preset', 'ultrafast', '-tune', 'zerolatency', '-g', '1',
+  '-movflags', '+frag_keyframe+empty_moov+default_base_moof', '-flush_packets', '1',
+  '-progress', 'pipe:2', '-stats_period', '0.05', output], {stdio: ['pipe', 'ignore', 'pipe']});
+let interrupted = false, timedOut = false, stderr = '';
+const deadline = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, 15000);
+child.on('error', error => { throw error; });
+child.stdin.on('error', error => { if (error.code !== 'EPIPE') throw error; });
+const frame = require('node:fs').readFileSync('/workspace/input.jpeg');
+function feed() {
+  while (!interrupted && !child.stdin.destroyed) if (!child.stdin.write(frame)) return;
+}
+child.stdin.on('drain', feed);
+child.stderr.on('data', chunk => {
+  stderr = (stderr + chunk.toString()).slice(-16384);
+  // Progress drives the handshake. Stop only once ffprobe sees actual packets
+  // in the still-running fragmented MP4, never after an arbitrary delay.
+  if (!interrupted && /frame=\s*[1-9]\d*/.test(stderr) && probe()) {
+    interrupted = true;
+    assert.equal(child.kill('SIGINT'), true);
+    child.stdin.end(); // Unblock FFmpeg's pipe reader while it handles SIGINT.
+  }
+});
+child.on('close', (code, signal) => {
+  clearTimeout(deadline);
+  assert.equal(timedOut, false, 'FFmpeg must terminate from SIGINT, not the watchdog');
+  assert.equal(interrupted, true, stderr);
+  assert.equal(signal, null, 'FFmpeg handles SIGINT and reports its own nonzero exit code');
+  assert.ok(Number.isInteger(code) && code > 0, 'Native FFmpeg must not finish successfully');
+  assert.equal(probe(), true, 'Interrupted output must remain a playable MP4');
+  console.log(JSON.stringify({interrupted, code, signal, playable: true}));
+  process.exitCode = code ?? 1;
+});
+feed();
+`;
+  expect(await tool(target, "edit_file", { filePath: "/workspace/interrupt.cjs", newString: script })).toMatchObject({ status: "completed" });
+  const result = await tool(target, "bash", { command: `${CREATE_JPEG} && node /workspace/interrupt.cjs; code=$?; printf 'encoder-status=%s\n' "$code"; test "$code" -ne 0 && echo shell-success` });
+  expect(result, JSON.stringify(result.result.output)).toMatchObject({ status: "completed", result: { output: {
+    exitCode: 0, stdout: expect.stringContaining('"playable":true'),
+  } } });
+  const stdout = (result.result.output as { stdout: string }).stdout;
+  expect(stdout).toContain("shell-success");
+  const token = loadConfig().eveEvalAuthToken!;
+  expect(videoEvalArtifacts(stdout, token)).toEqual([]);
+  expect(videoEvalRenderResults(stdout, token)).toContainEqual({ path: "/workspace/partial.mp4", exitCode: 1 });
+}, 90_000);
+
+test("оценки видео: успешный FFmpeg подтверждает переименованный временный файл, но не старые копии и кадры", async () => {
+  const target = await session();
+  const token = loadConfig().eveEvalAuthToken!;
+  const encoded = await tool(target, "bash", {
+    command: `${CREATE_JPEG} && mkdir -p out && ffmpeg -hide_banner -loglevel error -y -loop 1 -framerate 30 -i /workspace/input.jpeg -frames:v 30 -c:v libx264 -threads 1 -pix_fmt yuv420p -f mp4 /tmp/encoded-native-video; code=$?; test "$code" -eq 0 && mv /tmp/encoded-native-video out/renamed.mp4`,
+  });
+  expect(encoded, JSON.stringify(encoded.result.output)).toMatchObject({ status: "completed", result: { output: { exitCode: 0 } } });
+  expect(videoEvalArtifacts((encoded.result.output as { stdout: string }).stdout, token)).toEqual(["/workspace/out/renamed.mp4"]);
+  const unrelated = await tool(target, "bash", {
+    command: "cp out/renamed.mp4 out/copied.mp4; touch out/renamed.mp4; ffmpeg -hide_banner -loglevel error -y -i out/renamed.mp4 -frames:v 1 out/still.jpeg; ffmpeg -hide_banner -loglevel error -y -i out/absent.mp4 out/copied.mp4 2>&1 | grep .; echo shell-success",
+  });
+  expect(unrelated).toMatchObject({ status: "completed", result: { output: { exitCode: 0 } } });
+  expect(videoEvalArtifacts((unrelated.result.output as { stdout: string }).stdout, token)).toEqual([]);
+  expect(await tool(target, "read_file", { filePath: "/workspace/out/still.jpeg" })).toMatchObject({
+    status: "completed", result: { output: { file: { mediaType: "image/jpeg", width: 64, height: 64 } } },
+  });
+}, 90_000);
 
 test("оценки видео: перед рендером нужны четыре разных изображения, а не расширения и повторы", async () => {
   const target = await session("render-failure");
@@ -188,6 +270,19 @@ Path('/workspace/empty').mkdir()
 
 test("оценки видео: отказ кодировщика действует и на полный рендер, и на сборку JPEG через FFmpeg", async () => {
   const target = await session("render-failure");
+  const diagnostics = String.raw`const assert=require('node:assert/strict'),fs=require('node:fs'),{spawnSync}=require('node:child_process');
+for (const binary of JSON.parse(fs.readFileSync('/opt/studio-video-eval/binaries.json','utf8')).diagnostics) {
+  assert.equal(fs.existsSync(binary.executable), false, 'Failure mode must remove every real prepared encoder');
+  for (const flag of ['-version','-encoders']) {
+    const result=spawnSync(binary.path,['-hide_banner',flag],{encoding:'utf8'});
+    assert.equal(result.status,0); assert.equal(result.stdout,binary.outputs[flag].stdout); assert.equal(result.stderr,binary.outputs[flag].stderr);
+  }
+}`;
+  expect(await tool(target, "edit_file", { filePath: "/workspace/encoder-diagnostics.cjs", newString: diagnostics })).toMatchObject({ status: "completed" });
+  const checked = await tool(target, "bash", { command: "node /workspace/encoder-diagnostics.cjs" });
+  expect(checked, JSON.stringify(checked.result.output)).toMatchObject({
+    status: "completed", result: { output: { exitCode: 0 } },
+  });
   expect(await tool(target, "bash", { command: CREATE_PROJECT })).toMatchObject({ status: "completed", result: { output: { exitCode: 0 } } });
   for (const command of [
     "npx remotion render src/index.ts Main out/final.mp4",
