@@ -1,5 +1,6 @@
 /** Чистые функции выбора модели: без сети и без запущенного приложения. */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+import { jsonSchema, streamText, tool } from "ai";
 
 import {
   AgentModelConfigError,
@@ -16,6 +17,7 @@ function config(overrides: Partial<AgentModelConfig> = {}): AgentModelConfig {
     agentModelBaseUrl: undefined,
     agentModelApiKey: undefined,
     agentModelContextTokens: undefined,
+    agentModelStreaming: true,
     agentReasoning: "high",
     ...overrides,
   };
@@ -56,6 +58,34 @@ describe("selectAgentModel", () => {
       model: "openai/gpt-6-luna-fast",
       reasoning: "low",
     });
+  });
+
+  test("обычный ответ провайдера сохраняет аргументы инструментов в потоке eve", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const request = JSON.parse(String(init?.body));
+      requests.push(request);
+      const call = { id: "call-command", type: "function", function: { name: "bash", arguments: '{"command":"printf ok"}' } };
+      if (request.stream) {
+        const chunk = { id: "chat-test", object: "chat.completion.chunk", created: 1, model: "test-model",
+          choices: [{ index: 0, delta: { tool_calls: [{ ...call, index: 0, function: { ...call.function, arguments: "" } }] }, finish_reason: "tool_calls" }] };
+        return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+      }
+      return Response.json({ id: "chat-test", object: "chat.completion", created: 1, model: "test-model",
+        choices: [{ index: 0, message: { role: "assistant", content: null, tool_calls: [call] }, finish_reason: "tool_calls" }],
+        usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 } });
+    });
+    try {
+      const { model } = selectAgentModel(config({ agentModelBaseUrl: "https://api.example.com/v1", agentModelApiKey: "test-key",
+        agentModelContextTokens: 128000, agentModelStreaming: false }));
+      const result = streamText({ model, prompt: "Вызови bash", maxRetries: 0,
+        tools: { bash: tool({ inputSchema: jsonSchema<{ command: string }>({ type: "object",
+          properties: { command: { type: "string" } }, required: ["command"], additionalProperties: false }) }) } });
+      expect(await result.toolCalls).toMatchObject([{ toolName: "bash", input: { command: "printf ok" } }]);
+      expect(requests).toHaveLength(1);
+      expect(requests[0].stream).not.toBe(true);
+      expect((await result.usage).outputTokens).toBe(4);
+    } finally { fetch.mockRestore(); }
   });
 
   test("без AGENT_MODEL ошибка на русском называет переменную", () => {

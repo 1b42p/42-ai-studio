@@ -5,7 +5,7 @@
  * сборке. Поэтому выбор — чистая функция: её проверяет тест без сети.
  */
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModel } from "ai";
+import { simulateStreamingMiddleware, wrapLanguageModel, type LanguageModel } from "ai";
 import { mockModel } from "eve/evals";
 
 import type { AgentReasoning } from "@/lib/config";
@@ -24,6 +24,7 @@ export interface AgentModelConfig {
   readonly agentModelBaseUrl: string | undefined;
   readonly agentModelApiKey: string | undefined;
   readonly agentModelContextTokens: number | undefined;
+  readonly agentModelStreaming: boolean;
   readonly agentReasoning: AgentReasoning;
 }
 
@@ -86,10 +87,16 @@ export function selectAgentModel(config: AgentModelConfig): AgentModelSelection 
     });
 
     return {
-      model: provider(config.agentModel),
+      model: config.agentModelStreaming ? provider(config.agentModel) : wrapLanguageModel({
+        model: provider(config.agentModel), middleware: simulateStreamingMiddleware(),
+      }),
       reasoning: config.agentReasoning,
       modelContextWindowTokens: config.agentModelContextTokens,
     };
+  }
+
+  if (!config.agentModelStreaming) {
+    throw new AgentModelConfigError("AGENT_MODEL_STREAMING=false поддерживается только с AGENT_MODEL_BASE_URL.");
   }
 
   return {

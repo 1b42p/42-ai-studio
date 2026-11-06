@@ -4,6 +4,7 @@ import type { SessionAuthContext } from "eve/context";
 
 export interface EvalAuthConfig {
   readonly appEvalMode: boolean;
+  readonly appVideoEvalSandbox?: boolean;
   readonly eveEvalAuthToken: string | undefined;
   readonly appUrl: string;
 }
@@ -50,7 +51,13 @@ export function authenticateEval(
     authenticator: "studio-eval",
     principalType: "user",
     principalId: "eval",
-    attributes: { eval: "1" },
+    attributes: {
+      eval: "1",
+      ...(config.appVideoEvalSandbox ? {
+        videoEval: "1",
+        videoEvalRenderFails: request.headers.get("x-studio-video-eval") === "render-failure" ? "1" : "0",
+      } : {}),
+    },
     allowToolStubs: true,
   };
 }

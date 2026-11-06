@@ -11,6 +11,7 @@
  */
 import * as nextEnv from "@next/env";
 import { resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import { isValidSecretsEncryptionKey } from "./secrets";
@@ -67,6 +68,7 @@ export interface AppConfig {
   readonly appTestMode: boolean;
   /** Изолированные оценки настоящей модели; только локально, не в production. */
   readonly appEvalMode: boolean;
+  readonly appVideoEvalSandbox: boolean;
   readonly eveEvalAuthToken: string | undefined;
   /** Порт основного экземпляра приложения в HTTP-тестах. */
   readonly testAppPort: number;
@@ -92,6 +94,7 @@ export interface AppConfig {
   readonly agentModelApiKey: string | undefined;
   /** Размер контекстного окна модели в токенах. */
   readonly agentModelContextTokens: number | undefined;
+  readonly agentModelStreaming: boolean;
   /** Уровень рассуждения модели. */
   readonly agentReasoning: AgentReasoning;
   /** Необязательная модель судьи; используется процессом eve eval, не агентом. */
@@ -205,6 +208,7 @@ const envSchema = z.object({
   ),
   APP_TEST_MODE: envBoolean.optional().default(false),
   APP_EVAL_MODE: envBoolean.optional().default(false),
+  APP_VIDEO_EVAL_SANDBOX: envBoolean.optional().default(false),
   EVE_EVAL_AUTH_TOKEN: envString.min(24, "токен должен быть не короче 24 символов").optional(),
   TEST_APP_PORT: z.coerce
     .number({ error: "ожидается целое число от 1 до 65535" })
@@ -239,7 +243,9 @@ const envSchema = z.object({
   AGENT_MODEL: envString.optional(),
   AGENT_MODEL_BASE_URL: envUrl.optional(),
   AGENT_MODEL_API_KEY: envString.optional(),
+  AGENT_MODEL_STREAMING: envBoolean.optional().default(true),
   EVAL_JUDGE_MODEL: envString.trim().optional(),
+  EVAL_CHECKPOINT_DIR: envString.optional(),
   AGENT_MODEL_CONTEXT_TOKENS: z.coerce
     .number({ error: "ожидается целое число не меньше 8000" })
     .int("ожидается целое число не меньше 8000")
@@ -326,6 +332,9 @@ export function parseConfig(env: EnvRecord): AppConfig {
       if (!isLocalHost(data.APP_URL)) addIssue("APP_URL", "оценки разрешены только на localhost, 127.0.0.1 или [::1]");
       if (!data.EVE_EVAL_AUTH_TOKEN) addIssue("EVE_EVAL_AUTH_TOKEN", "обязательна при APP_EVAL_MODE=1");
     }
+    if (data.APP_VIDEO_EVAL_SANDBOX && !data.APP_EVAL_MODE) {
+      addIssue("APP_VIDEO_EVAL_SANDBOX", "требует APP_EVAL_MODE=1");
+    }
 
     if (production) {
       if (data.TELEGRAM_CLIENT_ID === undefined) {
@@ -375,6 +384,9 @@ export function parseConfig(env: EnvRecord): AppConfig {
         addIssue("AGENT_MODEL_CONTEXT_TOKENS", "нужна вместе с AGENT_MODEL_BASE_URL");
       }
     }
+    if (!data.AGENT_MODEL_STREAMING && !data.AGENT_MODEL_BASE_URL && !data.APP_TEST_MODE) {
+      addIssue("AGENT_MODEL_STREAMING", "false поддерживается только с AGENT_MODEL_BASE_URL");
+    }
   }
 
   const allIssues = [...issues, ...extra.values()];
@@ -392,6 +404,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     appUrl: data.APP_URL,
     appTestMode: data.APP_TEST_MODE,
     appEvalMode: data.APP_EVAL_MODE,
+    appVideoEvalSandbox: data.APP_VIDEO_EVAL_SANDBOX,
     eveEvalAuthToken: data.EVE_EVAL_AUTH_TOKEN,
     testAppPort: data.TEST_APP_PORT,
     nextDistDir: data.NEXT_DIST_DIR,
@@ -405,6 +418,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     agentModelBaseUrl: data.AGENT_MODEL_BASE_URL,
     agentModelApiKey: data.AGENT_MODEL_API_KEY,
     agentModelContextTokens: data.AGENT_MODEL_CONTEXT_TOKENS,
+    agentModelStreaming: data.AGENT_MODEL_STREAMING,
     agentReasoning: data.AGENT_REASONING,
     evalJudgeModel: data.EVAL_JUDGE_MODEL,
     secretsEncryptionKey: data.SECRETS_ENCRYPTION_KEY,
@@ -495,6 +509,22 @@ export function loadEvalJudgeConfig(): EvalJudgeConfig {
   return parseEvalJudgeConfig(process.env);
 }
 
+export function readEvalCheckpointDirectory(): string | undefined {
+  loadDotenvFiles();
+  const value = process.env.EVAL_CHECKPOINT_DIR?.trim();
+  return value ? resolve(value) : undefined;
+}
+
+/** Non-secret identity: model, provider, reasoning, and sandbox mode, never credentials. */
+export function evalRuntimeFingerprint(config = loadConfig()): string {
+  return createHash("sha256").update(JSON.stringify({
+    model: config.agentModel, baseUrl: config.agentModelBaseUrl,
+    context: config.agentModelContextTokens, reasoning: config.agentReasoning, streaming: config.agentModelStreaming,
+    fixture: config.appTestMode, videoSandbox: config.appVideoEvalSandbox,
+    cpu: config.sandboxCpu, memory: config.sandboxMemoryGb, disk: config.sandboxDiskGb,
+  })).digest("hex");
+}
+
 /**
  * Каталог сборки Next.js: нужен `next.config.ts` и на фазе сборки, где проверка
  * остальных переменных пропускается, поэтому читается без валидации.
@@ -518,6 +548,19 @@ export function readUploadMaxBytes(): number {
   if (!parsed.success) {
     const reason = parsed.error.issues[0]?.message ?? "некорректное значение";
     throw new ConfigError([`UPLOAD_MAX_BYTES: ${reason}`]);
+  }
+  return parsed.data;
+}
+
+/** Выбор локального провайдера оценок при discovery/build. */
+export function readVideoEvalSandbox(): boolean {
+  loadDotenvFiles();
+  const raw = process.env.APP_VIDEO_EVAL_SANDBOX?.trim();
+  const parsed = envBoolean.optional().default(false).safeParse(raw || undefined);
+  if (!parsed.success) throw new ConfigError(["APP_VIDEO_EVAL_SANDBOX: ожидается 1, 0, true или false"]);
+  if (parsed.data) {
+    // Включённая подмена требует полной проверки локального eval-окружения.
+    parseConfig(process.env);
   }
   return parsed.data;
 }

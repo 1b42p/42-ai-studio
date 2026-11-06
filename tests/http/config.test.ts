@@ -50,8 +50,19 @@ describe("parseConfig", () => {
     expect(config.s3ForcePathStyle).toBe(true);
     expect(config.appUrl).toBe("http://localhost:3100");
     expect(config.appTestMode).toBe(true);
+    expect(config.agentModelStreaming).toBe(true);
     expect(config.testAppPort).toBe(3100);
     expect(config.nextDistDir).toBe(".next-test-3100");
+  });
+
+  test("обычные ответы модели разрешены для совместимого API, фикстура не зависит от транспорта", () => {
+    expect(parseConfig({ ...validEnv(), AGENT_MODEL_STREAMING: "false" }).agentModelStreaming).toBe(false);
+    expect(parseConfig({ ...validEnv(), APP_TEST_MODE: "0", AGENT_MODEL: "custom-model", AGENT_MODEL_STREAMING: "false",
+      AGENT_MODEL_BASE_URL: "https://api.example.com/v1", AGENT_MODEL_API_KEY: "test-key",
+      AGENT_MODEL_CONTEXT_TOKENS: "128000" }).agentModelStreaming).toBe(false);
+    expect(issuesOf({ ...validEnv(), APP_TEST_MODE: "0", AGENT_MODEL: "custom-model", AGENT_MODEL_STREAMING: "false" }).join())
+      .toContain("AGENT_MODEL_STREAMING");
+    expect(issuesOf({ ...validEnv(), AGENT_MODEL_STREAMING: "maybe" }).join()).toContain("AGENT_MODEL_STREAMING");
   });
 
   test("APP_TEST_MODE=1 при NODE_ENV=production отвергается", () => {
@@ -76,6 +87,15 @@ describe("parseConfig", () => {
     expect(issuesOf({ ...env, EVE_EVAL_AUTH_TOKEN: "short" }).join()).toContain("EVE_EVAL_AUTH_TOKEN");
     // Фикстурная модель проверяет тот же HTTP-контракт eval, без внешнего LLM.
     expect(parseConfig({ ...env, APP_TEST_MODE: "1" }).appEvalMode).toBe(true);
+  });
+
+  test("отдельная среда видео требует локального режима оценок и запрещена в production", () => {
+    expect(parseConfig(validEnv()).appVideoEvalSandbox).toBe(false);
+    expect(issuesOf({ ...validEnv(), APP_VIDEO_EVAL_SANDBOX: "1" }).join()).toContain("APP_VIDEO_EVAL_SANDBOX");
+    const env = { ...validEnv(), APP_VIDEO_EVAL_SANDBOX: "1", APP_EVAL_MODE: "1", EVE_EVAL_AUTH_TOKEN: "eval-only-token-0123456789abcdef" };
+    expect(parseConfig(env).appVideoEvalSandbox).toBe(true);
+    expect(issuesOf({ ...env, NODE_ENV: "production" }).join()).toContain("APP_EVAL_MODE");
+    expect(issuesOf({ ...env, APP_URL: "https://example.com" }).join()).toContain("APP_URL");
   });
 
   test("отсутствующая обязательная переменная называется в ошибке", () => {

@@ -75,7 +75,8 @@ export function sessionAuthFor(
 
 export function studioAuth(): AuthFn<Request> {
   return async (request): Promise<AuthResult | null> => {
-    const evalPrincipal = authenticateEval(request, loadConfig());
+    const config = loadConfig();
+    const evalPrincipal = authenticateEval(request, config);
     if (evalPrincipal !== null) {
       const route = parseEveRoute(request.method, request.url);
       // Eval-token не даёт доступ к пользовательским корням и копиям.
@@ -88,6 +89,10 @@ export function studioAuth(): AuthFn<Request> {
         }
       }
       return evalPrincipal;
+    }
+
+    if (config.appVideoEvalSandbox) {
+      throw new ForbiddenError({ code: "eval_only", message: "Этот экземпляр доступен только оценкам" });
     }
 
     const user = await resolveAuthenticatedUser(request);
