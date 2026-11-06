@@ -98,18 +98,30 @@ export function planBeforeWork(events: readonly EveEvalStreamEvent[]): boolean {
 export function framesBeforeFullRender(events: readonly EveEvalStreamEvent[]): boolean {
   const requestedFrames = new Set<string>();
   const completedFrames = new Set<string>();
+  const pendingEdits = new Set<string>();
+  let sawRender = false;
   for (const event of events) {
     if (event.type === "actions.requested") {
       const actions = event.data.actions.filter((action) => action.kind === "tool-call");
+      const edits = actions.filter((action) => action.toolName === "edit_file" &&
+        (typeof action.input.filePath !== "string" || posix.basename(action.input.filePath).toLowerCase() !== "notes.md"));
+      if (edits.length > 0) {
+        // NOTES.md is procedural; any other write may change code or visual assets.
+        completedFrames.clear();
+        requestedFrames.clear();
+        for (const edit of edits) pendingEdits.add(edit.callId);
+      }
       if (actions.some((action) => action.toolName === "bash" && isFullRender(action.input.command))) {
-        return completedFrames.size >= 4;
+        if (pendingEdits.size > 0 || completedFrames.size < 4) return false;
+        sawRender = true;
       }
       for (const action of actions) {
-        if (action.toolName === "read_file") requestedFrames.add(action.callId);
+        if (action.toolName === "read_file" && pendingEdits.size === 0) requestedFrames.add(action.callId);
       }
     }
-    if (event.type === "action.result" && event.data.result.kind === "tool-result" &&
-      event.data.status === "completed" && requestedFrames.has(event.data.result.callId)) {
+    if (event.type === "action.result" && event.data.result.kind === "tool-result") {
+      if (pendingEdits.delete(event.data.result.callId)) continue;
+      if (event.data.status !== "completed" || !requestedFrames.delete(event.data.result.callId) || pendingEdits.size > 0) continue;
       const output = event.data.result.output;
       if (typeof output !== "object" || output === null || !("path" in output) ||
         typeof output.path !== "string" || !("file" in output) ||
@@ -120,7 +132,7 @@ export function framesBeforeFullRender(events: readonly EveEvalStreamEvent[]): b
       if (path.kind === "file") completedFrames.add(path.path);
     }
   }
-  return false; // Нет полного рендера — нет успеха по одному лишь ffprobe или набору кадров.
+  return sawRender; // Одного ffprobe или набора кадров без полного рендера недостаточно.
 }
 
 export function fullRenderCalls(turn: EveEvalTurn): readonly EveEvalToolCall[] {
