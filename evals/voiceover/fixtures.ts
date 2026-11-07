@@ -1,176 +1,299 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
 import type { EveEvalContext, ToolStub } from "eve/evals";
+
+import data from "../fixtures/voiceover/project.json";
 import { blockedRead, emptySearch, page, webSession } from "../web/fixtures";
+import { mediaStubs } from "./command-fixtures";
+import {
+  escapePattern,
+  FRAME_NAMES,
+  PROJECT,
+  readResponse,
+  REVIEW_FRAMES,
+  SCENES,
+  sceneBase,
+  VOICE,
+} from "./fixture-data";
 import { voiceoverFrameOutputs } from "./media-fixture";
 
-export const PROJECT = "/workspace/calm-morning";
-export const VOICE = "ru-RU-SvetlanaNeural";
-export const PIPER_VOICE = "ru_RU-denis-medium";
-export const VOICEOVER_TIMEOUT_MS = 30 * 60 * 1000;
-export const SCENES = [
-  "Откройте окно. Пусть утро начнётся со свежего воздуха.",
-  "Выпейте стакан воды. Сделайте несколько спокойных вдохов.",
-  "Выберите одно важное дело. Начните день без спешки.",
-] as const;
+export {
+  fixtureTimings,
+  FRAME_NAMES,
+  framePaths,
+  PIPER_VOICE,
+  PROJECT,
+  REVIEW_FRAMES,
+  SCENES,
+  VOICE,
+  VOICEOVER_TIMEOUT_MS,
+} from "./fixture-data";
 
-export const VOICEOVER_REQUEST = `Сделай горизонтальный ролик 16:9, 1920×1080, 30 кадров/с, ` +
-  `примерно на шестнадцать секунд о спокойном начале утра для взрослых. Три сцены с простой ` +
-  `motion-графикой, без музыки и внешних материалов. Русская озвучка голосом Светланы ` +
-  `(${VOICE}), обычная скорость, и субтитры с выделением произносимого слова. ` +
-  `Длительность подстрой под фактическую речь. Каталог проекта: ${PROJECT}. ` +
-  `Точные тексты озвучки по сценам:\n${SCENES.map((text, i) => `${i + 1}. ${text}`).join("\n")}\n` +
-  `Если выбранный голос недоступен, можно использовать другой русский голос. ` +
-  `Дополнительных пожеланий нет, сразу делай готовый MP4.`;
+export const VOICEOVER_REQUEST = [
+  "Сделай готовый горизонтальный ролик 16:9, 1920×1080, 30 кадров/с, примерно на восемнадцать секунд о спокойном начале утра для взрослых.",
+  `Проект ${PROJECT} уже содержит утверждённую графику трёх сцен и компонент субтитров.`,
+  "Исходники src, оформление и тексты утверждены: не меняй их и не создавай проект заново.",
+  "Тексты UTF-8 уже сохранены в voice/scene-01.txt, scene-02.txt и scene-03.txt; используй их без изменений.",
+  `Аудиофайлов ещё нет. Нужна русская озвучка Светланой (${VOICE}), обычная скорость, без музыки.`,
+  "Длительность подстрой под фактическую речь. Точные тексты по сценам:",
+  ...SCENES.map((text, index) => `${index + 1}. ${text}`),
+  "Основная озвучка: public/voice/scene-01, scene-02, scene-03 без расширения.",
+  "Если Светлана недоступна, можно использовать другой русский голос для всех сцен; для Piper используй отдельные имена scene-01-piper, scene-02-piper, scene-03-piper.",
+  "Шаблон сам загружает JSON, выбирает MP3/WAV и считает длительности через calculateMetadata.",
+  "Проверь подсветку произносимых слов и не больше двух строк субтитров.",
+  `Контрольные кадры ${REVIEW_FRAMES.join(", ")} сохрани в out/frames-1: среди них есть начала всех сцен, длинная страница субтитров и границы фраз.`,
+  "Готовый файл сохрани в out/calm-morning.mp4. Дополнительных пожеланий нет.",
+].join("\n");
 
-const sceneBase = (index: number, fallback = false) =>
-  `${PROJECT}/public/voice/scene-${String(index + 1).padStart(2, "0")}${fallback ? "-piper" : ""}`;
+const REFERENCE_FILES = [
+  "voiceover/references/remotion.md",
+  "voiceover/references/piper.md",
+  "voiceover/scripts/piper_speak.py",
+  "frame-review/references/notes-template.md",
+  "frame-review/scripts/check-frames.py",
+  "remotion-create/video-layout.md",
+  "remotion-captions/display-captions.md",
+  "remotion-markup/voiceover.md",
+  "remotion-markup/calculate-metadata.md",
+  "remotion-markup/compositions.md",
+  "remotion-markup/multi-scene-video.md",
+  "remotion-markup/sequencing.md",
+  "remotion-markup/measuring-text.md",
+  "remotion-markup/local-fonts.md",
+  "remotion-multimedia/get-audio-duration.md",
+  "remotion-interactivity/timeline-structure.md",
+];
 
-/** Синтетические границы: два предложения, пауза 400 мс, конец речи 4500 мс. */
-function timings(text: string, fallback: boolean) {
-  const tokens = text.split(/\s+/u);
-  const sentenceEnd = tokens.findIndex((word) => /[.!?]$/u.test(word));
-  const words = tokens.map((word, index) => {
-    const startMs = 100 + index * 500 + (index > sentenceEnd ? 400 : 0);
-    return { text: word, startMs, endMs: startMs + 500 };
-  });
+const notes = [
+  "# Спокойное утро",
+  "",
+  "Утверждены три сцены и их оформление.",
+  `Композиция ${data.composition}, ${data.width}×${data.height}, ${data.fps} кадров/с.`,
+  `Проход: 1. Контрольные кадры: ${REVIEW_FRAMES.join(", ")}.`,
+  ...SCENES.map((text, index) => `Сцена ${index + 1}: ${text}`),
+].join("\n");
+
+const plannedNotes = [
+  notes,
+  "",
+  "Таблица сцен: 0–180, 181–367, 368–545.",
+  "Звук с десятого кадра каждой сцены; после исходного аудио пауза 0,5 с.",
+  "Самая длинная страница субтитров и границы фраз включены в контрольную выборку.",
+  "",
+].join("\n");
+
+const reviewedNotes = [
+  plannedNotes,
+  "Проверка пикселей и просмотр всех восьми кадров: успешно.",
+  "Субтитры читаемы, появляются по таймингам, не больше двух строк в безопасной зоне.",
+  "",
+].join("\n");
+
+function notesEdit(previous: string, next: string) {
+  const lineDifference = next.split("\n").length - previous.split("\n").length;
+
   return {
-    version: 1, voice: fallback ? `piper:${PIPER_VOICE}` : VOICE,
-    language: "ru-RU", format: fallback ? "wav" : "mp3", durationMs: 4500, text,
-    words,
-    sentences: [
-      { text: tokens.slice(0, sentenceEnd + 1).join(" "), startMs: words[0].startMs,
-        endMs: words[sentenceEnd + 1].startMs },
-      { text: tokens.slice(sentenceEnd + 1).join(" "), startMs: words[sentenceEnd + 1].startMs,
-        endMs: words.at(-1)!.endMs },
-    ],
+    response: {
+      path: `${PROJECT}/NOTES.md`,
+      created: false,
+      replacements: 1,
+      oldContent: previous,
+      newContent: next,
+      linesAdded: Math.max(0, lineDifference),
+      linesRemoved: Math.max(0, -lineDifference),
+    },
   };
 }
 
-function readResponse(path: string, text: string) {
-  return { path, content: text.split("\n").map((line, index) => `${index + 1}: ${line}`).join("\n"),
-    totalLines: text.split("\n").length, truncated: false };
-}
-
-const bashResponse = (stdout: string) => ({ status: "completed", exitCode: 0, stdout, stderr: "", truncated: false });
-const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const commandStub = (id: string, pattern: string, stdout: string): ToolStub => ({
-  id, tool: "bash", match: { command: { pattern } }, outcome: { response: bashResponse(stdout) },
-});
-
-/** Читаются настоящие вспомогательные файлы навыков, не выдуманные инструкции. */
-function skillFiles(): ToolStub[] {
-  const root = join(process.cwd(), "agent/skills");
-  const paths = readdirSync(root, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name !== "SKILL.md" && /\.(?:md|py)$/u.test(entry.name))
-    .map((entry) => join(entry.parentPath, entry.name))
-    .filter((path) => !path.includes("/remotion-maps/") && !path.includes("/assets/"))
-    .sort();
-  return paths.map((path, index) => {
-    const suffix = relative(root, path).split("\\").join("/");
-    return { id: `skill-file-${index}`, tool: "read_file",
-      match: { filePath: { pattern: `(?:^|/)skills/${escapePattern(suffix)}$` } },
-      outcome: { response: readResponse(`/root/.agents/skills/${suffix}`, readFileSync(path, "utf8")) } };
-  });
-}
-
-// Выдержка API Remotion 4.0.538: packages/docs/docs/captions/create-tiktok-style-captions.mdx.
-const CAPTIONS_DOCS = `Caption has text, startMs, endMs, timestampMs and confidence (number | null).
-Times are milliseconds. Whitespace belongs before each word except the first.
-createTikTokStyleCaptions({captions, combineTokensWithinMilliseconds, breakOnSilenceAfterMilliseconds})
-returns {pages}. A page has text, startMs, durationMs and tokens with text, fromMs, toMs.
-A silence gap at least breakOnSilenceAfterMilliseconds starts a new page.
-The previous page extends until the next starts. Preserve whitespace with white-space: pre.`;
-
-const FRAME_NAMES = [0, 40, 120, 160, 240, 320, 400, 479].map((frame) => `element-${String(frame).padStart(3, "0")}.jpeg`);
-const probe = {
-  streams: [
-    { codec_name: "h264", codec_type: "video", width: 1920, height: 1080, r_frame_rate: "30/1", duration: "16.000000" },
-    { codec_name: "aac", codec_type: "audio", sample_rate: "48000", channels: 2, duration: "16.000000" },
-  ],
-  format: { duration: "16.000000", size: "1048576" },
-};
-
-function mediaStubs(fallback: boolean): ToolStub[] {
-  const audioExtension = fallback ? "wav" : "mp3";
-  const generated = SCENES.map((text, index) => ({
-    audioPath: `${sceneBase(index, true)}.wav`, timingsPath: `${sceneBase(index, true)}.words.json`,
-    durationMs: 4500, words: timings(text, true).words.length, mode: "alignment",
+function referenceStubs(): ToolStub[] {
+  return REFERENCE_FILES.map((path, index) => ({
+    id: `reference-${index}`,
+    tool: "read_file",
+    match: { filePath: { pattern: `(?:^|/)skills/${escapePattern(path)}$` } },
+    outcome: {
+      response: readResponse(
+        `/root/.agents/skills/${path}`,
+        readFileSync(`agent/skills/${path}`, "utf8"),
+      ),
+    },
   }));
-  return [
-    ...SCENES.flatMap((text, index): ToolStub[] => [
-      {
-        id: `timings-${index}`, tool: "read_file",
-        match: { filePath: { pattern: `scene-0?${index + 1}(?:-piper)?\\.words\\.json$` } },
-        outcome: { response: readResponse(`${sceneBase(index, fallback)}.words.json`, JSON.stringify(timings(text, fallback), null, 2)) },
+}
+
+function projectStubs(): ToolStub[] {
+  const files: ToolStub[] = Object.entries(data.files).map(
+    ([path, content], index) => ({
+      id: `project-file-${index}`,
+      tool: "read_file",
+      match: { filePath: { const: `${PROJECT}/${path}` } },
+      outcome: { response: readResponse(`${PROJECT}/${path}`, content) },
+    }),
+  );
+  const frames: ToolStub[] = voiceoverFrameOutputs.map((output, index) => ({
+    id: `review-frame-${index}`,
+    tool: "read_file",
+    match: {
+      filePath: {
+        pattern: `${escapePattern(`out/frames-1/${FRAME_NAMES[index]}`)}$`,
       },
-      commandStub(`bash-timings-${index}`, `(?:cat|readFile|open)[\\s\\S]*scene-0?${index + 1}(?:-piper)?\\.words\\.json`,
-        JSON.stringify(timings(text, fallback))),
-      commandStub(`piper-scene-${index}`, `piper_speak\\.py[\\s\\S]*--out[\\s\\S]*scene-0?${index + 1}-piper(?:[\\s"']|$)`,
-        JSON.stringify(generated[index])),
-    ]),
-    commandStub("piper-batch", "piper_speak\\.py", generated.map((result) => JSON.stringify(result)).join("\n")),
-    commandStub("piper-download", "piper\\.download_voices", `/root/.cache/piper/${PIPER_VOICE}.onnx\n/root/.cache/piper/${PIPER_VOICE}.onnx.json\n`),
-    commandStub("piper-install", "(?:pip|pip3)[\\s\\S]*install[\\s\\S]*piper", "Successfully installed piper-tts-1.8.0 onnx-1.19.1 onnxruntime-1.23.2\n"),
-    commandStub("probe-audio", "(?:ffprobe|getAudioDuration)[\\s\\S]*\\.(?:mp3|wav)",
-      JSON.stringify({ streams: [{ codec_type: "audio", codec_name: fallback ? "pcm_s16le" : "mp3", duration: "4.500000" }], format: { duration: "4.500000" } })),
-    commandStub("probe-mp4-json", "ffprobe[\\s\\S]*(?:-of|-print_format)[ =]+json", JSON.stringify(probe)),
-    commandStub("probe-mp4", "ffprobe[\\s\\S]*\\.mp4", "codec_name=h264\ncodec_type=video\nwidth=1920\nheight=1080\nduration=16.000000\ncodec_name=aac\ncodec_type=audio\nduration=16.000000\nduration=16.000000\n"),
-    commandStub("frame-pixels", "check-frames\\.py", FRAME_NAMES.map((name) => JSON.stringify({
-      path: `out/frames-1/${name}`, extrema: [[15, 248], [23, 250], [42, 252]], suspect: null,
-    })).join("\n")),
-    commandStub("render-frames", "remotion[\\s\\S]*(?:\\bstill\\b|--frames|--sequence)",
-      `Rendered frames (8/8)\n${FRAME_NAMES.map((name) => `out/frames-1/${name}`).join("\n")}\n`),
-    commandStub("list-frames", "(?:ls|find)[\\s\\S]*(?:frames|\\.jpe?g|\\.png)", FRAME_NAMES.join("\n")),
-    commandStub("render-mp4", "remotion\\s+render[\\s\\S]*\\.mp4", "Rendered 480/480\nEncoded 480/480\nOutput: out/calm-morning.mp4 (1.0 MB)\n"),
-    commandStub("composition-metadata", "remotion\\s+compositions", "Main  30 fps  1920×1080  480 frames (16.00 sec)\n"),
-    commandStub("file-size", "(?:stat|wc -c)[\\s\\S]*\\.(?:mp4|jpe?g|png|wav|mp3)", "1048576\n"),
-    commandStub("vcpu", "^\\s*sandbox-vcpu\\s*$", "2\n"),
-    commandStub("disk", "df\\s+-h", "Filesystem Size Used Avail Use% Mounted on\noverlay 5.0G 120M 4.9G 3% /workspace\n"),
-    commandStub("files", "(?:ls|find)[\\s\\S]*/(?:public|voice)(?:/|[\\s\"']|$)", SCENES.flatMap((_, index) =>
-      [`${sceneBase(index, fallback)}.${audioExtension}`, `${sceneBase(index, fallback)}.words.json`]).join("\n")),
-    commandStub("project-listing", "(?:ls|find|os\\.listdir)[\\s\\S]*(?:/workspace|/opt/remotion)",
-      "package.json\ntsconfig.json\nremotion.config.ts\nsrc/\nsrc/index.ts\nsrc/Root.tsx\npublic/\n"),
+    },
+    outcome: { response: output },
+  }));
+
+  return [
+    ...files,
+    {
+      id: "project-notes",
+      tool: "read_file",
+      match: { filePath: { pattern: "(?:^|/)NOTES\\.md$" } },
+      outcomes: [
+        { response: readResponse(`${PROJECT}/NOTES.md`, plannedNotes) },
+        { response: readResponse(`${PROJECT}/NOTES.md`, reviewedNotes) },
+      ],
+    },
+    ...frames,
+    {
+      id: "notes-edit",
+      tool: "edit_file",
+      match: { filePath: { pattern: "(?:^|/)NOTES\\.md$" } },
+      outcomes: [
+        notesEdit(notes, plannedNotes),
+        notesEdit(plannedNotes, reviewedNotes),
+      ],
+    },
+    {
+      id: "unexpected-edit",
+      tool: "edit_file",
+      outcome: {
+        throw: {
+          message:
+            "Утверждённые исходники и оформление этого проекта менять не нужно. Добавьте озвучку и выполните проверку.",
+        },
+      },
+    },
   ];
 }
 
-/** Все побочные эффекты подменены; eve__skill продолжает загружать настоящий навык. */
+function speechStubs(fallback: boolean): ToolStub[] {
+  if (fallback) {
+    return [
+      {
+        id: "speech-unavailable",
+        tool: "speak",
+        outcome: {
+          throw: {
+            message:
+              "speak_unavailable: Сервис озвучки сейчас недоступен (после трёх попыток).",
+          },
+        },
+      },
+    ];
+  }
+
+  return SCENES.map((text, index) => ({
+    id: `speech-${index}`,
+    tool: "speak",
+    match: {
+      text: { const: text },
+      voice: { const: VOICE },
+      outputPath: { const: sceneBase(index, false) },
+    },
+    outcome: {
+      response: {
+        audioPath: `${sceneBase(index, false)}.mp3`,
+        timingsPath: `${sceneBase(index, false)}.words.json`,
+        voice: VOICE,
+        language: "ru-RU",
+        format: "mp3",
+        durationMs: data.scenes[index].durationMs,
+        wordCount: data.scenes[index].words.length,
+        text,
+        media: { audioId: `00000000-0000-4000-8000-00000000000${index + 1}` },
+      },
+    },
+  }));
+}
+
+function documentationStubs(): ToolStub[] {
+  return [
+    {
+      id: "basic-caption-source",
+      tool: "read_page",
+      match: {
+        url: {
+          pattern:
+            "^https://www\\.remotion\\.dev/elements/captions/basic-captions(?:/|\\.md|$)",
+        },
+      },
+      outcome: {
+        response: page(
+          "https://www.remotion.dev/elements/captions/basic-captions.md",
+          "Basic Captions",
+          readFileSync("evals/fixtures/voiceover/basic-captions.md", "utf8"),
+          "en",
+        ),
+      },
+    },
+    {
+      id: "caption-docs",
+      tool: "read_page",
+      match: {
+        url: { pattern: "^https://www\\.remotion\\.dev/docs/captions" },
+      },
+      outcome: {
+        response: page(
+          "https://www.remotion.dev/docs/captions/create-tiktok-style-captions",
+          "Captions",
+          "createTikTokStyleCaptions accepts captions, combineTokensWithinMilliseconds: 1000 and breakOnSilenceAfterMilliseconds: 300. Each page has startMs, durationMs and tokens with fromMs/toMs. Basic Captions uses 3000 by default; the project's Captions component highlights individual words.",
+          "en",
+        ),
+      },
+    },
+  ];
+}
+
 export async function voiceoverSession(t: EveEvalContext, fallback: boolean) {
   const stubs: ToolStub[] = [
-    ...skillFiles(),
+    ...referenceStubs(),
+    ...projectStubs(),
     ...mediaStubs(fallback),
-    ...(fallback ? [{ id: "speech-unavailable", tool: "speak",
-      outcome: { throw: { message: "speak_unavailable: Сервис озвучки сейчас недоступен (после трёх попыток)." } },
-    } satisfies ToolStub] : SCENES.map((text, index): ToolStub => ({
-      id: `speech-${index}`, tool: "speak", match: { text: { const: text } },
-      outcome: { response: { audioPath: `${sceneBase(index)}.mp3`, timingsPath: `${sceneBase(index)}.words.json`,
-        voice: VOICE, language: "ru-RU", format: "mp3", durationMs: 4500, wordCount: timings(text, false).words.length, text,
-        media: { audioId: `00000000-0000-4000-8000-00000000000${index + 1}` } } },
-    }))),
-    { id: "voices", tool: "list_voices", outcome: { response: { voices: [
-      { name: VOICE, locale: "ru-RU", gender: "Female", displayName: "Светлана", multilingual: false },
-    ] } } },
-    { id: "captions-docs", tool: "read_page", match: { url: { pattern: "^https://www\\.remotion\\.dev/docs/captions(?:/|\\.md|$)" } },
-      outcome: { response: page("https://www.remotion.dev/docs/captions/create-tiktok-style-captions", "createTikTokStyleCaptions", CAPTIONS_DOCS, "en") } },
-    ...voiceoverFrameOutputs.map((output, index): ToolStub => ({
-      id: `recorded-frame-${index}`, tool: "read_file",
-      match: { filePath: { pattern: `${escapePattern(FRAME_NAMES[index])}$` } },
-      outcome: { response: output },
-    })),
-    { id: "other-frames", tool: "read_file", match: { filePath: { pattern: "\\.(?:jpe?g|png)$" } },
-      outcomes: [{ response: voiceoverFrameOutputs[0] }, ...voiceoverFrameOutputs.slice(1).map((output) => ({ response: output }))] },
-    { id: "project-notes", tool: "read_file", match: { filePath: { pattern: "(?:^|/)NOTES\\.md$" } },
-      outcome: { response: readResponse(`${PROJECT}/NOTES.md`, readFileSync("agent/skills/frame-review/references/notes-template.md", "utf8")) } },
-    ...["NOTES.md", ...SCENES.map((_, index) => `voice/scene-${String(index + 1).padStart(2, "0")}.txt`)]
-      .map((path, index): ToolStub => ({ id: `edit-text-${index}`, tool: "edit_file",
-        match: { filePath: { pattern: `(?:^|/)${escapePattern(path)}$` } },
-        outcome: { response: { path: `${PROJECT}/${path}`, created: true, replacements: 0,
-          oldContent: null, newContent: "", linesAdded: 1, linesRemoved: 0 } } })),
-    { id: "edit-success", tool: "edit_file", outcome: { response: { path: `${PROJECT}/src/Root.tsx`,
-      created: true, replacements: 0, oldContent: null, newContent: "", linesAdded: 1, linesRemoved: 0 } } },
-    { id: "unknown-read", tool: "read_file", outcome: { throw: { message: "File not found in the isolated voiceover fixture." } } },
-    { id: "shell-success", tool: "bash", outcome: { response: bashResponse("Command completed.\n") } },
-    blockedRead, emptySearch,
+    ...speechStubs(fallback),
+    {
+      id: "voices",
+      tool: "list_voices",
+      outcome: {
+        response: {
+          voices: [
+            {
+              name: VOICE,
+              locale: "ru-RU",
+              gender: "Female",
+              displayName: "Светлана",
+              multilingual: false,
+            },
+          ],
+        },
+      },
+    },
+    ...documentationStubs(),
+    {
+      id: "unknown-read",
+      tool: "read_file",
+      outcome: {
+        throw: { message: "Файл отсутствует в утверждённом проекте." },
+      },
+    },
+    {
+      id: "unsupported-command",
+      tool: "bash",
+      outcome: {
+        throw: {
+          message:
+            "Команда не поддержана записанным контрактом этого проекта. Успех выполнения не подтверждён.",
+        },
+      },
+    },
+    blockedRead,
+    emptySearch,
   ];
+
   return webSession(t, stubs);
 }

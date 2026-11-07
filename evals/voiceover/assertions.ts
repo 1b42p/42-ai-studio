@@ -1,19 +1,46 @@
 import type { EveEvalContext, EveEvalTurn } from "eve/evals";
 import { satisfies } from "eve/evals/expect";
-import { framesBeforeFullRender, videoLinks } from "../video/observations";
-import { SCENES } from "./fixtures";
+import fixture from "../fixtures/voiceover/project.json";
+import { videoLinks } from "../video/observations";
+import { framePaths, PROJECT } from "./fixtures";
+import { sceneTimingsAfterSynthesis, voiceoverEvidence } from "./observations";
 
 export function assertVoiceoverAssembly(t: EveEvalContext, turn: EveEvalTurn) {
   t.loadedSkill("frame-review");
-  t.check(framesBeforeFullRender(turn.events), satisfies((value: boolean) => value,
-    "не меньше четырёх разных кадров просмотрены после правок и до полного рендера"));
-  for (const [index] of SCENES.entries()) {
-    const path = new RegExp(`scene-0?${index + 1}(?:-piper)?\\.words\\.json`, "u");
-    const read = turn.toolCalls.some((call) => call.status === "completed" &&
-      (call.name === "read_file" && typeof call.input.filePath === "string" && path.test(call.input.filePath) ||
-       call.name === "bash" && typeof call.input.command === "string" &&
-       /\b(?:cat|readFile(?:Sync)?|open)\b/u.test(call.input.command) && path.test(call.input.command)));
-    t.check(read, satisfies((value: boolean) => value, `прочитаны тайминги сцены ${index + 1}`));
+  const video = `${PROJECT}/out/calm-morning.mp4`;
+  const evidence = voiceoverEvidence(turn.events, {
+    frames: framePaths,
+    video,
+    width: fixture.width,
+    height: fixture.height,
+    durationMs: fixture.videoDurationMs,
+  });
+  for (const [key, label] of Object.entries({
+    frameRender: "контрольные кадры успешно отрендерены",
+    pixels: "пиксели всех восьми кадров проверены после рендера",
+    views: "все восемь заданных кадров просмотрены после проверки пикселей",
+    fullRender:
+      "полный рендер завершён после синтеза, чтения таймингов и просмотра кадров",
+    probe:
+      "после полного рендера проверены дорожки, размер кадра и длительность того же MP4",
+  }) as [keyof typeof evidence, string][]) {
+    t.check(
+      evidence[key],
+      satisfies((value: boolean) => value, label),
+    );
   }
-  t.check(videoLinks(turn.message), satisfies((links: string[]) => links.length > 0, "итоговая ссылка на MP4 в песочнице"));
+  t.check(
+    sceneTimingsAfterSynthesis(turn.toolCalls),
+    satisfies(
+      (scenes: number[]) => scenes.join() === "1,2,3",
+      "после синтеза прочитаны тайминги именно созданных файлов всех трёх сцен",
+    ),
+  );
+  t.check(
+    videoLinks(turn.message),
+    satisfies(
+      (links: string[]) => links.includes(video),
+      "итоговая ссылка на проверенный MP4",
+    ),
+  );
 }

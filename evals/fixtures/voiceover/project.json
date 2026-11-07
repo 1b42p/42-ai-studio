@@ -1,0 +1,378 @@
+{
+  "composition": "Main",
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "frames": 546,
+  "videoDurationMs": 18200,
+  "audioDurationMs": 18219,
+  "scenes": [
+    {
+      "version": 1,
+      "voice": "piper:ru_RU-denis-medium",
+      "language": "ru-RU",
+      "format": "wav",
+      "durationMs": 5184,
+      "text": "Откройте окно. Пусть утро начнётся со свежего воздуха.",
+      "words": [
+        {
+          "text": "Откройте",
+          "startMs": 0,
+          "endMs": 917
+        },
+        {
+          "text": "окно.",
+          "startMs": 917,
+          "endMs": 1637
+        },
+        {
+          "text": "Пусть",
+          "startMs": 1887,
+          "endMs": 2270
+        },
+        {
+          "text": "утро",
+          "startMs": 2270,
+          "endMs": 2653
+        },
+        {
+          "text": "начнётся",
+          "startMs": 2653,
+          "endMs": 3408
+        },
+        {
+          "text": "со",
+          "startMs": 3408,
+          "endMs": 3605
+        },
+        {
+          "text": "свежего",
+          "startMs": 3605,
+          "endMs": 4290
+        },
+        {
+          "text": "воздуха.",
+          "startMs": 4290,
+          "endMs": 5184
+        }
+      ],
+      "sentences": [
+        {
+          "text": "Откройте окно.",
+          "startMs": 0,
+          "endMs": 1887
+        },
+        {
+          "text": "Пусть утро начнётся со свежего воздуха.",
+          "startMs": 1887,
+          "endMs": 5184
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "voice": "piper:ru_RU-denis-medium",
+      "language": "ru-RU",
+      "format": "wav",
+      "durationMs": 5393,
+      "text": "Выпейте стакан воды. Сделайте несколько спокойных вдохов.",
+      "words": [
+        {
+          "text": "Выпейте",
+          "startMs": 0,
+          "endMs": 708
+        },
+        {
+          "text": "стакан",
+          "startMs": 708,
+          "endMs": 1358
+        },
+        {
+          "text": "воды.",
+          "startMs": 1358,
+          "endMs": 2206
+        },
+        {
+          "text": "Сделайте",
+          "startMs": 2456,
+          "endMs": 3257
+        },
+        {
+          "text": "несколько",
+          "startMs": 3257,
+          "endMs": 3930
+        },
+        {
+          "text": "спокойных",
+          "startMs": 3930,
+          "endMs": 4697
+        },
+        {
+          "text": "вдохов.",
+          "startMs": 4697,
+          "endMs": 5393
+        }
+      ],
+      "sentences": [
+        {
+          "text": "Выпейте стакан воды.",
+          "startMs": 0,
+          "endMs": 2456
+        },
+        {
+          "text": "Сделайте несколько спокойных вдохов.",
+          "startMs": 2456,
+          "endMs": 5393
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "voice": "piper:ru_RU-denis-medium",
+      "language": "ru-RU",
+      "format": "wav",
+      "durationMs": 5068,
+      "text": "Выберите одно важное дело. Начните день без спешки.",
+      "words": [
+        {
+          "text": "Выберите",
+          "startMs": 0,
+          "endMs": 894
+        },
+        {
+          "text": "одно",
+          "startMs": 894,
+          "endMs": 1184
+        },
+        {
+          "text": "важное",
+          "startMs": 1184,
+          "endMs": 1800
+        },
+        {
+          "text": "дело.",
+          "startMs": 1800,
+          "endMs": 2485
+        },
+        {
+          "text": "Начните",
+          "startMs": 2735,
+          "endMs": 3547
+        },
+        {
+          "text": "день",
+          "startMs": 3547,
+          "endMs": 3896
+        },
+        {
+          "text": "без",
+          "startMs": 3896,
+          "endMs": 4128
+        },
+        {
+          "text": "спешки.",
+          "startMs": 4128,
+          "endMs": 5068
+        }
+      ],
+      "sentences": [
+        {
+          "text": "Выберите одно важное дело.",
+          "startMs": 0,
+          "endMs": 2735
+        },
+        {
+          "text": "Начните день без спешки.",
+          "startMs": 2735,
+          "endMs": 5068
+        }
+      ]
+    }
+  ],
+  "files": {
+    "package.json": "{\n  \"name\": \"remotion-template\",\n  \"private\": true,\n  \"version\": \"1.0.0\",\n  \"dependencies\": {\n    \"@remotion/captions\": \"4.0.538\",\n    \"@remotion/cli\": \"4.0.538\",\n    \"@remotion/effects\": \"4.0.538\",\n    \"@remotion/gif\": \"4.0.538\",\n    \"@remotion/google-fonts\": \"4.0.538\",\n    \"@remotion/layout-utils\": \"4.0.538\",\n    \"@remotion/media\": \"4.0.538\",\n    \"@remotion/motion-blur\": \"4.0.538\",\n    \"@remotion/noise\": \"4.0.538\",\n    \"@remotion/paths\": \"4.0.538\",\n    \"@remotion/shapes\": \"4.0.538\",\n    \"@remotion/transitions\": \"4.0.538\",\n    \"@remotion/zod-types\": \"4.0.538\",\n    \"@types/react\": \"19.2.7\",\n    \"@types/react-dom\": \"19.2.3\",\n    \"react\": \"19.2.3\",\n    \"react-dom\": \"19.2.3\",\n    \"remotion\": \"4.0.538\",\n    \"typescript\": \"5.9.3\",\n    \"zod\": \"4.5.4\"\n  }\n}\n",
+    "tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"module\": \"Preserve\",\n    \"moduleResolution\": \"Bundler\",\n    \"jsx\": \"react-jsx\",\n    \"strict\": true,\n    \"noEmit\": true,\n    \"lib\": [\"ES2022\", \"DOM\"],\n    \"esModuleInterop\": true,\n    \"skipLibCheck\": true,\n    \"forceConsistentCasingInFileNames\": true,\n    \"noUnusedLocals\": true\n  },\n  \"exclude\": [\"remotion.config.ts\"]\n}\n",
+    "remotion.config.ts": "import { Config } from \"@remotion/cli/config\";\n\nConfig.setRspack(true);\nConfig.setVideoImageFormat(\"jpeg\");\nConfig.setOverwriteOutput(true);\n",
+    "src/index.ts": "import { registerRoot } from \"remotion\";\nimport { RemotionRoot } from \"./Root\";\n\nregisterRoot(RemotionRoot);\n",
+    "src/Root.tsx": "import { useMemo } from \"react\";\nimport { Audio } from \"@remotion/media\";\nimport { createTikTokStyleCaptions, type Caption, type TikTokPage } from \"@remotion/captions\";\nimport { measureText } from \"@remotion/layout-utils\";\nimport {\n  AbsoluteFill,\n  Composition,\n  Sequence,\n  staticFile,\n  useCurrentFrame,\n  useVideoConfig,\n  type CalculateMetadataFunction,\n} from \"remotion\";\n\nconst FPS = 30;\nconst FONT = \"DejaVu Sans\";\nconst TITLES = [\"Свежий\\nвоздух\", \"Вода и\\nдыхание\", \"Начните\\nс главного\"];\n\ntype Timing = {\n  version: number;\n  format: \"wav\" | \"mp3\";\n  durationMs: number;\n  text: string;\n  words: { text: string; startMs: number; endMs: number }[];\n};\n\ntype Scene = {\n  timing: Timing;\n  audioPath: string;\n  from: number;\n  durationInFrames: number;\n  title: string;\n  index: number;\n  pages: TikTokPage[];\n};\n\ntype Props = { scenes: Scene[] };\n\nconst loadTiming = async (index: number, signal: AbortSignal) => {\n  const base = `voice/scene-${String(index + 1).padStart(2, \"0\")}`;\n  for (const stem of [`${base}-piper-v2`, `${base}-piper`, base]) {\n    const response = await fetch(staticFile(`${stem}.words.json`), { signal });\n    if (response.status === 404) continue;\n    if (!response.ok) throw new Error(`Timing request failed: ${response.status}`);\n    const timing = (await response.json()) as Timing;\n    if (!Number.isFinite(timing.durationMs) || timing.durationMs <= 0) {\n      throw new Error(`Invalid timing duration: ${stem}`);\n    }\n    if (timing.format !== \"wav\" && timing.format !== \"mp3\") {\n      throw new Error(`Unsupported audio format: ${stem}`);\n    }\n    return { timing, audioPath: `${stem}.${timing.format}` };\n  }\n  throw new Error(`No timing JSON found for ${base}`);\n};\n\nexport const calculateMetadata: CalculateMetadataFunction<Props> = async ({ abortSignal }) => {\n  const loaded = await Promise.all(TITLES.map((_, index) => loadTiming(index, abortSignal)));\n  let from = 0;\n  const scenes = loaded.map(({ timing, audioPath }, index): Scene => {\n    const durationInFrames = Math.ceil(10 + timing.durationMs / 1000 * FPS + 0.5 * FPS);\n    const offsetMs = 10 / FPS * 1000;\n    const captions: Caption[] = timing.words.map((word, wordIndex) => ({\n      text: `${wordIndex === 0 ? \"\" : \" \"}${word.text}`,\n      startMs: word.startMs + offsetMs,\n      endMs: word.endMs + offsetMs,\n      timestampMs: (word.startMs + word.endMs) / 2 + offsetMs,\n      confidence: null,\n    }));\n    const { pages } = createTikTokStyleCaptions({\n      captions,\n      combineTokensWithinMilliseconds: 1000,\n      breakOnSilenceAfterMilliseconds: 300,\n    });\n    const scene = { timing, audioPath, from, durationInFrames, title: TITLES[index], index, pages };\n    from += durationInFrames;\n    return scene;\n  });\n  return { durationInFrames: from, fps: FPS, props: { scenes } };\n};\n\nconst widthOf = (text: string, fontSize: number, fontWeight: string) => measureText({\n  text,\n  fontFamily: FONT,\n  fontSize,\n  fontWeight,\n  letterSpacing: \"0px\",\n}).width;\n\nexport const layoutPage = (page: TikTokPage) => {\n  let currentLine = \"\";\n  let lines = 1;\n  const lineWidths: number[] = [];\n  const tokens = page.tokens.map((token) => {\n    let text = token.text;\n    if (widthOf(currentLine + text, 80, \"400\") > 1536) {\n      lineWidths.push(widthOf(currentLine, 80, \"400\"));\n      text = `\\n${text.trimStart()}`;\n      currentLine = text.trimStart();\n      lines += 1;\n    } else {\n      currentLine += text;\n    }\n    if (lines > 2 || widthOf(currentLine, 80, \"400\") > 1536) {\n      throw new Error(`Caption requires re-pagination before rendering: ${page.text}`);\n    }\n    return { ...token, text };\n  });\n  lineWidths.push(widthOf(currentLine, 80, \"400\"));\n  return { ...page, tokens, lines, lineWidths };\n};\n\nconst Captions = ({ pages }: { pages: TikTokPage[] }) => {\n  const frame = useCurrentFrame();\n  const { fps } = useVideoConfig();\n  const timeMs = frame / fps * 1000;\n  const laidOut = useMemo(() => pages.map(layoutPage), [pages]);\n  const page = laidOut.find((candidate) => candidate.startMs <= timeMs && timeMs < candidate.startMs + candidate.durationMs);\n  if (!page) return null;\n  return (\n    <div style={{\n      position: \"absolute\",\n      left: 160,\n      right: 160,\n      bottom: 190,\n      textAlign: \"center\",\n      fontSize: 80,\n      fontWeight: 400,\n      lineHeight: 1.22,\n      whiteSpace: \"pre\",\n    }}>\n      <div style={{ display: \"inline-block\", padding: \"18px 32px\", borderRadius: 24, backgroundColor: \"#183831\", color: \"#FFFFFF\" }}>\n        {page.tokens.map((token, index) => (\n          <span key={index} style={{\n            opacity: timeMs >= token.fromMs ? 1 : 0,\n            color: token.fromMs <= timeMs && timeMs < token.toMs ? \"#F7D48E\" : \"#FFFFFF\",\n          }}>{token.text}</span>\n        ))}\n      </div>\n    </div>\n  );\n};\n\nconst Illustration = ({ index }: { index: number }) => {\n  const frame = useCurrentFrame();\n  const { fps } = useVideoConfig();\n  const drift = Math.sin(frame / fps * Math.PI / 3) * 5;\n  return (\n    <svg width={500} height={400} viewBox=\"0 0 500 400\" style={{ position: \"absolute\", left: 1250, top: 200 }}>\n      <ellipse cx=\"250\" cy=\"360\" rx=\"190\" ry=\"18\" fill=\"#DCE5DA\" />\n      {index === 0 ? (\n        <>\n          <rect x=\"80\" y=\"35\" width=\"310\" height=\"295\" rx=\"16\" fill=\"#E5F0EA\" stroke=\"#345E51\" strokeWidth=\"9\" />\n          <circle cx=\"300\" cy=\"118\" r=\"45\" fill=\"#EBCB8E\" />\n          <path d=\"M85 268 Q170 175 245 250 T385 245 V325 H85Z\" fill=\"#AECAB7\" />\n          <path d=\"M236 40 V324 M84 180 H386\" stroke=\"#345E51\" strokeWidth=\"9\" />\n          <path d=\"M236 40 L365 75 V293 L236 324Z\" fill=\"#F8FBF5\" fillOpacity=\"0.78\" stroke=\"#345E51\" strokeWidth=\"8\" />\n          <path d={`M25 ${242 + drift} Q82 ${219 + drift} 141 ${242 + drift} M17 ${278 + drift} Q85 ${252 + drift} 153 ${278 + drift}`} fill=\"none\" stroke=\"#70998B\" strokeWidth=\"8\" strokeLinecap=\"round\" />\n          <path d=\"M58 335 H413\" stroke=\"#345E51\" strokeWidth=\"13\" strokeLinecap=\"round\" />\n        </>\n      ) : index === 1 ? (\n        <>\n          <circle cx=\"250\" cy=\"182\" r=\"155\" fill=\"#E5EEDF\" />\n          <path d=\"M133 90 H342 L320 322 Q318 338 300 338 H176 Q158 338 156 322Z\" fill=\"#FAFCF6\" stroke=\"#345E51\" strokeWidth=\"8\" />\n          <path d={`M147 191 Q193 ${178 + drift} 237 191 T328 191 L316 318 Q315 327 300 327 H176 Q166 327 165 317Z`} fill=\"#9AC6C1\" />\n          <path d=\"M174 113 L183 170\" stroke=\"#FFFFFF\" strokeWidth=\"10\" strokeLinecap=\"round\" />\n          <path d={`M371 ${132 + drift} Q420 ${156 + drift} 373 ${180 + drift} M373 ${205 + drift} Q425 ${229 + drift} 373 ${253 + drift}`} fill=\"none\" stroke=\"#70998B\" strokeWidth=\"8\" strokeLinecap=\"round\" />\n        </>\n      ) : (\n        <>\n          <circle cx=\"250\" cy=\"183\" r=\"158\" fill=\"#E5EEDF\" />\n          <rect x=\"107\" y=\"54\" width=\"281\" height=\"286\" rx=\"21\" fill=\"#FAFCF6\" stroke=\"#345E51\" strokeWidth=\"8\" />\n          <rect x=\"196\" y=\"36\" width=\"103\" height=\"34\" rx=\"12\" fill=\"#345E51\" />\n          <rect x=\"144\" y=\"111\" width=\"52\" height=\"52\" rx=\"10\" fill=\"#DCEBDC\" />\n          <path d=\"M156 137 L168 149 L188 123\" stroke=\"#345E51\" strokeWidth=\"8\" fill=\"none\" strokeLinecap=\"round\" strokeLinejoin=\"round\" />\n          <path d=\"M224 133 H344\" stroke=\"#70998B\" strokeWidth=\"10\" strokeLinecap=\"round\" />\n          <path d=\"M147 208 H344 M147 265 H302\" stroke=\"#CDD9CC\" strokeWidth=\"10\" strokeLinecap=\"round\" />\n          <circle cx=\"392\" cy={299 + drift} r=\"27\" fill=\"#EBCB8E\" />\n        </>\n      )}\n    </svg>\n  );\n};\n\nconst SceneContent = ({ scene }: { scene: Scene }) => (\n  <AbsoluteFill style={{ backgroundColor: \"#F4F3E9\", color: \"#183831\", fontFamily: FONT }}>\n    <div style={{ position: \"absolute\", left: 160, top: 210, width: 980, fontSize: 160, fontWeight: 700, lineHeight: 1.12, whiteSpace: \"pre\" }}>\n      {scene.title}\n    </div>\n    <Illustration index={scene.index} />\n    <Sequence from={10} layout=\"none\">\n      <Audio src={staticFile(scene.audioPath)} />\n    </Sequence>\n    <Captions pages={scene.pages} />\n  </AbsoluteFill>\n);\n\nexport const Main = ({ scenes }: Props) => (\n  <AbsoluteFill>\n    {scenes.map((scene) => (\n      <Sequence key={scene.index} name={scene.title.replace(\"\\n\", \" \")} from={scene.from} durationInFrames={scene.durationInFrames}>\n        <SceneContent scene={scene} />\n      </Sequence>\n    ))}\n  </AbsoluteFill>\n);\n\nexport const RemotionRoot = () => (\n  <Composition\n    id=\"Main\"\n    component={Main}\n    width={1920}\n    height={1080}\n    fps={FPS}\n    durationInFrames={1}\n    defaultProps={{ scenes: [] }}\n    calculateMetadata={calculateMetadata}\n  />\n);\n",
+    "voice/scene-01.txt": "Откройте окно. Пусть утро начнётся со свежего воздуха.\n",
+    "voice/scene-02.txt": "Выпейте стакан воды. Сделайте несколько спокойных вдохов.\n",
+    "voice/scene-03.txt": "Выберите одно важное дело. Начните день без спешки.\n"
+  },
+  "probe": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "index": 0,
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 1920,
+        "height": 1080,
+        "r_frame_rate": "30/1",
+        "duration": "18.200000",
+        "nb_frames": "546"
+      },
+      {
+        "index": 1,
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "r_frame_rate": "0/0",
+        "duration": "18.219000",
+        "nb_frames": "856"
+      }
+    ],
+    "format": {
+      "duration": "18.219000",
+      "size": "1052620"
+    }
+  },
+  "pixels": [
+    {
+      "path": "out/frames-1/element-000.jpeg",
+      "extrema": [
+        [
+          7,
+          255
+        ],
+        [
+          39,
+          255
+        ],
+        [
+          30,
+          253
+        ]
+      ],
+      "suspect": null
+    },
+    {
+      "path": "out/frames-1/element-010.jpeg",
+      "extrema": [
+        [
+          7,
+          255
+        ],
+        [
+          39,
+          255
+        ],
+        [
+          0,
+          253
+        ]
+      ],
+      "suspect": null
+    },
+    {
+      "path": "out/frames-1/element-067.jpeg",
+      "extrema": [
+        [
+          7,
+          255
+        ],
+        [
+          39,
+          255
+        ],
+        [
+          7,
+          253
+        ]
+      ],
+      "suspect": null
+    },
+    {
+      "path": "out/frames-1/element-181.jpeg",
+      "extrema": [
+        [
+          6,
+          255
+        ],
+        [
+          37,
+          255
+        ],
+        [
+          27,
+          255
+        ]
+      ],
+      "suspect": null
+    },
+    {
+      "path": "out/frames-1/element-265.jpeg",
+      "extrema": [
+        [
+          5,
+          255
+        ],
+        [
+          37,
+          255
+        ],
+        [
+          4,
+          255
+        ]
+      ],
+      "suspect": null
+    },
+    {
+      "path": "out/frames-1/element-309.jpeg",
+      "extrema": [
+        [
+          6,
+          255
+        ],
+        [
+          37,
+          255
+        ],
+        [
+          9,
+          255
+        ]
+      ],
+      "suspect": null
+    },
+    {
+      "path": "out/frames-1/element-368.jpeg",
+      "extrema": [
+        [
+          9,
+          255
+        ],
+        [
+          40,
+          255
+        ],
+        [
+          29,
+          255
+        ]
+      ],
+      "suspect": null
+    },
+    {
+      "path": "out/frames-1/element-545.jpeg",
+      "extrema": [
+        [
+          9,
+          255
+        ],
+        [
+          40,
+          255
+        ],
+        [
+          29,
+          255
+        ]
+      ],
+      "suspect": null
+    }
+  ]
+}
