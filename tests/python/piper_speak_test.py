@@ -9,6 +9,7 @@ import contextlib
 import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -364,6 +365,27 @@ class ChunkMappingTests(unittest.TestCase):
 
 
 class OptionsTests(unittest.TestCase):
+    def test_publication_keeps_existing_audio_and_timings_unchanged(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            staged_audio, staged_timings = root / "new.wav", root / "new.json"
+            staged_audio.write_bytes(b"new audio")
+            staged_timings.write_text('{"durationMs":2000}', encoding="utf-8")
+            audio, timings = root / "scene.wav", root / "scene.words.json"
+            for existing in (audio, timings):
+                existing.write_bytes(b"previous result")
+                with self.assertRaises(FileExistsError):
+                    piper_speak.publish_outputs(
+                        staged_audio, staged_timings, audio, timings
+                    )
+                self.assertEqual(existing.read_bytes(), b"previous result")
+                other = timings if existing == audio else audio
+                self.assertFalse(other.exists())
+                existing.unlink()
+            piper_speak.publish_outputs(staged_audio, staged_timings, audio, timings)
+            self.assertEqual(audio.read_bytes(), b"new audio")
+            self.assertEqual(timings.read_text(encoding="utf-8"), '{"durationMs":2000}')
+
     def test_cli_defaults_and_invalid_limits(self):
         required = [
             "--text-file",

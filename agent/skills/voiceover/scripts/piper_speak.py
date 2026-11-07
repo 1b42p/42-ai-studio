@@ -320,6 +320,27 @@ def diagnostic_output():
         os.close(saved_stdout)
 
 
+def require_new_outputs(audio_path: Path, timings_path: Path) -> None:
+    for path in (audio_path, timings_path):
+        if path.exists() or path.is_symlink():
+            raise FileExistsError(
+                f"Результат {path} уже существует. Укажите новый --out, например с -v2."
+            )
+
+
+def publish_outputs(
+    staged_audio: Path, staged_timings: Path, audio_path: Path, timings_path: Path
+) -> None:
+    """Публикует новые файлы без замены предыдущих результатов."""
+    require_new_outputs(audio_path, timings_path)
+    os.link(staged_audio, audio_path)
+    try:
+        os.link(staged_timings, timings_path)
+    except BaseException:
+        audio_path.unlink()
+        raise
+
+
 def synthesize(options: argparse.Namespace) -> dict:
     source_path = options.text_file.expanduser().resolve()
     source = source_path.read_text(encoding="utf-8-sig")
@@ -331,6 +352,7 @@ def synthesize(options: argparse.Namespace) -> dict:
     timings_path = Path(f"{out}.words.json")
     if source_path in (audio_path, timings_path):
         raise ValueError("Выходной файл не должен заменять исходный текст.")
+    require_new_outputs(audio_path, timings_path)
     data_dir = options.data_dir.expanduser().resolve()
     model_path = data_dir / f"{options.voice}.onnx"
     config_path = Path(f"{model_path}.json")
@@ -380,7 +402,7 @@ def synthesize(options: argparse.Namespace) -> dict:
     synthesis_config = SynthesisConfig(length_scale=options.length_scale)
     parts: list[Part] = []
     out.parent.mkdir(parents=True, exist_ok=True)
-    # Неполный синтез не перезаписывает прежнюю готовую озвучку.
+    # Файлы публикуются только после полного синтеза и проверки длительности.
     with tempfile.TemporaryDirectory(prefix=".piper-", dir=out.parent) as staging:
         temporary_audio = Path(staging) / "speech.wav"
         temporary_timings = Path(staging) / "speech.words.json"
@@ -458,8 +480,7 @@ def synthesize(options: argparse.Namespace) -> dict:
             json.dumps(timings, ensure_ascii=False, allow_nan=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        temporary_audio.replace(audio_path)
-        temporary_timings.replace(timings_path)
+        publish_outputs(temporary_audio, temporary_timings, audio_path, timings_path)
     return {
         "audioPath": str(audio_path),
         "timingsPath": str(timings_path),

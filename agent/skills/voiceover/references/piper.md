@@ -28,6 +28,10 @@ python3 -m piper.download_voices ru_RU-denis-medium --data-dir "$HOME/.cache/pip
 | `--sentence-silence` | Пауза между предложениями, по умолчанию 0,25 с |
 | `--length-scale` | Положительное число; больше — медленнее |
 
+Существующие WAV и JSON скрипт не заменяет. Для повторного синтеза выбирай
+новый `--out` (например, `scene-01-piper-v2`) и после успеха обновляй оба
+пути сцены: неудачная попытка не должна менять прежнюю пару файлов.
+
 Скрипт устанавливает `intra_op_num_threads` равным квоте vCPU,
 `inter_op_num_threads = 1`, подменяя фабрику `onnxruntime.SessionOptions`
 **до** `PiperVoice.load`. Указание только OMP-переменных этого не заменяет;
