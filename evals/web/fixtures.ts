@@ -67,7 +67,8 @@ export const emptySearch: ToolStub = {
 
 /** Fail closed при появлении нового инструмента: ни одного вызова без подмены. */
 export async function webSession(t: EveEvalContext, webStubs: readonly ToolStub[]) {
-  const stubs = [...webStubs, ...isolationStubs];
+  const provided = new Set(webStubs.filter((stub) => stub.match === undefined).map((stub) => stub.tool));
+  const stubs = [...webStubs, ...isolationStubs.filter((stub) => !provided.has(stub.tool))];
   const response = await t.target.fetch("/eve/v1/info");
   if (!response.ok) throw new Error(`Не удалось получить инструменты для изоляции: ${response.status}`);
   const info = await response.json() as { tools?: { static?: { name: string }[]; dynamic?: unknown[] } };

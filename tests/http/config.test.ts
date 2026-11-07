@@ -98,6 +98,16 @@ describe("parseConfig", () => {
     expect(issuesOf({ ...env, APP_URL: "https://example.com" }).join()).toContain("APP_URL");
   });
 
+  test("хранилище фикстур требует локальных оценок и не смешивается с настоящим рендером", () => {
+    expect(parseConfig(validEnv()).appStubEvalSandbox).toBe(false);
+    expect(issuesOf({ ...validEnv(), APP_STUB_EVAL_SANDBOX: "1" }).join()).toContain("APP_STUB_EVAL_SANDBOX");
+    const env = { ...validEnv(), APP_STUB_EVAL_SANDBOX: "1", APP_EVAL_MODE: "1", EVE_EVAL_AUTH_TOKEN: "eval-only-token-0123456789abcdef" };
+    expect(parseConfig(env).appStubEvalSandbox).toBe(true);
+    expect(issuesOf({ ...env, APP_VIDEO_EVAL_SANDBOX: "1" }).join()).toContain("APP_STUB_EVAL_SANDBOX");
+    expect(issuesOf({ ...env, NODE_ENV: "production" }).join()).toContain("APP_EVAL_MODE");
+    expect(issuesOf({ ...env, APP_URL: "https://example.com" }).join()).toContain("APP_URL");
+  });
+
   test("отсутствующая обязательная переменная называется в ошибке", () => {
     for (const name of [
       "DATABASE_URL",
