@@ -2,6 +2,7 @@ import type { ToolStub } from "eve/evals";
 
 import data from "../fixtures/voiceover/project.json";
 import { voiceoverFrames } from "./media-fixture";
+import { videoInspectionStubs } from "./video-inspection-fixtures";
 import {
   duration,
   escapePattern,
@@ -151,12 +152,12 @@ function unsupportedCommandStubs(): ToolStub[] {
   return [
     rejectedCommand(
       "unsupported-probe-writer",
-      "ffprobe[\\s\\S]*(?:-of|-print_format)[ =]+(?:csv|compact|xml|ini)",
-      "В записанном контракте метаданные доступны в форматах json и default. Используйте один из них.",
+      "ffprobe[\\s\\S]*(?:-(?:show_packets|show_frames|select_streams|count_packets|count_frames)\\b|(?:-of|-print_format)[ =]+(?:csv|compact|xml|ini))",
+      "Записаны только метаданные двух дорожек и контейнера в json/default. Пакеты, кадры и выбор отдельной дорожки не записаны; для полной проверки используйте ffprobe -v error -show_streams -show_format -of json out/calm-morning.mp4.",
     ),
     rejectedCommand(
       "unsupported-combined-inspection",
-      "(?:remotion\\s+(?:render|still|compositions|ffprobe)[\\s\\S]*remotion\\s+(?:render|still|compositions|ffprobe)|(?:cat|readFile)[\\s\\S]*(?:remotion|ffprobe)|\\b(?:stat|wc)\\s[^;\\n]*&&\\s*[^;\\n]*\\bffprobe\\b|\\bffprobe\\b[\\s\\S]*&&\\s*(?:stat|wc)\\s)",
+      "(?:remotion\\s+(?:render|still|compositions|ffprobe)[\\s\\S]*remotion\\s+(?:render|still|compositions|ffprobe)|\\b(?:cat|readFile)\\s[^;&\\n]*&&\\s*[^;&\\n]*\\b(?:remotion|ffprobe)\\s|\\b(?:stat|wc)\\s[^;\\n]*&&\\s*[^;\\n]*\\bffprobe\\b|\\bffprobe\\b[\\s\\S]*&&\\s*(?:stat|wc)\\s)",
       "Разделите составную проверку на отдельные вызовы: её полный результат не записан в контракте проекта.",
     ),
     rejectedCommand(
@@ -185,17 +186,11 @@ function unsupportedCommandStubs(): ToolStub[] {
 }
 
 function audioStubs(fallback: boolean): ToolStub[] {
-  return data.scenes.flatMap((scene, index) => {
+  return data.scenes.flatMap((_, index) => {
     const number = String(index + 1).padStart(2, "0");
     const timing = fixtureTimings(index, fallback);
     const versions = fallback ? AUDIO_VERSIONS : [""];
-    const audioFile = `scene-${number}(?:-piper)?(?:-v2)?\\.(?:mp3|wav)(?:[\\s"']|$)`;
-    const audioProbe = {
-      streams: [{ codec_type: "audio", duration: duration(scene.durationMs) }],
-      format: { duration: duration(scene.durationMs) },
-    };
-
-    const timings: ToolStub[] = versions.map((version) => ({
+    return versions.map((version): ToolStub => ({
       id: `timings-${index}${version}`,
       tool: "read_file",
       match: {
@@ -212,20 +207,6 @@ function audioStubs(fallback: boolean): ToolStub[] {
         ),
       },
     }));
-
-    return [
-      ...timings,
-      commandStub(
-        `probe-audio-json-${index}`,
-        `ffprobe(?=[\\s\\S]*(?:-of|-print_format)[ =]+json)[\\s\\S]*${audioFile}`,
-        JSON.stringify(audioProbe),
-      ),
-      commandStub(
-        `probe-audio-text-${index}`,
-        `ffprobe[\\s\\S]*${audioFile}`,
-        `codec_type=audio\nduration=${duration(scene.durationMs)}\n`,
-      ),
-    ];
   });
 }
 
@@ -292,66 +273,20 @@ function reviewStubs(): ToolStub[] {
       "check-frames\\.py(?=[^;&\\n]*(?:out/frames-1/))[^;&\\n]*$",
       pixelResults,
     ),
-    commandStub(
-      "review-listing",
-      "\\b(?:ls|find)\\s+[^;&\\n]*out/frames-1",
-      FRAME_NAMES.join("\n"),
-    ),
   ];
 }
 
-function videoStubs(): { probe: ToolStub[]; render: ToolStub[] } {
+function fullRenderStub(): ToolStub {
   const render = remotionCommand(
     "render",
     compositionArguments() +
       `(?=[^;&\\n]*${projectArgument("out/calm-morning.mp4")})[^;&\\n]*`,
   );
-  const probeText = [
-    "codec_name=h264",
-    "codec_type=video",
-    `width=${data.width}`,
-    `height=${data.height}`,
-    `duration=${duration(data.videoDurationMs)}`,
-    "codec_name=aac",
-    "codec_type=audio",
-    `duration=${duration(data.audioDurationMs)}`,
-    "",
-  ].join("\n");
-
-  return {
-    probe: [
-      commandStub(
-        "probe-mp4-json",
-        "ffprobe(?=[\\s\\S]*(?:-of|-print_format)[ =]+json)(?=[\\s\\S]*\\.mp4)",
-        JSON.stringify(data.probe),
-      ),
-      commandStub("probe-mp4-text", "ffprobe[\\s\\S]*\\.mp4", probeText),
-    ],
-    render: [
-      commandStub(
-        "render-mp4",
-        render,
-        `Rendered ${data.frames}/${data.frames}\nEncoded ${data.frames}/${data.frames}\nOutput: out/calm-morning.mp4 (1.0 MB)\n`,
-      ),
-      commandStub(
-        "listed-file-size",
-        `^\\s*(?:cd\\s+${shellToken(escapePattern(PROJECT))}\\s*&&\\s*)?` +
-          `ls\\s+-l\\s+${projectPath("out/calm-morning.mp4")}\\s*&&\\s*` +
-          `stat\\s+-c\\s+['"]%s bytes['"]\\s+${projectPath("out/calm-morning.mp4")}\\s*$`,
-        `-rw-r--r-- 1 user user ${data.probe.format.size} out/calm-morning.mp4\n${data.probe.format.size} bytes\n`,
-      ),
-      commandStub(
-        "file-size",
-        "(?:stat|wc\\s+-c)[\\s\\S]*out/calm-morning\\.mp4",
-        `${data.probe.format.size}\n`,
-      ),
-      commandStub(
-        "file-presence",
-        "(?:test\\s+-s|ls\\s+-lh?)[\\s\\S]*out/calm-morning\\.mp4",
-        `-rw-r--r-- 1 user user ${data.probe.format.size} calm-morning.mp4\n`,
-      ),
-    ],
-  };
+  return commandStub(
+    "render-mp4",
+    render,
+    `Rendered ${data.frames}/${data.frames}\nEncoded ${data.frames}/${data.frames}\nOutput: out/calm-morning.mp4 (1.0 MB)\n`,
+  );
 }
 
 function piperSetupStubs(): ToolStub[] {
@@ -410,15 +345,13 @@ function environmentStubs(fallback: boolean): ToolStub[] {
 }
 
 export function mediaStubs(fallback: boolean): ToolStub[] {
-  const video = videoStubs();
-
   return [
     ...unsupportedCommandStubs(),
     ...(fallback ? [...piperBatchStubs(), ...piperLoopStubs()] : []),
     ...audioStubs(fallback),
-    ...video.probe,
+    ...videoInspectionStubs(),
     ...reviewStubs(),
-    ...video.render,
+    fullRenderStub(),
     ...environmentStubs(fallback),
   ];
 }

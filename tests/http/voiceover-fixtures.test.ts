@@ -3,6 +3,7 @@ import type { EveEvalContext, EveEvalStreamEvent, ToolStub } from "eve/evals";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
 import fixture from "../../evals/fixtures/voiceover/project.json";
+import { inspectVideoFile } from "../../evals/voiceover/file-inspection";
 import {
   FRAME_NAMES,
   framePaths,
@@ -20,6 +21,13 @@ import { fakeSandbox } from "./support/fake-sandbox";
 let eve: EveDevServer;
 let client: Client;
 const histories = new WeakMap<ClientSession, EveEvalStreamEvent[]>();
+const evidenceTarget = {
+  frames: framePaths,
+  video: `${PROJECT}/out/calm-morning.mp4`,
+  width: fixture.width,
+  height: fixture.height,
+  durationMs: fixture.videoDurationMs,
+};
 
 beforeAll(async () => {
   eve = await startEveDev({
@@ -265,26 +273,54 @@ async function renderVideo(target: ClientSession) {
   });
 }
 
-async function checkMp4(target: ClientSession) {
+type Mp4Inspection = "stat" | "ls" | "ls-probe";
+
+async function checkMp4(target: ClientSession, inspection: Mp4Inspection) {
+  const combinedProbe =
+    "npx remotion ffprobe -v error " +
+    "-show_entries stream=codec_type,duration:format=duration -of json out/calm-morning.mp4";
+  const commands = {
+    stat: `cd ${PROJECT} && ls -l out/calm-morning.mp4 && stat -c '%s bytes' out/calm-morning.mp4`,
+    ls: `cd ${PROJECT} && ls -l out/calm-morning.mp4`,
+    "ls-probe": `cd ${PROJECT} && ls -lh out/calm-morning.mp4 && ${combinedProbe}`,
+  };
   const size = await tool(target, "bash", {
-    command:
-      `cd ${PROJECT} && ls -l out/calm-morning.mp4 ` +
-      "&& stat -c '%s bytes' out/calm-morning.mp4",
+    command: commands[inspection],
   });
   expect(size).toMatchObject({
     status: "completed",
     result: {
       output: {
         exitCode: 0,
-        stdout: expect.stringContaining(`${fixture.probe.format.size} bytes\n`),
+        stdout: expect.stringContaining("out/calm-morning.mp4"),
       },
     },
   });
 
+  if (inspection === "stat") {
+    expect((size.result.output as { stdout: string }).stdout).toContain(
+      `${fixture.probe.format.size} bytes\n`,
+    );
+  }
+
+  if (inspection === "ls-probe") {
+    const stdout = (size.result.output as { stdout: string }).stdout;
+    const metadata = JSON.parse(stdout.slice(stdout.indexOf("\n") + 1)) as {
+      streams: { duration: string }[];
+    };
+    expect(
+      metadata.streams.map(({ duration }) => Number(duration) * 1000),
+    ).toEqual([fixture.videoDurationMs, fixture.audioDurationMs]);
+  }
+
+  expect(
+    voiceoverEvidence(histories.get(target)!, evidenceTarget).fileSize,
+  ).toBe(true);
+
   const probe = await tool(target, "bash", {
     command:
       `cd ${PROJECT} && npx remotion ffprobe -v error ` +
-      "-show_entries stream=duration,codec_type:format=duration -of json out/calm-morning.mp4",
+      "-show_streams -show_format -of json out/calm-morning.mp4",
   });
   const metadata = readStdoutJson<{ streams: { duration: string }[] }>(probe);
   const durations = metadata.streams.map(
@@ -521,11 +557,11 @@ function moveViewRequestsBeforePixels(
   ];
 }
 
-function checkFileSizeEvidence(
+function bashCallIds(
   events: readonly EveEvalStreamEvent[],
-  evidenceTarget: Parameters<typeof voiceoverEvidence>[1],
+  matches: (command: string) => boolean,
 ) {
-  const sizeCallIds = new Set(
+  return new Set(
     events.flatMap((event) =>
       event.type === "actions.requested"
         ? event.data.actions
@@ -533,50 +569,104 @@ function checkFileSizeEvidence(
               (action) =>
                 action.kind === "tool-call" &&
                 action.toolName === "bash" &&
-                /\bstat\s+-c\s+['"]%s(?: bytes)?['"]/u.test(
-                  String(action.input.command),
-                ),
+                matches(String(action.input.command)),
             )
             .map((action) => action.callId)
         : [],
     ),
   );
-  expect(sizeCallIds.size).toBe(1);
-  const withoutFileSize = events.filter(
-    (event) =>
-      event.type !== "action.result" ||
-      !sizeCallIds.has(event.data.result.callId),
-  );
-  expect(voiceoverEvidence(withoutFileSize, evidenceTarget)).toEqual({
-    frameRender: true,
-    pixels: true,
-    views: true,
-    fullRender: true,
-    fileSize: false,
-    probe: true,
+}
+
+function replaceBashInspection(
+  events: readonly EveEvalStreamEvent[],
+  callIds: ReadonlySet<string>,
+  command: string,
+  stdout: string,
+  exitCode = 0,
+): EveEvalStreamEvent[] {
+  return events.map((event): EveEvalStreamEvent => {
+    if (event.type === "actions.requested") {
+      return {
+        ...event,
+        data: {
+          ...event.data,
+          actions: event.data.actions.map((action) =>
+            action.kind === "tool-call" && callIds.has(action.callId)
+              ? { ...action, input: { ...action.input, command } }
+              : action,
+          ),
+        },
+      };
+    }
+    if (
+      event.type === "action.result" &&
+      event.data.result.kind === "tool-result" &&
+      callIds.has(event.data.result.callId)
+    ) {
+      return {
+        ...event,
+        data: {
+          ...event.data,
+          result: { ...event.data.result, output: { stdout, exitCode } },
+        },
+      };
+    }
+    return event;
   });
+}
 
-  const sizeRequests = events.filter(
-    (event) =>
-      event.type === "actions.requested" &&
-      event.data.actions.some((action) => sizeCallIds.has(action.callId)),
-  );
-  const requestSet = new Set<EveEvalStreamEvent>(sizeRequests);
-  const sizeBeforeRender = moveBeforeFullRender(
-    events.filter((event) => !requestSet.has(event)),
-    sizeRequests,
-  );
-  expect(voiceoverEvidence(sizeBeforeRender, evidenceTarget).fileSize).toBe(
-    false,
-  );
+type FileInspectionCase = readonly [
+  command: string,
+  stdout: string,
+  exitCode: number,
+  fileSize: boolean,
+  probe?: boolean,
+];
 
+function fileInspectionCases(): readonly FileInspectionCase[] {
   const path = `${PROJECT}/out/calm-morning.mp4`;
   const stat = `cd ${PROJECT} && stat -c '%s' out/calm-morning.mp4`;
   const wc = `cd ${PROJECT} && wc -c out/calm-morning.mp4`;
-  const checks = [
+  const ls = `cd ${PROJECT} && ls -l out/calm-morning.mp4`;
+  const probe = "npx remotion ffprobe -v error -show_streams -of json";
+  const json = JSON.stringify(fixture.probe);
+  const listing =
+    "-rw-r--r-- 1 user user 1052620 Nov 7 12:00 out/calm-morning.mp4\n";
+  const combined = `cd ${PROJECT} && ls -lh out/calm-morning.mp4 && ${probe} out/calm-morning.mp4`;
+  const canonicalProbe = `cd ${PROJECT} && ${probe} -show_format out/calm-morning.mp4`;
+  const probeWithoutSize = {
+    ...fixture.probe,
+    format: { duration: fixture.probe.format.duration },
+  };
+  const formatSelection = (options: string) =>
+    `cd ${PROJECT} && ${probe} ${options} out/calm-morning.mp4`;
+  const textProbeCommand =
+    `cd ${PROJECT} && npx remotion ffprobe -v error ` +
+    "-show_entries stream=codec_name,codec_type,width,height,duration:format=duration " +
+    "-of default=nw=1 out/calm-morning.mp4";
+  const textProbe = [
+    "codec_name=h264",
+    "codec_type=video",
+    "width=1920",
+    "height=1080",
+    "duration=18.200",
+    "codec_name=aac",
+    "codec_type=audio",
+    "duration=18.219",
+    `duration=${fixture.probe.format.duration}`,
+    "",
+  ].join("\n");
+  return [
+    // Прежние способы подтверждения размера остаются независимыми от probe.
     [`test -s ${path}`, "", 0, true],
     [`test -s ${path} && npx remotion ffprobe -of json ${path}`, "{}", 0, true],
     [`stat -c '%n %s bytes' ${path}`, `${path} 12345 bytes\n`, 0, true],
+    [
+      `stat -c '%n %s bytes' ${path}`,
+      `${PROJECT}/out/other.mp4 12345 bytes\n`,
+      0,
+      false,
+    ],
     [
       `cd ${PROJECT} && ls -l out/calm-morning.mp4 && stat -c '%s bytes' out/calm-morning.mp4`,
       "-rw-r--r-- 1 user user 12345 out/calm-morning.mp4\n12345 bytes\n",
@@ -599,54 +689,309 @@ function checkFileSizeEvidence(
     [stat.replace("out/", "wrong/out/"), "12345\n", 0, false],
     [`test -s ${path}`, "", 1, false],
     [`ls -lh ${PROJECT}/out/frames-1`, "12345\n", 0, false],
-  ] as const;
-  for (const [command, stdout, exitCode, expected] of checks) {
-    const changed = events.map((event): EveEvalStreamEvent => {
-      if (event.type === "actions.requested") {
-        return {
-          ...event,
-          data: {
-            ...event.data,
-            actions: event.data.actions.map((action) =>
-              action.kind === "tool-call" && sizeCallIds.has(action.callId)
-                ? { ...action, input: { ...action.input, command } }
-                : action,
-            ),
-          },
-        };
-      }
-      if (
-        event.type === "action.result" &&
-        event.data.result.kind === "tool-result" &&
-        sizeCallIds.has(event.data.result.callId)
-      ) {
-        return {
-          ...event,
-          data: {
-            ...event.data,
-            result: {
-              ...event.data.result,
-              output: { stdout, exitCode },
-            },
-          },
-        };
-      }
-      return event;
-    });
+    // Листинг доказывает размер только одного обычного файла по точному пути.
+    [ls, listing, 0, true],
+    [`ls -l "${path}"`, listing.replace("out/calm-morning.mp4", path), 0, true],
+    [`cd '${PROJECT}' && ls -l -- "out/calm-morning.mp4"`, listing, 0, true],
+    [ls.replace("-l ", "-lh "), listing.replace("1052620", "1.1M"), 0, true],
+    [ls.replace("-l ", "-lh "), listing.replace("1052620", "1,1G"), 0, true],
+    [ls, listing.replace("1052620", "0"), 0, false],
+    [ls.replace("-l ", "-lh "), listing.replace("1052620", "0.0K"), 0, false],
+    [ls, listing.replace("1052620", "1.1M"), 0, false],
+    [ls, listing.replace("1052620", "unknown"), 0, false],
+    [ls, listing.replace("-rw-r--r--", "drwxr-xr-x"), 0, false],
+    [
+      ls,
+      listing.replace("-rw-r--r--", "lrwxrwxrwx").trimEnd() + " -> other.mp4\n",
+      0,
+      false,
+    ],
+    [ls, listing.replace("-rw-r--r--", "prw-r--r--"), 0, false],
+    [ls, listing.replace("out/calm-morning.mp4", "out/other.mp4"), 0, false],
+    [ls, listing.replace("out/calm-morning.mp4", "calm-morning.mp4"), 0, false],
+    [
+      ls,
+      listing.replace("out/calm-morning.mp4", "wrong/out/calm-morning.mp4"),
+      0,
+      false,
+    ],
+    [ls.replace("out/", "wrong/out/"), listing, 0, false],
+    [ls + " out/other.mp4", listing, 0, false],
+    [ls, "total 1052620\n", 0, false],
+    [ls, "total 1052620\n" + listing, 0, false],
+    [ls, listing + listing, 0, false],
+    [ls, listing + listing.replace("calm-morning", "other"), 0, false],
+    [ls, json, 0, false],
+    [ls, listing, 1, false],
+    // В составном результате строка ls и JSON доказывают разные свойства.
+    [combined, listing + json, 0, true, true],
+    [
+      `cd '${PROJECT}' && ls -lh 'out/calm-morning.mp4' && ${probe} "out/calm-morning.mp4"`,
+      listing + json,
+      0,
+      true,
+      true,
+    ],
+    [combined, listing.replace("1052620", "1.1M") + json, 0, true, true],
+    [combined, listing + JSON.stringify(probeWithoutSize), 0, true, true],
+    [combined, json, 0, false, true],
+    [combined, listing.replace("1052620", "0") + json, 0, false, true],
+    [
+      combined,
+      listing.replace("out/calm-morning.mp4", "out/other.mp4") + json,
+      0,
+      false,
+      true,
+    ],
+    [combined, listing + listing + json, 0, false],
+    [
+      combined.replace(`${probe} out/`, `${probe} wrong/out/`),
+      listing + json,
+      0,
+      false,
+    ],
+    [
+      combined.replace("ls -lh out/", "ls -lh wrong/out/"),
+      listing + json,
+      0,
+      false,
+    ],
+    [combined + " && echo done", listing + json, 0, false],
+    [
+      combined.replace("-show_streams", "-show_streams -show_format"),
+      json,
+      0,
+      false,
+      true,
+    ],
+    // Поле format.size учитывается только при явном запросе размера.
+    [canonicalProbe, json, 0, true, true],
+    // Порядок опций меняет выбор всех полей, но явные поля накапливаются.
+    [
+      formatSelection("-show_format -show_entries format=duration"),
+      json,
+      0,
+      false,
+      true,
+    ],
+    [
+      formatSelection("-show_entries format=duration -show_format"),
+      json,
+      0,
+      true,
+      true,
+    ],
+    [formatSelection("-show_entries format"), json, 0, true, true],
+    [
+      formatSelection(
+        "-show_entries format=size -show_entries format=duration",
+      ),
+      json,
+      0,
+      true,
+      true,
+    ],
+    [
+      formatSelection(
+        "-show_entries format=duration -show_entries format=size",
+      ),
+      json,
+      0,
+      true,
+      true,
+    ],
+    [
+      formatSelection("-show_format -show_entries format="),
+      json,
+      0,
+      false,
+      true,
+    ],
+    [canonicalProbe, JSON.stringify(probeWithoutSize), 0, false, true],
+    [canonicalProbe, json.replace('"1052620"', '"0"'), 0, false, true],
+    [canonicalProbe, json.replace('"1052620"', '"-5"'), 0, false, true],
+    [canonicalProbe, json.replace('"1052620"', '"1.1M"'), 0, false, true],
+    [canonicalProbe, json.replace('"1052620"', '"0.5"'), 0, false, true],
+    [canonicalProbe, json.replace('"1052620"', "null"), 0, false, true],
+    [canonicalProbe, '{"format":{"size":12345}', 0, false],
+    [`cd ${PROJECT} && ${probe} out/calm-morning.mp4`, json, 0, false, true],
+    [
+      `cd ${PROJECT} && ${probe} -show_entries stream=codec_type,duration:format=duration out/calm-morning.mp4`,
+      json,
+      0,
+      false,
+      true,
+    ],
+    [
+      `cd ${PROJECT} && ${probe} -show_entries 'stream=codec_type,duration:format=duration,size' out/calm-morning.mp4`,
+      json,
+      0,
+      true,
+      true,
+    ],
+    [
+      `cd ${PROJECT} && ${probe} -show_entries format=size out/calm-morning.mp4`,
+      '{"format":{"size":"12345"}}',
+      0,
+      true,
+    ],
+    [
+      `cd ${PROJECT} && ${probe} -show_entries stream=size:format=duration out/calm-morning.mp4`,
+      json,
+      0,
+      false,
+      true,
+    ],
+    [canonicalProbe.replace("out/", "wrong/out/"), json, 0, false],
+    [canonicalProbe + " out/other.mp4", json, 0, false],
+    [
+      canonicalProbe.replace(
+        "-show_streams -of json",
+        "-show_packets -of default=nw=1",
+      ),
+      json,
+      0,
+      false,
+    ],
+    [
+      canonicalProbe.replace(
+        "-show_streams",
+        "-select_streams v:0 -show_streams",
+      ),
+      json,
+      0,
+      false,
+    ],
+    [
+      `cd ${PROJECT} && npx remotion ffprobe -show_streams out/calm-morning.mp4`,
+      "codec_type=video\nwidth=1920\nheight=1080\nduration=18.200\ncodec_type=audio\nduration=18.219\n",
+      0,
+      false,
+      true,
+    ],
+    // Полные значения дорожек нельзя заменять префиксами или длительностью контейнера.
+    [textProbeCommand, textProbe, 0, false, true],
+    [
+      textProbeCommand,
+      textProbe.replace("width=1920\n", "width=19200\n"),
+      0,
+      false,
+    ],
+    [
+      textProbeCommand,
+      textProbe.replace("height=1080\n", "height=10800\n"),
+      0,
+      false,
+    ],
+    [
+      textProbeCommand,
+      textProbe.replace("duration=18.200\n", "duration=N/A\n"),
+      0,
+      false,
+    ],
+    [
+      textProbeCommand,
+      textProbe.replace(
+        "codec_type=audio\nduration=18.219\n",
+        "codec_type=audio\nduration=N/A\n",
+      ),
+      0,
+      false,
+    ],
+  ];
+}
+
+function checkFileSizeEvidence(
+  originalEvents: readonly EveEvalStreamEvent[],
+  evidenceTarget: Parameters<typeof voiceoverEvidence>[1],
+) {
+  const sizeCallIds = bashCallIds(
+    originalEvents,
+    (command) =>
+      /\b(?:ls|stat|wc|test)\s/u.test(command) &&
+      command.includes("out/calm-morning.mp4"),
+  );
+  const probeCallIds = bashCallIds(
+    originalEvents,
+    (command) => command.includes("ffprobe") && !/\bls\s/u.test(command),
+  );
+  expect(sizeCallIds.size).toBe(1);
+  expect(probeCallIds.size).toBe(1);
+
+  // Самостоятельный probe доказывает дорожки, но не запрашивает размер.
+  // Строка размера из рендера также не заменяет отдельную проверку файла.
+  const events = replaceBashInspection(
+    originalEvents,
+    probeCallIds,
+    `cd ${PROJECT} && npx remotion ffprobe -v error ` +
+      "-show_entries stream=codec_type,width,height,duration:format=duration -of json out/calm-morning.mp4",
+    JSON.stringify({
+      ...fixture.probe,
+      format: { duration: fixture.probe.format.duration },
+    }),
+  );
+  const withoutFileSize = events.filter(
+    (event) =>
+      event.type !== "action.result" ||
+      !sizeCallIds.has(event.data.result.callId),
+  );
+  expect(voiceoverEvidence(withoutFileSize, evidenceTarget)).toEqual({
+    frameRender: true,
+    pixels: true,
+    views: true,
+    fullRender: true,
+    fileSize: false,
+    probe: true,
+  });
+
+  const inspectionOnly = events.filter(
+    (event) =>
+      event.type !== "action.result" ||
+      !probeCallIds.has(event.data.result.callId),
+  );
+  const { synthesisEvents } = partitionSynthesisEvents(originalEvents);
+  const nextSynthesis = repeatInNextSteps(originalEvents, synthesisEvents);
+  for (const inspection of fileInspectionCases()) {
+    const [command, stdout, exitCode, expected, expectedProbe = false] =
+      inspection;
+    const changed = replaceBashInspection(
+      inspectionOnly,
+      sizeCallIds,
+      command,
+      stdout,
+      exitCode,
+    );
     expect(voiceoverEvidence(changed, evidenceTarget).fileSize, command).toBe(
       expected,
     );
+    expect(voiceoverEvidence(changed, evidenceTarget).probe, command).toBe(
+      expectedProbe,
+    );
+
+    const changedRequests = changed.filter(
+      (event) =>
+        event.type === "actions.requested" &&
+        event.data.actions.some((action) => sizeCallIds.has(action.callId)),
+    );
+    const requestSet = new Set<EveEvalStreamEvent>(changedRequests);
+    const premature = moveBeforeFullRender(
+      changed.filter((event) => !requestSet.has(event)),
+      changedRequests,
+    );
+    expect(voiceoverEvidence(premature, evidenceTarget), command).toMatchObject(
+      {
+        fileSize: false,
+        probe: false,
+      },
+    );
+    expect(
+      voiceoverEvidence([...changed, ...nextSynthesis], evidenceTarget),
+      command,
+    ).toMatchObject({ fileSize: false, probe: false });
   }
 }
 
 function checkEvidenceSequence(events: readonly EveEvalStreamEvent[]) {
-  const evidenceTarget = {
-    frames: framePaths,
-    video: `${PROJECT}/out/calm-morning.mp4`,
-    width: fixture.width,
-    height: fixture.height,
-    durationMs: fixture.videoDurationMs,
-  };
   expect(voiceoverEvidence(events, evidenceTarget)).toEqual({
     frameRender: true,
     pixels: true,
@@ -726,13 +1071,22 @@ function checkEvidenceSequence(events: readonly EveEvalStreamEvent[]) {
   ).toEqual(noEvidence);
 }
 
-test.each([
+const synthesisCases = [
   { fallback: false, parallel: false },
   { fallback: true, parallel: false },
   { fallback: true, parallel: true },
-])(
-  "согласованный путь от проекта до MP4 без исполнения инструментов (fallback=$fallback, parallel=$parallel)",
-  async ({ fallback, parallel }) => {
+] as const;
+
+test.each(
+  synthesisCases.flatMap((scenario) =>
+    (["stat", "ls", "ls-probe"] as const).map((inspection) => ({
+      ...scenario,
+      inspection,
+    })),
+  ),
+)(
+  "согласованный путь от проекта до MP4 без исполнения инструментов (fallback=$fallback, parallel=$parallel, inspection=$inspection)",
+  async ({ fallback, parallel, inspection }) => {
     const before = await fakeSandbox.counters();
     const target = await session(fallback);
     try {
@@ -741,7 +1095,7 @@ test.each([
       await checkSceneTimings(target, fallback);
       await reviewFrames(target);
       await renderVideo(target);
-      await checkMp4(target);
+      await checkMp4(target, inspection);
 
       const reread = await tool(target, "read_file", {
         filePath: `${PROJECT}/src/Root.tsx`,
@@ -770,6 +1124,47 @@ test.each([
   },
   120_000,
 );
+
+test("проверки MP4 от /workspace возвращают согласованные квитанции размера", async () => {
+  const target = await session(false);
+  const path = evidenceTarget.video;
+  try {
+    const paths = [
+      path,
+      "calm-morning/out/calm-morning.mp4",
+      "./calm-morning/out/calm-morning.mp4",
+    ];
+    const commands = paths.flatMap((operand) => [
+      `ls -l ${operand}`,
+      `wc -c ${operand}`,
+      `stat -c '%n %s bytes' ${operand}`,
+    ]);
+    for (const command of commands) {
+      const result = await tool(target, "bash", { command });
+      expect(result, command).toMatchObject({
+        status: "completed",
+        result: {
+          output: {
+            exitCode: 0,
+            stdout: expect.stringContaining(path),
+          },
+        },
+      });
+      const { stdout } = result.result.output as { stdout: string };
+      expect(stdout, command).toContain(fixture.probe.format.size);
+      expect(inspectVideoFile(command, stdout, path), command).toEqual({
+        nonempty: true,
+        probeStdout: null,
+      });
+    }
+    const wrongDirectory = await tool(target, "bash", {
+      command: "ls -l out/calm-morning.mp4",
+    });
+    expect(wrongDirectory).toMatchObject({ status: "failed" });
+  } finally {
+    await target.reset();
+  }
+}, 120_000);
 
 test("версионный Piper возвращает новые пути, а неподдержанные операции не подтверждают успех", async () => {
   const target = await session(true);
@@ -825,6 +1220,12 @@ test("версионный Piper возвращает новые пути, а н
       `cd ${PROJECT} && stat -c '%s' out/calm-morning.mp4 && npx remotion ffprobe -of json out/calm-morning.mp4`,
       `cd ${PROJECT} && wc -c out/calm-morning.mp4 && npx remotion ffprobe out/calm-morning.mp4`,
       `cd ${PROJECT} && npx remotion ffprobe -of json out/calm-morning.mp4 && stat -c '%s' out/calm-morning.mp4`,
+      `cd ${PROJECT} && npx remotion ffprobe -v error ` +
+        "-show_packets -of default=nw=1 out/calm-morning.mp4",
+      `cd ${PROJECT} && npx remotion ffprobe -v error -select_streams v:0 ` +
+        "-show_streams -show_format -of json out/calm-morning.mp4",
+      `cd ${PROJECT} && ls -lh out/calm-morning.mp4 && npx remotion ffprobe -v error ` +
+        "-show_entries stream=codec_type,duration:format=duration -of json out/other.mp4",
       `python3 /skills/piper_speak.py --text-file ${PROJECT}/voice/scene-01.txt ` +
         `--voice en_US-ryan-medium --out ${PROJECT}/public/voice/scene-01-piper`,
       `python3 /skills/piper_speak.py --text-file ${PROJECT}/voice/scene-01.txt ` +

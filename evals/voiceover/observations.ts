@@ -1,6 +1,7 @@
 import { posix } from "node:path";
 import type { EveEvalStreamEvent } from "eve/evals";
 import { isFullRender } from "../video/observations";
+import { inspectVideoFile } from "./file-inspection";
 import {
   sceneTimingsAfterSynthesis,
   type ObservedCall,
@@ -81,75 +82,37 @@ function validProbe(stdout: string, target: EvidenceTarget): boolean {
     videoDuration = Number(video.duration) * 1000;
     audioDuration = Number(audio.duration) * 1000;
   } catch {
-    const hasExpectedStreams =
-      stdout.includes("codec_type=video") &&
-      stdout.includes("codec_type=audio") &&
-      stdout.includes(`width=${target.width}`) &&
-      stdout.includes(`height=${target.height}`);
-    if (!hasExpectedStreams) {
+    const streams: Record<string, string>[] = [];
+    let current: Record<string, string> | null = null;
+    for (const line of stdout.split("\n")) {
+      const field = /^(codec_type|width|height|duration)=(.+)$/u.exec(line);
+      if (!field) {
+        continue;
+      }
+      const [, key, value] = field;
+      if (key === "codec_type") {
+        current = { codec_type: value };
+        streams.push(current);
+      } else if (current && !(key in current)) {
+        current[key] = value;
+      }
+    }
+    const video = streams.find((stream) => stream.codec_type === "video");
+    const audio = streams.find((stream) => stream.codec_type === "audio");
+    if (
+      !video ||
+      !audio ||
+      Number(video.width) !== target.width ||
+      Number(video.height) !== target.height
+    ) {
       return false;
     }
-
-    const durations = [...stdout.matchAll(/^duration=([\d.]+)$/gmu)].map(
-      (match) => Number(match[1]) * 1000,
-    );
-    [videoDuration, audioDuration] = durations;
+    videoDuration = Number(video.duration) * 1000;
+    audioDuration = Number(audio.duration) * 1000;
   }
   const hasExpectedDuration = Math.abs(videoDuration - target.durationMs) <= 34;
   const audioMatchesVideo = Math.abs(audioDuration - videoDuration) <= 100;
   return hasExpectedDuration && audioMatchesVideo;
-}
-
-function confirmsNonemptyVideo(
-  command: string,
-  stdout: string,
-  target: EvidenceTarget,
-): boolean {
-  const argument = String.raw`("[^"]+"|'[^']+'|[^\s"';&|<>]+)`;
-  const operation = [
-    String.raw`test\s+-s`,
-    String.raw`stat(?:\s+(?:-c\s*|--format(?:=|\s+))["']?(?:%s(?: bytes)?|%n %s bytes)["']?)?`,
-    String.raw`wc\s+(?:-c|--bytes)(?:\s*<)?`,
-  ].join("|");
-  const check = new RegExp(
-    String.raw`^\s*(?:cd\s+${argument}\s*&&\s*)?` +
-      String.raw`(?:ls\s+-l\s+${argument}\s*&&\s*)?(${operation})` +
-      String.raw`\s+(?:--\s+)?${argument}` +
-      String.raw`(?:\s*&&\s*(?:npx\s+)?remotion\s+ffprobe\s+[^;&\n]*)?\s*$`,
-    "u",
-  ).exec(command);
-  if (!check) {
-    return false;
-  }
-
-  const unquote = (value: string) => value.replace(/^["']|["']$/gu, "");
-  const cwd = check[1]
-    ? posix.resolve("/workspace", unquote(check[1]))
-    : "/workspace";
-  const path = posix.resolve(cwd, unquote(check[4]));
-  if (path !== posix.resolve("/workspace", target.video)) {
-    return false;
-  }
-  if (check[2] && posix.resolve(cwd, unquote(check[2])) !== path) {
-    return false;
-  }
-
-  if (check[3].startsWith("test")) {
-    return true;
-  }
-
-  const output = stdout.trim();
-  const size = check[3].startsWith("wc")
-    ? /^(\d+)(?:[\t ]+(.+))?$/u.exec(output)
-    : (/^([0-9]+)$/mu.exec(output) ??
-      /(?:^|\s)(\d+)\s+bytes$/u.exec(output) ??
-      /\bSize:\s*(\d+)\b/u.exec(output));
-  if (!size || !Number.isSafeInteger(Number(size[1])) || Number(size[1]) <= 0) {
-    return false;
-  }
-
-  // wc может вернуть и имя файла; оно должно указывать на тот же результат.
-  return !size[2] || posix.resolve(cwd, unquote(size[2])) === path;
 }
 
 function isSynthesisRequest(
@@ -322,18 +285,15 @@ function recordCompletedEvidence(
     state.renderedVideo = true;
   }
 
-  if (
-    request.fileSizeReady &&
-    confirmsNonemptyVideo(command, output.stdout, target)
-  ) {
+  const inspection = inspectVideoFile(command, output.stdout, target.video);
+  if (request.fileSizeReady && inspection.nonempty) {
     state.nonemptyVideo = true;
   }
 
   const isVideoProbe =
-    /\bffprobe\b/u.test(command) &&
-    command.includes(videoName) &&
+    inspection.probeStdout !== null &&
     request.probeReady &&
-    validProbe(output.stdout, target);
+    validProbe(inspection.probeStdout, target);
   if (isVideoProbe) {
     state.probedVideo = true;
   }
