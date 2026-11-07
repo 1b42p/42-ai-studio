@@ -1,8 +1,27 @@
-import { expect, test } from "vitest";
+import { Client } from "eve/client";
+import type { EveEvalContext, ToolStub } from "eve/evals";
+import { expect, inject, test } from "vitest";
+import { voiceoverSession } from "../../evals/voiceover/fixtures";
 import { piperScenes } from "../../evals/voiceover/observations";
+import { loadConfig } from "../../lib/config";
 
 const call = (command: string) => ({ name: "bash", status: "completed" as const, input: { command } });
 const synth = (out: string) => `python3 /skills/piper_speak.py --voice ru_RU-denis-medium --text-file scene.txt --out ${out}`;
+
+test.each([false, true])("полный набор подмен voiceover принимается HTTP-сервером eve (fallback=%s)", async (fallback) => {
+  let captured: readonly ToolStub[] = [];
+  const token = loadConfig().eveEvalAuthToken!;
+  const context = {
+    target: { fetch: (path: string) => fetch(`${inject("appUrl")}${path}`, { headers: { authorization: `Bearer ${token}` } }) },
+    session: async ({ stubs }: { stubs: readonly ToolStub[] }) => { captured = stubs; return {}; },
+  } as unknown as EveEvalContext;
+  await voiceoverSession(context, fallback);
+  expect(captured.length).toBeLessThanOrEqual(100);
+  expect(new Set(captured.map(({ id }) => id)).size).toBe(captured.length);
+  const client = new Client({ host: inject("appUrl"), auth: { bearer: token }, redirect: "manual" });
+  const { session } = await client.sessions.create({ stubs: captured });
+  await session.reset();
+});
 
 test("оценка Piper не принимает установку или озвучку одной сцены за три", () => {
   expect(piperScenes([call('pip install "piper-tts[alignment]"')])).toEqual([]);
