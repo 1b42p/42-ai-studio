@@ -1,6 +1,7 @@
 import type { ToolStub } from "eve/evals";
 
 import data from "../fixtures/voiceover/project.json";
+import { voiceoverFrames } from "./media-fixture";
 import {
   duration,
   escapePattern,
@@ -12,6 +13,7 @@ import {
   readResponse,
   REVIEW_FRAMES,
   sceneBase,
+  workspacePathForms,
 } from "./fixture-data";
 
 const COMMAND_PART = "(?:\\\\\\r?\\n|[^;&\\n])";
@@ -56,10 +58,14 @@ function projectArgument(path: string) {
   return `(?<!\\S)${projectPath(path)}`;
 }
 
-function remotionCommand(operation: string, args: string) {
+function remotionCommand(
+  operation: string,
+  args: string,
+  trailingCommand = "",
+) {
   const changeDirectory = `(?:cd\\s+${shellToken(escapePattern(PROJECT))}\\s*&&\\s*)?`;
   const launcher = "(?:npx\\s+(?:--yes\\s+)?)?remotion";
-  return `^\\s*${changeDirectory}${launcher}\\s+${operation}\\s+${args}\\s*$`;
+  return `^\\s*${changeDirectory}${launcher}\\s+${operation}\\s+${args}${trailingCommand}\\s*$`;
 }
 
 function compositionArguments() {
@@ -150,7 +156,7 @@ function unsupportedCommandStubs(): ToolStub[] {
     ),
     rejectedCommand(
       "unsupported-combined-inspection",
-      "(?:remotion\\s+(?:render|still|compositions|ffprobe)[\\s\\S]*remotion\\s+(?:render|still|compositions|ffprobe)|(?:cat|readFile)[\\s\\S]*(?:remotion|ffprobe))",
+      "(?:remotion\\s+(?:render|still|compositions|ffprobe)[\\s\\S]*remotion\\s+(?:render|still|compositions|ffprobe)|(?:cat|readFile)[\\s\\S]*(?:remotion|ffprobe)|\\b(?:stat|wc)\\s[^;\\n]*&&\\s*[^;\\n]*\\bffprobe\\b|\\bffprobe\\b[\\s\\S]*&&\\s*(?:stat|wc)\\s)",
       "Разделите составную проверку на отдельные вызовы: её полный результат не записан в контракте проекта.",
     ),
     rejectedCommand(
@@ -194,7 +200,9 @@ function audioStubs(fallback: boolean): ToolStub[] {
       tool: "read_file",
       match: {
         filePath: {
-          pattern: `scene-${number}${fallback ? "-piper" : ""}${version}\\.words\\.json$`,
+          enum: workspacePathForms(
+            `${sceneBase(index, fallback, version)}.words.json`,
+          ),
         },
       },
       outcome: {
@@ -222,25 +230,18 @@ function audioStubs(fallback: boolean): ToolStub[] {
 }
 
 function reviewStubs(): ToolStub[] {
-  const renderFrames = remotionCommand(
-    "render",
+  const args =
     compositionArguments() +
-      `(?=[^;&\\n]*${projectArgument("out/frames-1")})` +
-      `(?=[^;&\\n]*--frames[= ]["']?${REVIEW_FRAMES.join(",")}(?:[\\s"']|$))[^;&\\n]*`,
-  );
-  const stills = REVIEW_FRAMES.map((number, index) => {
-    const pattern = remotionCommand(
-      "still",
-      compositionArguments() +
-        `(?=[^;&\\n]*${projectArgument(`out/frames-1/${FRAME_NAMES[index]}`)})` +
-        `(?=[^;&\\n]*--frame[= ]${number}(?:\\s|$))[^;&\\n]*`,
-    );
-    return commandStub(
-      `still-${number}`,
-      pattern,
-      `Rendered frame ${number}\n${framePaths[index]}\n`,
-    );
-  });
+    `(?=[^;&\\n]*${projectArgument("out/frames-1")})` +
+    `(?=[^;&\\n]*--frames[= ]["']?${REVIEW_FRAMES.join(",")}(?:[\\s"']|$))[^;&\\n]*`;
+  const renderFrames = remotionCommand("render", args);
+  const rendered = `Rendered frames (8/8)\n${framePaths.join("\n")}\n`;
+  const detailedListing = voiceoverFrames
+    .map(
+      (frame, index) =>
+        `-rw-r--r-- 1 user user ${Math.ceil(frame.size / 1024)}K ${FRAME_NAMES[index]}`,
+    )
+    .join("\n");
   const pixelResults = data.pixels
     .map((pixel) =>
       JSON.stringify({
@@ -252,11 +253,24 @@ function reviewStubs(): ToolStub[] {
 
   return [
     commandStub(
-      "render-review",
-      renderFrames,
-      `Rendered frames (8/8)\n${framePaths.join("\n")}\n`,
+      "render-review-with-details",
+      remotionCommand(
+        "render",
+        args,
+        `\\s*&&\\s*ls\\s+-lh\\s+${projectArgument("out/frames-1")}`,
+      ),
+      `${rendered}${detailedListing}\n`,
     ),
-    ...stills,
+    commandStub(
+      "render-review-with-listing",
+      remotionCommand(
+        "render",
+        args,
+        `\\s*&&\\s*ls\\s+${projectArgument("out/frames-1")}`,
+      ),
+      `${rendered}${FRAME_NAMES.join("\n")}\n`,
+    ),
+    commandStub("render-review", renderFrames, rendered),
     {
       id: "unrecorded-review",
       tool: "bash",
@@ -269,7 +283,7 @@ function reviewStubs(): ToolStub[] {
         response: bashResponse(
           "",
           1,
-          `Контрольная выборка проекта: ${REVIEW_FRAMES.join(",")}; каталог out/frames-1.\n`,
+          `Записан только общий рендер контрольной выборки ${REVIEW_FRAMES.join(",")} в out/frames-1. Отдельные still и другие каталоги этим контрактом не подтверждаются.\n`,
         ),
       },
     },
@@ -320,6 +334,13 @@ function videoStubs(): { probe: ToolStub[]; render: ToolStub[] } {
         `Rendered ${data.frames}/${data.frames}\nEncoded ${data.frames}/${data.frames}\nOutput: out/calm-morning.mp4 (1.0 MB)\n`,
       ),
       commandStub(
+        "listed-file-size",
+        `^\\s*(?:cd\\s+${shellToken(escapePattern(PROJECT))}\\s*&&\\s*)?` +
+          `ls\\s+-l\\s+${projectPath("out/calm-morning.mp4")}\\s*&&\\s*` +
+          `stat\\s+-c\\s+['"]%s bytes['"]\\s+${projectPath("out/calm-morning.mp4")}\\s*$`,
+        `-rw-r--r-- 1 user user ${data.probe.format.size} out/calm-morning.mp4\n${data.probe.format.size} bytes\n`,
+      ),
+      commandStub(
         "file-size",
         "(?:stat|wc\\s+-c)[\\s\\S]*out/calm-morning\\.mp4",
         `${data.probe.format.size}\n`,
@@ -333,16 +354,36 @@ function videoStubs(): { probe: ToolStub[]; render: ToolStub[] } {
   };
 }
 
-function environmentStubs(): ToolStub[] {
+function piperSetupStubs(): ToolStub[] {
+  const install =
+    "(?:python3?\\s+-m\\s+)?pip\\s+install[^;&\\n]*piper-tts[^;&\\n]*";
+  const download = `python3?\\s+-m\\s+piper\\.download_voices\\s+${escapePattern(PIPER_VOICE)}[^;&\\n]*`;
+
+  return [
+    rejectedCommand(
+      "combined-piper-setup",
+      "^(?=[\\s\\S]*(?:pip\\s+install|piper\\.download_voices))(?=[\\s\\S]*&&)",
+      "Результат составной установки не записан. Выполните проверку диска, установку Piper и скачивание голоса отдельными вызовами.",
+    ),
+    commandStub(
+      "piper-install",
+      `^\\s*${install}\\s*$`,
+      "Successfully installed piper-tts-1.8.0\n",
+    ),
+    commandStub(
+      "piper-download",
+      `^\\s*${download}\\s*$`,
+      `${PIPER_VOICE}.onnx\n${PIPER_VOICE}.onnx.json\n`,
+    ),
+  ];
+}
+
+function environmentStubs(fallback: boolean): ToolStub[] {
   const metadata = `${data.composition}  ${data.fps} fps  ${data.width}×${data.height}  ${data.frames} frames (${duration(data.videoDurationMs)} sec)\n`;
   const listing = `${Object.keys(data.files).join("\n")}\npublic/voice/\nout/\nNOTES.md\n`;
 
   return [
-    commandStub(
-      "piper-setup",
-      "(?:pip[\\s\\S]*install[\\s\\S]*piper|piper\\.download_voices)",
-      `Successfully installed piper-tts-1.8.0\n${PIPER_VOICE}.onnx\n${PIPER_VOICE}.onnx.json\n`,
-    ),
+    ...(fallback ? piperSetupStubs() : []),
     commandStub("composition-metadata", "remotion\\s+compositions", metadata),
     commandStub(
       "project-directories",
@@ -362,7 +403,7 @@ function environmentStubs(): ToolStub[] {
     ),
     commandStub(
       "project-listing",
-      "\\b(?:ls|find)\\s+[^;&\\n]*(?:/workspace|/opt/remotion)",
+      `^\\s*(?:ls|find)(?:\\s+-[al]+)?\\s+${shellToken(escapePattern(PROJECT) + "/?")}\\s*$`,
       listing,
     ),
   ];
@@ -373,12 +414,11 @@ export function mediaStubs(fallback: boolean): ToolStub[] {
 
   return [
     ...unsupportedCommandStubs(),
-    ...piperBatchStubs(),
-    ...piperLoopStubs(),
+    ...(fallback ? [...piperBatchStubs(), ...piperLoopStubs()] : []),
     ...audioStubs(fallback),
     ...video.probe,
     ...reviewStubs(),
     ...video.render,
-    ...environmentStubs(),
+    ...environmentStubs(fallback),
   ];
 }

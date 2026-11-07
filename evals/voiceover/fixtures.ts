@@ -13,6 +13,7 @@ import {
   SCENES,
   sceneBase,
   VOICE,
+  workspacePathForms,
 } from "./fixture-data";
 import { voiceoverFrameOutputs } from "./media-fixture";
 
@@ -81,13 +82,6 @@ const plannedNotes = [
   "",
 ].join("\n");
 
-const reviewedNotes = [
-  plannedNotes,
-  "Проверка пикселей и просмотр всех восьми кадров: успешно.",
-  "Субтитры читаемы, появляются по таймингам, не больше двух строк в безопасной зоне.",
-  "",
-].join("\n");
-
 function notesEdit(previous: string, next: string) {
   const lineDifference = next.split("\n").length - previous.split("\n").length;
 
@@ -123,7 +117,7 @@ function projectStubs(): ToolStub[] {
     ([path, content], index) => ({
       id: `project-file-${index}`,
       tool: "read_file",
-      match: { filePath: { const: `${PROJECT}/${path}` } },
+      match: { filePath: { enum: workspacePathForms(`${PROJECT}/${path}`) } },
       outcome: { response: readResponse(`${PROJECT}/${path}`, content) },
     }),
   );
@@ -144,20 +138,14 @@ function projectStubs(): ToolStub[] {
       id: "project-notes",
       tool: "read_file",
       match: { filePath: { pattern: "(?:^|/)NOTES\\.md$" } },
-      outcomes: [
-        { response: readResponse(`${PROJECT}/NOTES.md`, plannedNotes) },
-        { response: readResponse(`${PROJECT}/NOTES.md`, reviewedNotes) },
-      ],
+      outcome: { response: readResponse(`${PROJECT}/NOTES.md`, plannedNotes) },
     },
     ...frames,
     {
       id: "notes-edit",
       tool: "edit_file",
       match: { filePath: { pattern: "(?:^|/)NOTES\\.md$" } },
-      outcomes: [
-        notesEdit(notes, plannedNotes),
-        notesEdit(plannedNotes, reviewedNotes),
-      ],
+      outcome: notesEdit(notes, plannedNotes),
     },
     {
       id: "unexpected-edit",
@@ -194,7 +182,7 @@ function speechStubs(fallback: boolean): ToolStub[] {
     match: {
       text: { const: text },
       voice: { const: VOICE },
-      outputPath: { const: sceneBase(index, false) },
+      outputPath: { enum: workspacePathForms(sceneBase(index, false)) },
     },
     outcome: {
       response: {
@@ -256,6 +244,16 @@ export async function voiceoverSession(t: EveEvalContext, fallback: boolean) {
     ...projectStubs(),
     ...mediaStubs(fallback),
     ...speechStubs(fallback),
+    {
+      id: "unexpected-speech",
+      tool: "speak",
+      outcome: {
+        throw: {
+          message:
+            "speak_bad_input: Укажите утверждённый текст сцены, голос ru-RU-SvetlanaNeural и путь calm-morning/public/voice/scene-NN без расширения. Абсолютный путь от /workspace также допустим.",
+        },
+      },
+    },
     {
       id: "voices",
       tool: "list_voices",

@@ -28,7 +28,9 @@ interface EvidenceTarget {
 interface EvidenceRequest extends ObservedCall {
   revision: number;
   synthesisReady: boolean;
+  viewReady: boolean;
   renderReady: boolean;
+  fileSizeReady: boolean;
   probeReady: boolean;
 }
 
@@ -37,8 +39,13 @@ interface EvidenceState {
   checkedPixels: Set<string>;
   viewedFrames: Set<string>;
   pendingSynthesis: Set<string>;
+  synthesisStep: Pick<
+    RequestedActionsEvent["data"],
+    "turnId" | "stepIndex" | "sequence"
+  > | null;
   revision: number;
   renderedVideo: boolean;
+  nonemptyVideo: boolean;
   probedVideo: boolean;
   history: ObservedCallResult[];
   requests: Map<string, EvidenceRequest>;
@@ -93,6 +100,58 @@ function validProbe(stdout: string, target: EvidenceTarget): boolean {
   return hasExpectedDuration && audioMatchesVideo;
 }
 
+function confirmsNonemptyVideo(
+  command: string,
+  stdout: string,
+  target: EvidenceTarget,
+): boolean {
+  const argument = String.raw`("[^"]+"|'[^']+'|[^\s"';&|<>]+)`;
+  const operation = [
+    String.raw`test\s+-s`,
+    String.raw`stat(?:\s+(?:-c\s*|--format(?:=|\s+))["']?(?:%s(?: bytes)?|%n %s bytes)["']?)?`,
+    String.raw`wc\s+(?:-c|--bytes)(?:\s*<)?`,
+  ].join("|");
+  const check = new RegExp(
+    String.raw`^\s*(?:cd\s+${argument}\s*&&\s*)?` +
+      String.raw`(?:ls\s+-l\s+${argument}\s*&&\s*)?(${operation})` +
+      String.raw`\s+(?:--\s+)?${argument}` +
+      String.raw`(?:\s*&&\s*(?:npx\s+)?remotion\s+ffprobe\s+[^;&\n]*)?\s*$`,
+    "u",
+  ).exec(command);
+  if (!check) {
+    return false;
+  }
+
+  const unquote = (value: string) => value.replace(/^["']|["']$/gu, "");
+  const cwd = check[1]
+    ? posix.resolve("/workspace", unquote(check[1]))
+    : "/workspace";
+  const path = posix.resolve(cwd, unquote(check[4]));
+  if (path !== posix.resolve("/workspace", target.video)) {
+    return false;
+  }
+  if (check[2] && posix.resolve(cwd, unquote(check[2])) !== path) {
+    return false;
+  }
+
+  if (check[3].startsWith("test")) {
+    return true;
+  }
+
+  const output = stdout.trim();
+  const size = check[3].startsWith("wc")
+    ? /^(\d+)(?:[\t ]+(.+))?$/u.exec(output)
+    : (/^([0-9]+)$/mu.exec(output) ??
+      /(?:^|\s)(\d+)\s+bytes$/u.exec(output) ??
+      /\bSize:\s*(\d+)\b/u.exec(output));
+  if (!size || !Number.isSafeInteger(Number(size[1])) || Number(size[1]) <= 0) {
+    return false;
+  }
+
+  // wc может вернуть и имя файла; оно должно указывать на тот же результат.
+  return !size[2] || posix.resolve(cwd, unquote(size[2])) === path;
+}
+
 function isSynthesisRequest(
   name: string,
   input: ObservedCall["input"],
@@ -105,14 +164,27 @@ function isSynthesisRequest(
   );
 }
 
-function beginSynthesis(state: EvidenceState, callId: string): void {
+function beginSynthesis(
+  state: EvidenceState,
+  step: RequestedActionsEvent["data"],
+  callId: string,
+): void {
+  const startsNewStep =
+    state.synthesisStep?.turnId !== step.turnId ||
+    state.synthesisStep?.stepIndex !== step.stepIndex ||
+    state.synthesisStep?.sequence !== step.sequence;
+  if (startsNewStep) {
+    state.synthesisStep = step;
+    state.revision += 1;
+    state.pendingSynthesis.clear();
+    state.renderedFrames.clear();
+    state.checkedPixels.clear();
+    state.viewedFrames.clear();
+    state.renderedVideo = false;
+    state.nonemptyVideo = false;
+    state.probedVideo = false;
+  }
   state.pendingSynthesis.add(callId);
-  state.revision += 1;
-  state.renderedFrames.clear();
-  state.checkedPixels.clear();
-  state.viewedFrames.clear();
-  state.renderedVideo = false;
-  state.probedVideo = false;
 }
 
 function recordRequestedActions(
@@ -120,13 +192,14 @@ function recordRequestedActions(
   state: EvidenceState,
   target: EvidenceTarget,
 ): void {
-  // Весь пакет сначала сбрасывает доказательства, затем фиксирует готовность запросов.
+  // Один шаг синтеза может поступить несколькими событиями actions.requested.
+  // Сначала сбрасываем доказательства, затем фиксируем готовность запросов.
   for (const action of event.data.actions) {
     if (
       action.kind === "tool-call" &&
       isSynthesisRequest(action.toolName, action.input)
     ) {
-      beginSynthesis(state, action.callId);
+      beginSynthesis(state, event.data, action.callId);
     }
   }
 
@@ -144,9 +217,19 @@ function recordRequestedActions(
       status: "pending",
       revision: state.revision,
       synthesisReady,
+      viewReady:
+        action.toolName === "read_file" &&
+        typeof action.input.filePath === "string" &&
+        state.renderedFrames.has(
+          posix.resolve("/workspace", action.input.filePath),
+        ) &&
+        state.checkedPixels.has(
+          posix.resolve("/workspace", action.input.filePath),
+        ),
       renderReady:
         target.frames.every((path) => state.viewedFrames.has(path)) &&
         synthesisReady,
+      fileSizeReady: state.renderedVideo,
       probeReady: state.renderedVideo,
     });
   }
@@ -159,9 +242,10 @@ function recordViewedFrame(
 ): void {
   if (
     request.name !== "read_file" ||
+    !request.viewReady ||
     typeof request.input.filePath !== "string" ||
     typeof output.path !== "string" ||
-    output.path !== request.input.filePath ||
+    output.path !== posix.resolve("/workspace", request.input.filePath) ||
     !record(output.file) ||
     output.file.mediaType !== "image/jpeg"
   ) {
@@ -238,6 +322,13 @@ function recordCompletedEvidence(
     state.renderedVideo = true;
   }
 
+  if (
+    request.fileSizeReady &&
+    confirmsNonemptyVideo(command, output.stdout, target)
+  ) {
+    state.nonemptyVideo = true;
+  }
+
   const isVideoProbe =
     /\bffprobe\b/u.test(command) &&
     command.includes(videoName) &&
@@ -258,8 +349,10 @@ export function voiceoverEvidence(
     checkedPixels: new Set(),
     viewedFrames: new Set(),
     pendingSynthesis: new Set(),
+    synthesisStep: null,
     revision: 0,
     renderedVideo: false,
+    nonemptyVideo: false,
     probedVideo: false,
     history: [],
     requests: new Map(),
@@ -307,6 +400,7 @@ export function voiceoverEvidence(
     pixels: target.frames.every((path) => state.checkedPixels.has(path)),
     views: target.frames.every((path) => state.viewedFrames.has(path)),
     fullRender: state.renderedVideo,
+    fileSize: state.nonemptyVideo,
     probe: state.probedVideo,
   };
 }

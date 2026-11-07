@@ -72,9 +72,14 @@ async function tool(target: ClientSession, name: string, input: object) {
 }
 
 type ToolResult = Awaited<ReturnType<typeof tool>>;
+type RequestedActionsEvent = Extract<
+  EveEvalStreamEvent,
+  { type: "actions.requested" }
+>;
+type ActionResultEvent = Extract<EveEvalStreamEvent, { type: "action.result" }>;
 
-function piperCommand(suffix: string) {
-  return [1, 2, 3]
+function piperCommand(suffix: string, scenes = [1, 2, 3]) {
+  return scenes
     .map(
       (number) =>
         `python3 "$HOME/.agents/skills/voiceover/scripts/piper_speak.py" ` +
@@ -84,13 +89,17 @@ function piperCommand(suffix: string) {
     .join(" && ");
 }
 
-function expectPiperReceipts(result: ToolResult, suffix: string) {
+function expectPiperReceipts(
+  result: ToolResult,
+  suffix: string,
+  scenes = [1, 2, 3],
+) {
   const { stdout } = result.result.output as { stdout: string };
   const receipts = stdout
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line) as { timingsPath: string });
-  const expectedPaths = [1, 2, 3].map(
+  const expectedPaths = scenes.map(
     (number) => `${PROJECT}/public/voice/scene-0${number}${suffix}.words.json`,
   );
 
@@ -142,7 +151,11 @@ async function inspectProject(target: ClientSession) {
   return root;
 }
 
-async function synthesizeScenes(target: ClientSession, fallback: boolean) {
+async function synthesizeScenes(
+  target: ClientSession,
+  fallback: boolean,
+  parallel: boolean,
+) {
   if (fallback) {
     const failedSpeech = await tool(target, "speak", {
       text: SCENES[0],
@@ -151,24 +164,35 @@ async function synthesizeScenes(target: ClientSession, fallback: boolean) {
     });
     expect(failedSpeech).toMatchObject({ status: "failed" });
 
-    const result = await tool(target, "bash", {
-      command: piperCommand("-piper"),
-    });
-    expect(result).toMatchObject({
-      status: "completed",
-      result: { output: { exitCode: 0 } },
-    });
-    expectPiperReceipts(result, "-piper");
-  } else {
-    for (let index = 0; index < SCENES.length; index++) {
-      const result = await tool(target, "speak", {
-        text: SCENES[index],
-        voice: VOICE,
-        outputPath: `${PROJECT}/public/voice/scene-0${index + 1}`,
+    const batches = parallel ? [[1], [2], [3]] : [[1, 2, 3]];
+    for (const scenes of batches) {
+      const result = await tool(target, "bash", {
+        command: piperCommand("-piper", scenes),
       });
       expect(result).toMatchObject({
         status: "completed",
-        result: { output: { durationMs: fixture.scenes[index].durationMs } },
+        result: { output: { exitCode: 0 } },
+      });
+      expectPiperReceipts(result, "-piper", scenes);
+    }
+  } else {
+    const projectPaths = [PROJECT, "calm-morning", "./calm-morning"];
+    for (let index = 0; index < SCENES.length; index++) {
+      const absolutePath = `${PROJECT}/public/voice/scene-0${index + 1}`;
+      const result = await tool(target, "speak", {
+        text: SCENES[index],
+        voice: VOICE,
+        outputPath: `${projectPaths[index]}/public/voice/scene-0${index + 1}`,
+      });
+      expect(result).toMatchObject({
+        status: "completed",
+        result: {
+          output: {
+            audioPath: `${absolutePath}.mp3`,
+            timingsPath: `${absolutePath}.words.json`,
+            durationMs: fixture.scenes[index].durationMs,
+          },
+        },
       });
     }
   }
@@ -195,7 +219,8 @@ async function reviewFrames(target: ClientSession) {
   const review = await tool(target, "bash", {
     command:
       `cd ${PROJECT} && npx remotion render src/index.ts ${fixture.composition} ` +
-      `out/frames-1 --frames=${REVIEW_FRAMES.join(",")} --image-format=jpeg`,
+      `out/frames-1 --frames=${REVIEW_FRAMES.join(",")} --image-format=jpeg ` +
+      "&& ls -lh out/frames-1",
   });
   expect(review).toMatchObject({
     status: "completed",
@@ -241,6 +266,21 @@ async function renderVideo(target: ClientSession) {
 }
 
 async function checkMp4(target: ClientSession) {
+  const size = await tool(target, "bash", {
+    command:
+      `cd ${PROJECT} && ls -l out/calm-morning.mp4 ` +
+      "&& stat -c '%s bytes' out/calm-morning.mp4",
+  });
+  expect(size).toMatchObject({
+    status: "completed",
+    result: {
+      output: {
+        exitCode: 0,
+        stdout: expect.stringContaining(`${fixture.probe.format.size} bytes\n`),
+      },
+    },
+  });
+
   const probe = await tool(target, "bash", {
     command:
       `cd ${PROJECT} && npx remotion ffprobe -v error ` +
@@ -319,9 +359,114 @@ function partitionSynthesisEvents(events: readonly EveEvalStreamEvent[]) {
   return { synthesisEvents, remainingEvents };
 }
 
-function moveSynthesisBeforeFullRender(
+function parallelPiperStep(
+  events: readonly EveEvalStreamEvent[],
+): EveEvalStreamEvent[] {
+  const requests = events.filter(
+    (event): event is RequestedActionsEvent =>
+      event.type === "actions.requested" &&
+      event.data.actions.some(
+        (action) =>
+          action.kind === "tool-call" &&
+          action.toolName === "bash" &&
+          String(action.input.command).includes("piper_speak.py"),
+      ),
+  );
+  expect(requests).toHaveLength(3);
+  expect(requests.map((event) => event.data.actions.length)).toEqual([1, 1, 1]);
+
+  const { turnId, stepIndex, sequence } = requests[0].data;
+  const step = { turnId, stepIndex, sequence };
+  const ids = new Set(
+    requests.flatMap((event) =>
+      event.data.actions.map((action) => action.callId),
+    ),
+  );
+  const results = events.filter(
+    (event): event is ActionResultEvent =>
+      event.type === "action.result" && ids.has(event.data.result.callId),
+  );
+  expect(results).toHaveLength(3);
+
+  const synthesisEvents = new Set<EveEvalStreamEvent>([
+    ...requests,
+    ...results,
+  ]);
+  const remaining = events.filter((event) => !synthesisEvents.has(event));
+  const firstRequestAt = events.indexOf(requests[0]);
+
+  // Отдельные события одного шага; JSON остаётся после всех результатов Piper.
+  return [
+    ...remaining.slice(0, firstRequestAt),
+    ...requests.map((event) => ({
+      ...event,
+      data: { ...event.data, ...step },
+    })),
+    ...results.toReversed().map((event) => ({
+      ...event,
+      data: { ...event.data, ...step },
+    })),
+    ...remaining.slice(firstRequestAt),
+  ];
+}
+
+function repeatInNextSteps(
+  events: readonly EveEvalStreamEvent[],
+  repeatedEvents: readonly EveEvalStreamEvent[],
+): EveEvalStreamEvent[] {
+  const requests = events.filter(
+    (event): event is RequestedActionsEvent =>
+      event.type === "actions.requested",
+  );
+  const stepOffset =
+    Math.max(...requests.map((event) => event.data.stepIndex)) + 1;
+  const sequenceOffset =
+    Math.max(...requests.map((event) => event.data.sequence)) + 1;
+
+  return repeatedEvents.map((event) => {
+    if (event.type !== "actions.requested" && event.type !== "action.result") {
+      return event;
+    }
+
+    const meta = { ...event.meta, id: `${event.meta.id}:resynthesis` };
+    const step = {
+      turnId: event.data.turnId,
+      stepIndex: event.data.stepIndex + stepOffset,
+      sequence: event.data.sequence + sequenceOffset,
+    };
+    if (event.type === "actions.requested") {
+      return {
+        ...event,
+        meta,
+        data: {
+          ...event.data,
+          ...step,
+          actions: event.data.actions.map((action) => ({
+            ...action,
+            callId: `resynthesis:${action.callId}`,
+          })),
+        },
+      };
+    }
+
+    return {
+      ...event,
+      meta,
+      data: {
+        ...event.data,
+        ...step,
+        result: {
+          ...event.data.result,
+          callId: `resynthesis:${event.data.result.callId}`,
+        },
+      },
+    };
+  });
+}
+
+function moveBeforeFullRender(
   remainingEvents: readonly EveEvalStreamEvent[],
-  synthesisEvents: readonly EveEvalStreamEvent[],
+  movedEvents: readonly EveEvalStreamEvent[],
 ) {
   const fullRenderAt = remainingEvents.findIndex((event) => {
     if (event.type !== "actions.requested") {
@@ -343,9 +488,155 @@ function moveSynthesisBeforeFullRender(
 
   return [
     ...remainingEvents.slice(0, fullRenderAt),
-    ...synthesisEvents,
+    ...movedEvents,
     ...remainingEvents.slice(fullRenderAt),
   ];
+}
+
+function moveViewRequestsBeforePixels(
+  events: readonly EveEvalStreamEvent[],
+): EveEvalStreamEvent[] {
+  const requests = events.filter(
+    (event) =>
+      event.type === "actions.requested" &&
+      event.data.actions.some(
+        (action) =>
+          action.kind === "tool-call" &&
+          action.toolName === "read_file" &&
+          framePaths.some((path) => path === action.input.filePath),
+      ),
+  );
+  expect(requests).toHaveLength(8);
+
+  const requestSet = new Set<EveEvalStreamEvent>(requests);
+  const remaining = events.filter((event) => !requestSet.has(event));
+  const pixelsAt = remaining.findIndex(isPixelCheckResult);
+  expect(pixelsAt).toBeGreaterThanOrEqual(0);
+
+  // Результаты картинок остаются после пикселей, но запросы уже преждевременны.
+  return [
+    ...remaining.slice(0, pixelsAt),
+    ...requests,
+    ...remaining.slice(pixelsAt),
+  ];
+}
+
+function checkFileSizeEvidence(
+  events: readonly EveEvalStreamEvent[],
+  evidenceTarget: Parameters<typeof voiceoverEvidence>[1],
+) {
+  const sizeCallIds = new Set(
+    events.flatMap((event) =>
+      event.type === "actions.requested"
+        ? event.data.actions
+            .filter(
+              (action) =>
+                action.kind === "tool-call" &&
+                action.toolName === "bash" &&
+                /\bstat\s+-c\s+['"]%s(?: bytes)?['"]/u.test(
+                  String(action.input.command),
+                ),
+            )
+            .map((action) => action.callId)
+        : [],
+    ),
+  );
+  expect(sizeCallIds.size).toBe(1);
+  const withoutFileSize = events.filter(
+    (event) =>
+      event.type !== "action.result" ||
+      !sizeCallIds.has(event.data.result.callId),
+  );
+  expect(voiceoverEvidence(withoutFileSize, evidenceTarget)).toEqual({
+    frameRender: true,
+    pixels: true,
+    views: true,
+    fullRender: true,
+    fileSize: false,
+    probe: true,
+  });
+
+  const sizeRequests = events.filter(
+    (event) =>
+      event.type === "actions.requested" &&
+      event.data.actions.some((action) => sizeCallIds.has(action.callId)),
+  );
+  const requestSet = new Set<EveEvalStreamEvent>(sizeRequests);
+  const sizeBeforeRender = moveBeforeFullRender(
+    events.filter((event) => !requestSet.has(event)),
+    sizeRequests,
+  );
+  expect(voiceoverEvidence(sizeBeforeRender, evidenceTarget).fileSize).toBe(
+    false,
+  );
+
+  const path = `${PROJECT}/out/calm-morning.mp4`;
+  const stat = `cd ${PROJECT} && stat -c '%s' out/calm-morning.mp4`;
+  const wc = `cd ${PROJECT} && wc -c out/calm-morning.mp4`;
+  const checks = [
+    [`test -s ${path}`, "", 0, true],
+    [`test -s ${path} && npx remotion ffprobe -of json ${path}`, "{}", 0, true],
+    [`stat -c '%n %s bytes' ${path}`, `${path} 12345 bytes\n`, 0, true],
+    [
+      `cd ${PROJECT} && ls -l out/calm-morning.mp4 && stat -c '%s bytes' out/calm-morning.mp4`,
+      "-rw-r--r-- 1 user user 12345 out/calm-morning.mp4\n12345 bytes\n",
+      0,
+      true,
+    ],
+    [`ls -l ${path} && stat -c '%s bytes' ${path}`, "1052620\n", 0, true],
+    [
+      `ls -l ${PROJECT}/out/other.mp4 && stat -c '%s bytes' ${path}`,
+      "12345 bytes\n",
+      0,
+      false,
+    ],
+    [`ls -l ${path} && stat -c '%s bytes' ${path}`, "0 bytes\n", 0, false],
+    [wc, "12345 out/calm-morning.mp4\n", 0, true],
+    [`wc -c < ${path}`, "12345\n", 0, true],
+    [`stat ${path}`, `File: ${path}\n Size: 12345\n`, 0, true],
+    [stat, "0\n", 0, false],
+    [wc, "0 out/calm-morning.mp4\n", 0, false],
+    [stat.replace("out/", "wrong/out/"), "12345\n", 0, false],
+    [`test -s ${path}`, "", 1, false],
+    [`ls -lh ${PROJECT}/out/frames-1`, "12345\n", 0, false],
+  ] as const;
+  for (const [command, stdout, exitCode, expected] of checks) {
+    const changed = events.map((event): EveEvalStreamEvent => {
+      if (event.type === "actions.requested") {
+        return {
+          ...event,
+          data: {
+            ...event.data,
+            actions: event.data.actions.map((action) =>
+              action.kind === "tool-call" && sizeCallIds.has(action.callId)
+                ? { ...action, input: { ...action.input, command } }
+                : action,
+            ),
+          },
+        };
+      }
+      if (
+        event.type === "action.result" &&
+        event.data.result.kind === "tool-result" &&
+        sizeCallIds.has(event.data.result.callId)
+      ) {
+        return {
+          ...event,
+          data: {
+            ...event.data,
+            result: {
+              ...event.data.result,
+              output: { stdout, exitCode },
+            },
+          },
+        };
+      }
+      return event;
+    });
+    expect(voiceoverEvidence(changed, evidenceTarget).fileSize, command).toBe(
+      expected,
+    );
+  }
 }
 
 function checkEvidenceSequence(events: readonly EveEvalStreamEvent[]) {
@@ -361,19 +652,49 @@ function checkEvidenceSequence(events: readonly EveEvalStreamEvent[]) {
     pixels: true,
     views: true,
     fullRender: true,
+    fileSize: true,
     probe: true,
   });
+  checkFileSizeEvidence(events, evidenceTarget);
 
   const withoutPixels = events.filter((event) => !isPixelCheckResult(event));
   expect(voiceoverEvidence(withoutPixels, evidenceTarget)).toMatchObject({
     pixels: false,
     views: false,
     fullRender: false,
+    fileSize: false,
+    probe: false,
+  });
+
+  const viewsBeforePixels = moveViewRequestsBeforePixels(events);
+  expect(voiceoverEvidence(viewsBeforePixels, evidenceTarget)).toEqual({
+    frameRender: true,
+    pixels: true,
+    views: false,
+    fullRender: false,
+    fileSize: false,
+    probe: false,
+  });
+
+  const withoutLastView = events.filter(
+    (event) =>
+      event.type !== "action.result" ||
+      event.data.result.kind !== "tool-result" ||
+      event.data.result.toolName !== "read_file" ||
+      (event.data.result.output as { path?: string } | null)?.path !==
+        framePaths.at(-1),
+  );
+  expect(voiceoverEvidence(withoutLastView, evidenceTarget)).toEqual({
+    frameRender: true,
+    pixels: true,
+    views: false,
+    fullRender: false,
+    fileSize: false,
     probe: false,
   });
 
   const { synthesisEvents, remainingEvents } = partitionSynthesisEvents(events);
-  const framesBeforeSynthesis = moveSynthesisBeforeFullRender(
+  const framesBeforeSynthesis = moveBeforeFullRender(
     remainingEvents,
     synthesisEvents,
   );
@@ -382,24 +703,41 @@ function checkEvidenceSequence(events: readonly EveEvalStreamEvent[]) {
     pixels: false,
     views: false,
     fullRender: false,
+    fileSize: false,
     probe: false,
   };
   expect(voiceoverEvidence(framesBeforeSynthesis, evidenceTarget)).toEqual(
     noEvidence,
   );
+  const nextSynthesis = repeatInNextSteps(events, synthesisEvents);
   expect(
-    voiceoverEvidence([...events, ...synthesisEvents], evidenceTarget),
+    voiceoverEvidence([...events, ...nextSynthesis], evidenceTarget),
+  ).toEqual(noEvidence);
+
+  const nextRequests = nextSynthesis.filter(
+    (event) => event.type === "actions.requested",
+  );
+  const staleResults = events.filter((event) => event.type === "action.result");
+  expect(
+    voiceoverEvidence(
+      [...events, ...nextRequests, ...staleResults],
+      evidenceTarget,
+    ),
   ).toEqual(noEvidence);
 }
 
-test.each([false, true])(
-  "согласованный путь от проекта до MP4 без исполнения инструментов (fallback=%s)",
-  async (fallback) => {
+test.each([
+  { fallback: false, parallel: false },
+  { fallback: true, parallel: false },
+  { fallback: true, parallel: true },
+])(
+  "согласованный путь от проекта до MP4 без исполнения инструментов (fallback=$fallback, parallel=$parallel)",
+  async ({ fallback, parallel }) => {
     const before = await fakeSandbox.counters();
     const target = await session(fallback);
     try {
       const root = await inspectProject(target);
-      await synthesizeScenes(target, fallback);
+      await synthesizeScenes(target, fallback, parallel);
       await checkSceneTimings(target, fallback);
       await reviewFrames(target);
       await renderVideo(target);
@@ -409,7 +747,20 @@ test.each([false, true])(
         filePath: `${PROJECT}/src/Root.tsx`,
       });
       expect(reread.result.output).toEqual(root.result.output);
-      checkEvidenceSequence(histories.get(target)!);
+      const events = histories.get(target)!;
+      checkEvidenceSequence(parallel ? parallelPiperStep(events) : events);
+
+      if (!fallback) {
+        const invalidSpeech = await tool(target, "speak", {
+          text: SCENES[0],
+          voice: VOICE,
+          outputPath: `${PROJECT}/public/voice/wrong-scene`,
+        });
+        expect(invalidSpeech).toMatchObject({
+          status: "failed",
+          error: { message: expect.stringContaining("speak_bad_input") },
+        });
+      }
 
       const after = await fakeSandbox.counters();
       expect(after).toEqual(before);
@@ -471,6 +822,9 @@ test("версионный Piper возвращает новые пути, а н
       `cd ${PROJECT} && npx remotion render src/index.ts Main wrong/out/calm-morning.mp4`,
       `cd ${PROJECT} && npx remotion render src/index.ts Main wrong/out/frames-1 --frames=${REVIEW_FRAMES.join(",")}`,
       `cd ${PROJECT} && npx remotion still src/index.ts Main wrong/out/frames-1/element-309.jpeg --frame=309`,
+      `cd ${PROJECT} && stat -c '%s' out/calm-morning.mp4 && npx remotion ffprobe -of json out/calm-morning.mp4`,
+      `cd ${PROJECT} && wc -c out/calm-morning.mp4 && npx remotion ffprobe out/calm-morning.mp4`,
+      `cd ${PROJECT} && npx remotion ffprobe -of json out/calm-morning.mp4 && stat -c '%s' out/calm-morning.mp4`,
       `python3 /skills/piper_speak.py --text-file ${PROJECT}/voice/scene-01.txt ` +
         `--voice en_US-ryan-medium --out ${PROJECT}/public/voice/scene-01-piper`,
       `python3 /skills/piper_speak.py --text-file ${PROJECT}/voice/scene-01.txt ` +

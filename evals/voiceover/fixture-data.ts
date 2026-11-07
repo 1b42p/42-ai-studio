@@ -20,6 +20,11 @@ export function sceneBase(index: number, fallback: boolean, version = "") {
   return `${PROJECT}/public/voice/scene-${number}${suffix}${version}`;
 }
 
+export function workspacePathForms(path: string) {
+  const relative = path.slice("/workspace/".length);
+  return [path, relative, `./${relative}`];
+}
+
 export function fixtureTimings(index: number, fallback: boolean) {
   return {
     ...data.scenes[index],

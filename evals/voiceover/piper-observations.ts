@@ -1,5 +1,7 @@
 import { posix } from "node:path";
 import type { EveEvalToolCall } from "eve/evals";
+import { resolveSpeechOutputPath } from "../../lib/speech/path";
+import data from "../fixtures/voiceover/project.json";
 
 export type ObservedCall = Pick<EveEvalToolCall, "name" | "status" | "input">;
 export type ObservedCallResult = ObservedCall & Pick<EveEvalToolCall, "output">;
@@ -8,6 +10,17 @@ interface PiperInvocation {
   out: string;
   textFile: string;
   voice: string;
+}
+
+interface SynthesisTiming {
+  scene: number;
+  durationMs: number;
+  voice: string;
+  text: string;
+}
+
+interface SynthesisReceipt extends SynthesisTiming {
+  timingsPath: string;
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -152,26 +165,104 @@ function synthesisOutputs(call: ObservedCallResult): unknown[] {
   return outputs;
 }
 
-function piperVoiceForTimings(
+function piperInvocationForTimings(
   call: ObservedCall,
   timingsPath: string,
-): string | undefined {
+): PiperInvocation | undefined {
   const command =
     typeof call.input.command === "string" ? call.input.command : "";
   const directory = /\bcd\s+(?:"([^"]+)"|'([^']+)'|([^\s;&]+))/u.exec(command);
-  const cwd =
-    directory?.[1] ?? directory?.[2] ?? directory?.[3] ?? "/workspace";
-  const invocation = piperInvocations([call]).find(
+  const cwd = posix.resolve(
+    "/workspace",
+    directory?.[1] ?? directory?.[2] ?? directory?.[3] ?? ".",
+  );
+  return piperInvocations([call]).find(
     ({ out }) => `${posix.resolve(cwd, out)}.words.json` === timingsPath,
   );
+}
 
-  return invocation ? `piper:${invocation.voice}` : undefined;
+function validatedSynthesis(
+  call: ObservedCallResult,
+  output: unknown,
+): SynthesisReceipt | undefined {
+  if (
+    !record(output) ||
+    typeof output.audioPath !== "string" ||
+    typeof output.timingsPath !== "string" ||
+    typeof output.durationMs !== "number" ||
+    !Number.isFinite(output.durationMs) ||
+    output.durationMs <= 0
+  ) {
+    return undefined;
+  }
+
+  const extension = call.name === "speak" ? ".mp3" : ".wav";
+  const basePath = output.audioPath.slice(0, -extension.length);
+  if (
+    !output.audioPath.endsWith(extension) ||
+    output.timingsPath !== `${basePath}.words.json`
+  ) {
+    return undefined;
+  }
+
+  const scene = /\/scene-0?([123])(?:-piper)?(?:-v\d+)?\.words\.json$/u.exec(
+    output.timingsPath,
+  )?.[1];
+  const common = {
+    timingsPath: output.timingsPath,
+    durationMs: output.durationMs,
+  };
+
+  if (call.name === "speak") {
+    if (
+      typeof call.input.text !== "string" ||
+      typeof output.text !== "string" ||
+      output.text.trim() !== call.input.text.trim() ||
+      output.text.trim().length === 0 ||
+      typeof output.voice !== "string" ||
+      output.voice.length === 0 ||
+      (call.input.voice !== undefined && call.input.voice !== output.voice) ||
+      (call.input.outputPath !== undefined &&
+        typeof call.input.outputPath !== "string")
+    ) {
+      return undefined;
+    }
+
+    // Без outputPath имя выбирает speak; проверяем пару, не выдумывая callId.
+    const requested = resolveSpeechOutputPath(
+      call.input.outputPath ?? basePath,
+      "",
+    );
+    if (!requested.ok || requested.basePath !== basePath) {
+      return undefined;
+    }
+
+    const text = output.text.trim();
+    const sceneNumber = scene
+      ? Number(scene)
+      : data.scenes.findIndex((item) => item.text === text) + 1;
+    if (sceneNumber === 0) {
+      return undefined;
+    }
+    return { ...common, scene: sceneNumber, voice: output.voice, text };
+  }
+
+  const invocation = piperInvocationForTimings(call, output.timingsPath);
+  if (!invocation || !scene) {
+    return undefined;
+  }
+  const sceneNumber = Number(scene);
+  return {
+    ...common,
+    scene: sceneNumber,
+    voice: `piper:${invocation.voice}`,
+    text: data.scenes[sceneNumber - 1].text,
+  };
 }
 
 function readSceneTiming(
   call: ObservedCallResult,
-  produced: ReadonlyMap<string, number>,
-  voices: ReadonlyMap<string, string>,
+  produced: ReadonlyMap<string, SynthesisTiming>,
 ): { scene: number; voice: string } | undefined {
   if (
     call.name !== "read_file" ||
@@ -184,8 +275,8 @@ function readSceneTiming(
   }
 
   const path = posix.resolve("/workspace", call.input.filePath);
-  const durationMs = produced.get(path);
-  if (durationMs === undefined || call.output.path !== path) {
+  const synthesis = produced.get(path);
+  if (synthesis === undefined || call.output.path !== path) {
     return undefined;
   }
 
@@ -193,19 +284,17 @@ function readSceneTiming(
     const timing: unknown = JSON.parse(
       call.output.content.replace(/^\d+: ?/gmu, ""),
     );
-    const scene = /\/scene-0?([123])(?:-piper)?(?:-v\d+)?\.words\.json$/u.exec(
-      path,
-    );
     if (
-      scene &&
       record(timing) &&
-      timing.durationMs === durationMs &&
-      timing.voice === voices.get(path) &&
+      timing.durationMs === synthesis.durationMs &&
+      timing.voice === synthesis.voice &&
+      typeof timing.text === "string" &&
+      timing.text.trim() === synthesis.text &&
       Array.isArray(timing.words) &&
       timing.words.length > 0 &&
       typeof timing.voice === "string"
     ) {
-      return { scene: Number(scene[1]), voice: timing.voice };
+      return { scene: synthesis.scene, voice: timing.voice };
     }
   } catch {
     return undefined;
@@ -218,8 +307,7 @@ function readSceneTiming(
 export function sceneTimingsAfterSynthesis(
   calls: readonly ObservedCallResult[],
 ): number[] {
-  const produced = new Map<string, number>();
-  const voices = new Map<string, string>();
+  const produced = new Map<string, SynthesisTiming>();
   const read = new Map<number, string>();
   const latestTimings = new Map<number, string>();
 
@@ -229,42 +317,21 @@ export function sceneTimingsAfterSynthesis(
     }
 
     for (const output of synthesisOutputs(call)) {
-      if (
-        !record(output) ||
-        typeof output.timingsPath !== "string" ||
-        typeof output.durationMs !== "number"
-      ) {
+      const synthesis = validatedSynthesis(call, output);
+      if (!synthesis) {
         continue;
       }
 
-      if (call.name === "bash") {
-        const voice = piperVoiceForTimings(call, output.timingsPath);
-        if (voice === undefined) {
-          continue;
-        }
-        voices.set(output.timingsPath, voice);
-      } else if (typeof output.voice === "string") {
-        voices.set(output.timingsPath, output.voice);
+      const previousPath = latestTimings.get(synthesis.scene);
+      if (previousPath && previousPath !== synthesis.timingsPath) {
+        produced.delete(previousPath);
       }
-
-      const scene =
-        /\/scene-0?([123])(?:-piper)?(?:-v\d+)?\.words\.json$/u.exec(
-          output.timingsPath,
-        )?.[1];
-      if (scene) {
-        const sceneNumber = Number(scene);
-        const previousPath = latestTimings.get(sceneNumber);
-        if (previousPath && previousPath !== output.timingsPath) {
-          produced.delete(previousPath);
-          voices.delete(previousPath);
-        }
-        latestTimings.set(sceneNumber, output.timingsPath);
-        read.delete(sceneNumber);
-      }
-      produced.set(output.timingsPath, output.durationMs);
+      latestTimings.set(synthesis.scene, synthesis.timingsPath);
+      read.delete(synthesis.scene);
+      produced.set(synthesis.timingsPath, synthesis);
     }
 
-    const timing = readSceneTiming(call, produced, voices);
+    const timing = readSceneTiming(call, produced);
     if (timing) {
       read.set(timing.scene, timing.voice);
     }
