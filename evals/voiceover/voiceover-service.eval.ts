@@ -1,6 +1,5 @@
 import { defineEval } from "eve/evals";
-import { satisfies } from "eve/evals/expect";
-import { videoLinks } from "../video/observations";
+import { assertVoiceoverAssembly } from "./assertions";
 import { SCENES, VOICE, VOICEOVER_REQUEST, VOICEOVER_TIMEOUT_MS, voiceoverSession } from "./fixtures";
 
 export default Array.from({ length: 3 }, () => defineEval({
@@ -14,6 +13,6 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.loadedSkill("voiceover");
     t.calledTool("speak", { count: (count) => count >= 3 });
     for (const text of SCENES) t.calledTool("speak", { input: { text }, output: { voice: VOICE } });
-    t.check(videoLinks(turn.message), satisfies((links: string[]) => links.length > 0, "итоговая ссылка на MP4 в песочнице"));
+    assertVoiceoverAssembly(t, turn);
   },
 }));

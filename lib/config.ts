@@ -69,6 +69,7 @@ export interface AppConfig {
   /** Изолированные оценки настоящей модели; только локально, не в production. */
   readonly appEvalMode: boolean;
   readonly appVideoEvalSandbox: boolean;
+  readonly appStubEvalSandbox: boolean;
   readonly eveEvalAuthToken: string | undefined;
   /** Порт основного экземпляра приложения в HTTP-тестах. */
   readonly testAppPort: number;
@@ -209,6 +210,7 @@ const envSchema = z.object({
   APP_TEST_MODE: envBoolean.optional().default(false),
   APP_EVAL_MODE: envBoolean.optional().default(false),
   APP_VIDEO_EVAL_SANDBOX: envBoolean.optional().default(false),
+  APP_STUB_EVAL_SANDBOX: envBoolean.optional().default(false),
   EVE_EVAL_AUTH_TOKEN: envString.min(24, "токен должен быть не короче 24 символов").optional(),
   TEST_APP_PORT: z.coerce
     .number({ error: "ожидается целое число от 1 до 65535" })
@@ -335,6 +337,12 @@ export function parseConfig(env: EnvRecord): AppConfig {
     if (data.APP_VIDEO_EVAL_SANDBOX && !data.APP_EVAL_MODE) {
       addIssue("APP_VIDEO_EVAL_SANDBOX", "требует APP_EVAL_MODE=1");
     }
+    if (data.APP_STUB_EVAL_SANDBOX && !data.APP_EVAL_MODE) {
+      addIssue("APP_STUB_EVAL_SANDBOX", "требует APP_EVAL_MODE=1");
+    }
+    if (data.APP_STUB_EVAL_SANDBOX && data.APP_VIDEO_EVAL_SANDBOX) {
+      addIssue("APP_STUB_EVAL_SANDBOX", "несовместима с APP_VIDEO_EVAL_SANDBOX=1");
+    }
 
     if (production) {
       if (data.TELEGRAM_CLIENT_ID === undefined) {
@@ -405,6 +413,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     appTestMode: data.APP_TEST_MODE,
     appEvalMode: data.APP_EVAL_MODE,
     appVideoEvalSandbox: data.APP_VIDEO_EVAL_SANDBOX,
+    appStubEvalSandbox: data.APP_STUB_EVAL_SANDBOX,
     eveEvalAuthToken: data.EVE_EVAL_AUTH_TOKEN,
     testAppPort: data.TEST_APP_PORT,
     nextDistDir: data.NEXT_DIST_DIR,
@@ -554,10 +563,18 @@ export function readUploadMaxBytes(): number {
 
 /** Выбор локального провайдера оценок при discovery/build. */
 export function readVideoEvalSandbox(): boolean {
+  return readEvalSandboxFlag("APP_VIDEO_EVAL_SANDBOX");
+}
+
+export function readStubEvalSandbox(): boolean {
+  return readEvalSandboxFlag("APP_STUB_EVAL_SANDBOX");
+}
+
+function readEvalSandboxFlag(name: "APP_VIDEO_EVAL_SANDBOX" | "APP_STUB_EVAL_SANDBOX"): boolean {
   loadDotenvFiles();
-  const raw = process.env.APP_VIDEO_EVAL_SANDBOX?.trim();
+  const raw = process.env[name]?.trim();
   const parsed = envBoolean.optional().default(false).safeParse(raw || undefined);
-  if (!parsed.success) throw new ConfigError(["APP_VIDEO_EVAL_SANDBOX: ожидается 1, 0, true или false"]);
+  if (!parsed.success) throw new ConfigError([`${name}: ожидается 1, 0, true или false`]);
   if (parsed.data) {
     // Включённая подмена требует полной проверки локального eval-окружения.
     parseConfig(process.env);

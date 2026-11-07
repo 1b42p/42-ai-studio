@@ -1,12 +1,14 @@
 import { defineSandbox } from "eve/sandbox";
 import { DockerSandbox } from "eve/sandbox/docker";
-import { readVideoEvalSandbox } from "@/lib/config";
+import { readStubEvalSandbox, readVideoEvalSandbox } from "@/lib/config";
 import { DaytonaSandbox } from "../lib/daytona-provider";
 import { isEvalPrincipal } from "../lib/eval-auth";
+import { stubEvalEnvironment } from "../lib/stub-eval-media";
 import { prepareNativeVideoEval, initializeNativeVideoEval, NATIVE_VIDEO_EVAL_REVISION } from "../lib/video-eval-native";
 
 const videoEval = readVideoEvalSandbox();
-export const environment = videoEval
+const stubEval = readStubEvalSandbox();
+export const environment = stubEval ? stubEvalEnvironment : videoEval
   ? DockerSandbox.dockerfile({
     env: { STUDIO_VIDEO_EVAL_REVISION: NATIVE_VIDEO_EVAL_REVISION },
     prepare: prepareNativeVideoEval,
@@ -14,6 +16,9 @@ export const environment = videoEval
   : DaytonaSandbox.environment();
 
 export default defineSandbox(async ({ session }) => {
+  if (stubEval && !isEvalPrincipal(session.auth.initiator)) {
+    throw new Error("Хранилище фикстур доступно только проверенному eval-принципалу.");
+  }
   if (videoEval && (!isEvalPrincipal(session.auth.initiator) || session.auth.initiator?.attributes.videoEval !== "1")) {
     throw new Error("Среда оценок видео доступна только проверенному eval-принципалу.");
   }

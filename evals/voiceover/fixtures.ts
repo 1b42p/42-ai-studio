@@ -2,19 +2,20 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { EveEvalContext, ToolStub } from "eve/evals";
 import { blockedRead, emptySearch, page, webSession } from "../web/fixtures";
+import { voiceoverFrameOutputs } from "./media-fixture";
 
-export const PROJECT = "/workspace/coffee-voiceover";
+export const PROJECT = "/workspace/calm-morning";
 export const VOICE = "ru-RU-SvetlanaNeural";
 export const PIPER_VOICE = "ru_RU-denis-medium";
 export const VOICEOVER_TIMEOUT_MS = 30 * 60 * 1000;
 export const SCENES = [
-  "Насыпьте свежий кофе. Добавьте горячую воду без кипения.",
-  "Подождите немного. Дайте вкусу раскрыться в тёплой чашке.",
-  "Сделайте первый глоток. Насладитесь ароматом и спокойным утром.",
+  "Откройте окно. Пусть утро начнётся со свежего воздуха.",
+  "Выпейте стакан воды. Сделайте несколько спокойных вдохов.",
+  "Выберите одно важное дело. Начните день без спешки.",
 ] as const;
 
-export const VOICEOVER_REQUEST = `Сделай вертикальный ролик 9:16, 1080×1920, 30 кадров/с, ` +
-  `примерно на шестнадцать секунд, для любителей домашнего кофе. Три сцены с простой ` +
+export const VOICEOVER_REQUEST = `Сделай горизонтальный ролик 16:9, 1920×1080, 30 кадров/с, ` +
+  `примерно на шестнадцать секунд о спокойном начале утра для взрослых. Три сцены с простой ` +
   `motion-графикой, без музыки и внешних материалов. Русская озвучка голосом Светланы ` +
   `(${VOICE}), обычная скорость, и субтитры с выделением произносимого слова. ` +
   `Длительность подстрой под фактическую речь. Каталог проекта: ${PROJECT}. ` +
@@ -84,7 +85,7 @@ The previous page extends until the next starts. Preserve whitespace with white-
 const FRAME_NAMES = [0, 40, 120, 160, 240, 320, 400, 479].map((frame) => `element-${String(frame).padStart(3, "0")}.jpeg`);
 const probe = {
   streams: [
-    { codec_name: "h264", codec_type: "video", width: 1080, height: 1920, r_frame_rate: "30/1", duration: "16.000000" },
+    { codec_name: "h264", codec_type: "video", width: 1920, height: 1080, r_frame_rate: "30/1", duration: "16.000000" },
     { codec_name: "aac", codec_type: "audio", sample_rate: "48000", channels: 2, duration: "16.000000" },
   ],
   format: { duration: "16.000000", size: "1048576" },
@@ -114,15 +115,15 @@ function mediaStubs(fallback: boolean): ToolStub[] {
     commandStub("probe-audio", "(?:ffprobe|getAudioDuration)[\\s\\S]*\\.(?:mp3|wav)",
       JSON.stringify({ streams: [{ codec_type: "audio", codec_name: fallback ? "pcm_s16le" : "mp3", duration: "4.500000" }], format: { duration: "4.500000" } })),
     commandStub("probe-mp4-json", "ffprobe[\\s\\S]*(?:-of|-print_format)[ =]+json", JSON.stringify(probe)),
-    commandStub("probe-mp4", "ffprobe[\\s\\S]*\\.mp4", "codec_name=h264\ncodec_type=video\nwidth=1080\nheight=1920\nduration=16.000000\ncodec_name=aac\ncodec_type=audio\nduration=16.000000\nduration=16.000000\n"),
+    commandStub("probe-mp4", "ffprobe[\\s\\S]*\\.mp4", "codec_name=h264\ncodec_type=video\nwidth=1920\nheight=1080\nduration=16.000000\ncodec_name=aac\ncodec_type=audio\nduration=16.000000\nduration=16.000000\n"),
     commandStub("frame-pixels", "check-frames\\.py", FRAME_NAMES.map((name) => JSON.stringify({
       path: `out/frames-1/${name}`, extrema: [[15, 248], [23, 250], [42, 252]], suspect: null,
     })).join("\n")),
     commandStub("render-frames", "remotion[\\s\\S]*(?:\\bstill\\b|--frames|--sequence)",
       `Rendered frames (8/8)\n${FRAME_NAMES.map((name) => `out/frames-1/${name}`).join("\n")}\n`),
     commandStub("list-frames", "(?:ls|find)[\\s\\S]*(?:frames|\\.jpe?g|\\.png)", FRAME_NAMES.join("\n")),
-    commandStub("render-mp4", "remotion\\s+render[\\s\\S]*\\.mp4", "Rendered 480/480\nEncoded 480/480\nOutput: out/coffee-voiceover.mp4 (1.0 MB)\n"),
-    commandStub("composition-metadata", "remotion\\s+compositions", "Main  30 fps  1080×1920  480 frames (16.00 sec)\n"),
+    commandStub("render-mp4", "remotion\\s+render[\\s\\S]*\\.mp4", "Rendered 480/480\nEncoded 480/480\nOutput: out/calm-morning.mp4 (1.0 MB)\n"),
+    commandStub("composition-metadata", "remotion\\s+compositions", "Main  30 fps  1920×1080  480 frames (16.00 sec)\n"),
     commandStub("file-size", "(?:stat|wc -c)[\\s\\S]*\\.(?:mp4|jpe?g|png|wav|mp3)", "1048576\n"),
     commandStub("vcpu", "^\\s*sandbox-vcpu\\s*$", "2\n"),
     commandStub("disk", "df\\s+-h", "Filesystem Size Used Avail Use% Mounted on\noverlay 5.0G 120M 4.9G 3% /workspace\n"),
@@ -143,7 +144,7 @@ export async function voiceoverSession(t: EveEvalContext, fallback: boolean) {
     } satisfies ToolStub] : SCENES.map((text, index): ToolStub => ({
       id: `speech-${index}`, tool: "speak", match: { text: { const: text } },
       outcome: { response: { audioPath: `${sceneBase(index)}.mp3`, timingsPath: `${sceneBase(index)}.words.json`,
-        voice: VOICE, language: "ru-RU", format: "mp3", durationMs: 4500, wordCount: 8, text,
+        voice: VOICE, language: "ru-RU", format: "mp3", durationMs: 4500, wordCount: timings(text, false).words.length, text,
         media: { audioId: `00000000-0000-4000-8000-00000000000${index + 1}` } } },
     }))),
     { id: "voices", tool: "list_voices", outcome: { response: { voices: [
@@ -151,13 +152,13 @@ export async function voiceoverSession(t: EveEvalContext, fallback: boolean) {
     ] } } },
     { id: "captions-docs", tool: "read_page", match: { url: { pattern: "^https://www\\.remotion\\.dev/docs/captions(?:/|\\.md|$)" } },
       outcome: { response: page("https://www.remotion.dev/docs/captions/create-tiktok-style-captions", "createTikTokStyleCaptions", CAPTIONS_DOCS, "en") } },
-    {
-      id: "frame-unavailable", tool: "read_file", match: { filePath: { pattern: "\\.(?:jpe?g|png)$" } },
-      // Поле file включило бы настоящий getSandbox() в read_file.toModelOutput.
-      // Нельзя выдавать описание вместо пикселей или подсказывать зачесть его просмотром.
-      outcome: { response: { path: `${PROJECT}/out/frames-1/element-120.jpeg`, totalLines: 1, truncated: false,
-        content: "Изображение не загружено: полностью изолированная фикстура read_file не передаёт бинарные медиа. Пиксели кадра недоступны." } },
-    },
+    ...voiceoverFrameOutputs.map((output, index): ToolStub => ({
+      id: `recorded-frame-${index}`, tool: "read_file",
+      match: { filePath: { pattern: `${escapePattern(FRAME_NAMES[index])}$` } },
+      outcome: { response: output },
+    })),
+    { id: "other-frames", tool: "read_file", match: { filePath: { pattern: "\\.(?:jpe?g|png)$" } },
+      outcomes: [{ response: voiceoverFrameOutputs[0] }, ...voiceoverFrameOutputs.slice(1).map((output) => ({ response: output }))] },
     { id: "project-notes", tool: "read_file", match: { filePath: { pattern: "(?:^|/)NOTES\\.md$" } },
       outcome: { response: readResponse(`${PROJECT}/NOTES.md`, readFileSync("agent/skills/frame-review/references/notes-template.md", "utf8")) } },
     ...["NOTES.md", ...SCENES.map((_, index) => `voice/scene-${String(index + 1).padStart(2, "0")}.txt`)]

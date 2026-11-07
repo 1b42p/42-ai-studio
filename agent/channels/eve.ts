@@ -91,7 +91,7 @@ export function studioAuth(): AuthFn<Request> {
       return evalPrincipal;
     }
 
-    if (config.appVideoEvalSandbox) {
+    if (config.appVideoEvalSandbox || config.appStubEvalSandbox) {
       throw new ForbiddenError({ code: "eval_only", message: "Этот экземпляр доступен только оценкам" });
     }
 
