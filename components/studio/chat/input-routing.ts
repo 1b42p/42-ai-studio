@@ -1,6 +1,7 @@
 import type { ConversationState, EveDynamicToolPart } from "eve/react";
 
 export function isQuestionCall(part: EveDynamicToolPart): boolean {
+  if (part.toolMetadata?.eve?.kind === "load-skill") return false;
   return (part.toolMetadata?.eve?.name ?? part.toolName) === "ask_question";
 }
 

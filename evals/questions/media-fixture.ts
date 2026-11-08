@@ -14,3 +14,7 @@ export function frameOutput(index: number, corrected: boolean) {
     file: { mediaType: "image/jpeg", width: frame.width, height: frame.height, size: frame.size },
   };
 }
+
+export function frameExtrema(index: number, corrected: boolean) {
+  return questionFrames.find((item) => item.index === index && item.corrected === corrected)!.extrema;
+}
