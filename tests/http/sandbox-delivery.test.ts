@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { SandboxSessionContext } from "eve/sandbox/provider";
@@ -45,6 +46,11 @@ test("eve build без .env и секретов доставляет workspace �
       ["/workspace/delivery/seed.bin", workspace],
       ["/root/.agents/skills/test-skill/SKILL.md", Buffer.from(skill)],
       ["/root/.agents/skills/test-skill/references/nested.md", Buffer.from(reference)],
+      ...await Promise.all(["SKILL.md", "scripts/inspect_document.py", "references/formats.md", "references/charts.md"]
+        .map(async (filename) => [
+          `/root/.agents/skills/reading-documents/${filename}`,
+          await readFile(`agent/skills/reading-documents/${filename}`),
+        ] as const)),
     ] as const;
     for (const [filename, bytes] of expected) {
       const delivered = await fakeSandbox.files.read(session.id, filename);
