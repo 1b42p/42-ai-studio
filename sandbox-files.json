@@ -1,0 +1,124 @@
+{
+  "files": [
+    {
+      "path": "NOTES.md",
+      "size": 2805,
+      "sha256": "d156e642f5776ba1e829213ac91f38494ad6d83785d3d63576b3c7ab189e11ef"
+    },
+    {
+      "path": "out/coffee-journey-draft-v1.mp4",
+      "size": 623624,
+      "sha256": "3da44d49c551e20e52c5d49914ec474ac8aa45961f68355e1ffc76e64a1aaf13"
+    },
+    {
+      "path": "out/coffee-journey-v1.mp4",
+      "size": 10627340,
+      "sha256": "893be8f179fe8e4a0720582418b4a03db7362c660748215cabc4ebf5b2611d1d"
+    },
+    {
+      "path": "out/coffee-journey-v2.mp4",
+      "size": 4514795,
+      "sha256": "ac5306756fe850ee7d70e1e4de1db5ae40a02bc698fbdd18bc2ac0e134bf81ab"
+    },
+    {
+      "path": "out/frames-1/element-0000.jpeg",
+      "size": 40222,
+      "sha256": "47d99f806ad6613b6346f9bae6dd47309500d1025b48983768cf6aa547d25963"
+    },
+    {
+      "path": "out/frames-1/element-0450.jpeg",
+      "size": 41967,
+      "sha256": "93af30cc50afbfa0b331ef6f588368e1a5b69b2b8aa71e07454dce73304c1a95"
+    },
+    {
+      "path": "out/frames-1/element-0899.jpeg",
+      "size": 42237,
+      "sha256": "2184f46349ab48aa1c79590c67834ba3ad955e8aeb1eddadfb515ccf9c53a0ae"
+    },
+    {
+      "path": "out/frames-1/element-1350.jpeg",
+      "size": 39973,
+      "sha256": "80aa97b13e74895facf39aacde0979a4231d79427dd3b31de90f6273f231540f"
+    },
+    {
+      "path": "out/frames-1/element-1799.jpeg",
+      "size": 40007,
+      "sha256": "a5332e5c7bdfb15533944388736c599b5c1d4129fffe08e6ed2a8ab73070b21d"
+    },
+    {
+      "path": "out/frames-1/element-2250.jpeg",
+      "size": 35593,
+      "sha256": "8fabdf30ce307d1c1671695f94ca6efcdc488be28d78d50f6d2f9d7e802ffb32"
+    },
+    {
+      "path": "out/frames-1/element-2699.jpeg",
+      "size": 35784,
+      "sha256": "7f83029d5a1635fcb83c12b2f3e5607b2916ac7ba15825d06cd5e6fe814f69a8"
+    },
+    {
+      "path": "out/frames-2/element-000.jpeg",
+      "size": 40221,
+      "sha256": "61b8d1da8daaf23424a746f91c36f5e81040ba17588ce355f89b119cb8b3c87d"
+    },
+    {
+      "path": "out/frames-2/element-075.jpeg",
+      "size": 41637,
+      "sha256": "d28aa4a690ec346b8c0e8b8f8dfb5a4a41ad876a177bfb01dfa2a43daff30f9c"
+    },
+    {
+      "path": "out/frames-2/element-299.jpeg",
+      "size": 41930,
+      "sha256": "bd2edce1a4a700e1bbf7d607232eb9f1361c5607b4317318ec7657dfc4a24872"
+    },
+    {
+      "path": "out/frames-2/element-375.jpeg",
+      "size": 40282,
+      "sha256": "4154dff367d48a25023c964814b558b069137157ad721dc9fcffc76d8af51436"
+    },
+    {
+      "path": "out/frames-2/element-599.jpeg",
+      "size": 40039,
+      "sha256": "53d215b5e8787a7dcb4e827ac30633645cb7c4f42cd1f37bee9ecfa63ac723f7"
+    },
+    {
+      "path": "out/frames-2/element-675.jpeg",
+      "size": 35290,
+      "sha256": "a9adc4c0f514ad21f4a5676fc958c9005b412ffae35143fa118090334e73f49f"
+    },
+    {
+      "path": "out/frames-2/element-899.jpeg",
+      "size": 35499,
+      "sha256": "494cfa45efcb6a23c4ff982033651ae69ad8e15883ac2569633f7dc8fb27fd46"
+    },
+    {
+      "path": "package-lock.json",
+      "size": 149508,
+      "sha256": "b2f96cf551841377d27676dfc0718add27cc4c6d09be73c96d17b5c94e718f97"
+    },
+    {
+      "path": "package.json",
+      "size": 761,
+      "sha256": "a1cf785959303fa5341fdd81a96dfd9d7e5e9fbc1c4bd62637d065a344df5af7"
+    },
+    {
+      "path": "remotion.config.ts",
+      "size": 141,
+      "sha256": "7bd0dea373c862a8ba5df569f28bd550825b345ac545c14b522cc6ba8570781a"
+    },
+    {
+      "path": "src/Root.tsx",
+      "size": 12864,
+      "sha256": "e31d556baa655a2280ed6427babf47e317c5cd816d7b4151e21d5a679f9dd5cd"
+    },
+    {
+      "path": "src/index.ts",
+      "size": 109,
+      "sha256": "957e481dd33a29b4a55ae0e95dbf763b7e48c37c427ca4bd1275faf34bc07a74"
+    },
+    {
+      "path": "tsconfig.json",
+      "size": 368,
+      "sha256": "a6fbcf514dbfd3d116c3f7f78b72949c8c2ff45bdbe17aeff4c97e16bc1327fa"
+    }
+  ]
+}
