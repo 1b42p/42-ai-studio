@@ -509,4 +509,32 @@ describe("parseConfig: вход через Telegram", () => {
       "EDGE_TTS_WSS_URL",
     );
   });
+
+  test("скачивание видео имеет значения по умолчанию и проверяет cookies и срок", () => {
+    const config = parseConfig(validEnv());
+    expect(config.ytdlpPath).toBe("yt-dlp");
+    expect(config.ffmpegPath).toBeUndefined();
+    expect(config.ffprobePath).toBe("ffprobe");
+    expect(config.ytdlpJsRuntime).toBe("node");
+    expect(config.youtubeCookies).toBeUndefined();
+    expect(config.downloadMaxBytes).toBe(1_073_741_824);
+    expect(config.downloadTimeoutMs).toBe(600_000);
+    expect(parseConfig({ ...validEnv(), YTDLP_JS_RUNTIME: "bun" }).ytdlpJsRuntime).toBe("bun");
+
+    expect(issuesOf({ ...validEnv(), YOUTUBE_COOKIES: "abc" })[0]).toContain("YOUTUBE_COOKIES");
+    expect(issuesOf({ ...validEnv(), DOWNLOAD_TIMEOUT_MS: "100" })[0]).toContain("DOWNLOAD_TIMEOUT_MS");
+
+    const line = "# Netscape HTTP Cookie File\\n.youtube.com\\tTRUE\\t/\\tTRUE\\t0\\tSID\\tvalue";
+    const crlf = "# HTTP Cookie File\\r\\n.youtube.com\\tTRUE\\t/\\tTRUE\\t0\\tSID\\tvalue";
+    expect(parseConfig({ ...validEnv(), YOUTUBE_COOKIES: line }).youtubeCookies).toBe(
+      "# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tvalue",
+    );
+    expect(parseConfig({ ...validEnv(), YOUTUBE_COOKIES: crlf }).youtubeCookies?.split("\n")[0]).toBe(
+      "# HTTP Cookie File",
+    );
+    expect(parseConfig({
+      ...validEnv(),
+      YOUTUBE_COOKIES: "# Netscape HTTP Cookie File\r\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tvalue",
+    }).youtubeCookies).toContain("\n.youtube.com\t");
+  });
 });

@@ -27,7 +27,17 @@ export function readStub(id: string, url: string, title: string, content: string
   };
 }
 
-const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices"] as const;
+const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices", "download_video"] as const;
+
+export const isolateDownload: ToolStub = {
+  id: "isolate-download",
+  tool: "download_video",
+  outcome: {
+    throw: {
+      message: "download_unavailable: Видео недоступно: оно удалено, скрыто или закрыто автором.",
+    },
+  },
+};
 
 const isolationStubs: readonly ToolStub[] = [
   {
@@ -52,6 +62,7 @@ const isolationStubs: readonly ToolStub[] = [
       wordCount: 1, text: "Подмена", media: { audioId: "00000000-0000-4000-8000-000000000001" } } },
   },
   { id: "isolate-voices", tool: "list_voices", outcome: { response: { voices: [] } } },
+  isolateDownload,
 ];
 
 /** Любой неожиданный URL тоже перехватывается: реального HTTP-чтения нет. */

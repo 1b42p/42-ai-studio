@@ -5,6 +5,7 @@ import { WrenchIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AgentCopyCard } from "@/components/studio/chat/agent-copy-card";
+import { DownloadVideoCard } from "@/components/studio/chat/download-video-card";
 import { EditFileCard } from "@/components/studio/chat/edit-file-card";
 import { ReadFileCard } from "@/components/studio/chat/read-file-card";
 import { ReadPageCard } from "@/components/studio/chat/read-page-card";
@@ -25,6 +26,7 @@ export interface ToolCardProps {
 
 const toolCards: ReadonlyMap<string, ComponentType<ToolCardProps>> = new Map([
   ["bash", TerminalCard],
+  ["download_video", DownloadVideoCard],
   ["edit_file", EditFileCard],
   ["read_file", ReadFileCard],
   ["speak", SpeakCard],
