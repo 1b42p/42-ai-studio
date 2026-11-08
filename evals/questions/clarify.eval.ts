@@ -21,17 +21,25 @@ export default Array.from({ length: 3 }, () => defineEval({
       "Не начинает производство ролика и не выдаёт его за готовый.",
     { on: JSON.stringify({ message: clarification.message, requests: clarification.inputRequests }) }).gate(0.8);
 
-    const production = await session.respond([{ requestId: session.requireInputRequest({ toolName: "ask_question" }).requestId, text: REQUEST(30) }]);
+    const brief = REQUEST(30);
+    const production = await session.respond([{ requestId: session.requireInputRequest({ toolName: "ask_question" }).requestId, text: brief }]);
     production.succeeded();
     production.calledTool("bash");
     // Respond resumes the same turn: its toolCalls include the original question.
     t.check(production.toolCalls.filter((call) => call.name === "ask_question").length,
       equals(clarification.toolCalls.filter((call) => call.name === "ask_question").length));
-    t.judge("Пользователь дал полную просьбу о 30-секундном горизонтальном ролике 16:9 " +
-      "о кофе, без озвучки, три сцены. Агент не задаёт новых уточняющих вопросов " +
-      "и не ждёт согласования, а приступает к выполнению. Предложение внести правки после " +
-      "готового результата не является уточнением до начала работы.",
-    { on: { response: production.message ?? "", bashCalls: production.toolCalls.filter((call) => call.name === "bash").length } }).gate(0.8);
+    // respond() preserves the initial send() prompt in the judge's default
+    // state. Supply the actual answered brief so it cannot grade the finished
+    // video as an unclarified response to the initial "Сделай ролик".
+    t.judge({
+      state: { question: clarification.inputRequests, userAnswer: brief,
+        response: production.message ?? "", bashCalls: production.toolCalls.filter((call) => call.name === "bash").length },
+      questions: { continues: { type: "boolean", instructions:
+        "После ответа userAnswer пользователь дал полную просьбу о 30-секундном горизонтальном ролике 16:9 " +
+        "о кофе, без озвучки, три сцены. Агент не задаёт новых уточняющих вопросов " +
+        "и не ждёт согласования, а приступает к выполнению. Готовый результат с вызовами bash тоже " +
+        "подтверждает выполнение. Предложение внести правки после готового результата не является уточнением до начала работы." } },
+    }).continues.gate(0.8);
     t.succeeded();
   },
 }));
