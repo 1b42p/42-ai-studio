@@ -3,7 +3,6 @@
 import { ClientError, type InputResponse, type MessageStreamEvent } from "eve/client";
 import {
   openConversationInputs,
-  type ConversationInput,
   type ConversationState,
 } from "eve/react";
 import type { UserContent } from "ai";
@@ -17,6 +16,8 @@ import {
   buildFileLookup,
   type MessageFilesState,
 } from "@/components/studio/chat/message-files";
+import { InputPrompt } from "@/components/studio/chat/input-prompt";
+import { inlineQuestionIds } from "@/components/studio/chat/input-routing";
 import { MessageRow } from "@/components/studio/chat/message-row";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -27,8 +28,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import {
   MessageScroller,
@@ -38,17 +37,6 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import {
-  Questionnaire,
-  QuestionnaireActions,
-  QuestionnaireChoice,
-  QuestionnaireChoices,
-  QuestionnaireError,
-  QuestionnaireInput,
-  QuestionnaireItem,
-  QuestionnaireSubmit,
-  QuestionnaireTitle,
-} from "@/components/ui/questionnaire";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
@@ -109,143 +97,6 @@ function NoticeRow({ notice }: { notice: Notice }) {
       <AlertTitle>Не удалось получить ответ</AlertTitle>
       <AlertDescription>{notice.text}</AlertDescription>
     </Alert>
-  );
-}
-
-/** Запрос продолжения при пределе расходов у eve английский: переводим по id. */
-function localizeRequest(request: ConversationInput["request"]): {
-  prompt: string;
-  options: ReadonlyArray<{ id: string; label: string; style?: string }>;
-} {
-  if (request.kind === "session-limit") {
-    return {
-      prompt: "У сессии закончился лимит расходов. Продолжить работу?",
-      options: (request.options ?? []).map((option) => ({
-        ...option,
-        label:
-          option.id === "continue"
-            ? "Продолжить"
-            : option.id === "stop"
-              ? "Остановить"
-              : option.label,
-      })),
-    };
-  }
-
-  return { prompt: request.prompt, options: request.options ?? [] };
-}
-
-function InputPrompt({
-  input,
-  disabled,
-  onRespond,
-}: {
-  input: ConversationInput;
-  disabled: boolean;
-  onRespond: (responses: readonly InputResponse[]) => void | Promise<void>;
-}) {
-  const { prompt, options } = localizeRequest(input.request);
-  const requestId = input.request.requestId;
-  const [text, setText] = useState("");
-
-  if (input.request.kind !== "tool-approval") {
-    return (
-      <Questionnaire
-        className="gap-4 rounded-xl border bg-card p-4"
-        // Валидация считает недоступные ответы пустыми: заблокированную форму
-        // пересоздаём, чтобы ответ восстанавливался из состояния запроса.
-        key={disabled ? "locked" : "open"}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (disabled) return;
-          const value = new FormData(event.currentTarget).get(requestId);
-          if (typeof value !== "string" || value.trim().length === 0) return;
-
-          const option = options.find((item) => item.id === value);
-          void onRespond([
-            option === undefined
-              ? { requestId, text: value.trim() }
-              : { optionId: option.id, requestId },
-          ]);
-        }}
-        shortcuts="numbers"
-      >
-        <QuestionnaireItem name={requestId} required>
-          <QuestionnaireTitle className="text-sm font-medium">{prompt}</QuestionnaireTitle>
-          <QuestionnaireChoices>
-            {options.map((option) => (
-              <QuestionnaireChoice disabled={disabled} key={option.id} value={option.id}>
-                {option.label}
-              </QuestionnaireChoice>
-            ))}
-            {input.request.allowFreeform === true || options.length === 0 ? (
-              <QuestionnaireInput
-                aria-label="Свой ответ"
-                disabled={disabled}
-                placeholder="Свой ответ"
-              />
-            ) : null}
-          </QuestionnaireChoices>
-          <QuestionnaireError />
-        </QuestionnaireItem>
-        {disabled ? null : (
-          <QuestionnaireActions>
-            <QuestionnaireSubmit size="sm">Ответить</QuestionnaireSubmit>
-          </QuestionnaireActions>
-        )}
-      </Questionnaire>
-    );
-  }
-
-  return (
-    <Item className="flex-col items-stretch gap-3" size="sm" variant="outline">
-      <ItemContent>
-        <ItemTitle>Нужно подтверждение</ItemTitle>
-        <ItemDescription className="whitespace-pre-wrap">{prompt}</ItemDescription>
-      </ItemContent>
-      <ItemActions className="justify-start">
-        {options.map((option) => (
-          <Button
-            disabled={disabled}
-            key={option.id}
-            onClick={() => void onRespond([{ optionId: option.id, requestId }])}
-            size="sm"
-            variant={
-              option.style === "danger"
-                ? "destructive"
-                : option.style === "primary"
-                  ? "default"
-                  : "outline"
-            }
-          >
-            {option.label}
-          </Button>
-        ))}
-      </ItemActions>
-      {input.request.allowFreeform === true ? (
-        <form
-          className="flex gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const value = text.trim();
-            if (value.length === 0 || disabled) return;
-            setText("");
-            void onRespond([{ requestId, text: value }]);
-          }}
-        >
-          <Input
-            aria-label="Свой ответ"
-            disabled={disabled}
-            onChange={(event) => setText(event.target.value)}
-            placeholder="Свой ответ"
-            value={text}
-          />
-          <Button disabled={disabled || text.trim().length === 0} size="sm" type="submit">
-            Ответить
-          </Button>
-        </form>
-      ) : null}
-    </Item>
   );
 }
 
@@ -349,6 +200,16 @@ export function ChatView({
   const files = useMemo(() => buildFileLookup(messageFiles), [messageFiles]);
   const messages = data.messages;
   const openInputs = openConversationInputs(data);
+  const inlineIds = inlineQuestionIds(data);
+  const pinnedInputs = openInputs.filter((input) => !inlineIds.has(input.request.requestId));
+  const firstInput = openInputs.find((input) => input.request.kind === "session-limit") ?? openInputs[0];
+  const firstRequest = firstInput?.request;
+  const responseBlocked = firstRequest !== undefined &&
+    (firstRequest.kind !== "question" || firstRequest.allowFreeform !== true);
+  const responsePlaceholder = firstRequest?.kind === "session-limit"
+    ? "Нажмите «Продолжить» или «Остановить»"
+    : responseBlocked ? "Выберите вариант выше"
+    : firstRequest ? "Ответьте на вопрос агента или напишите своё" : undefined;
   const byTurn = collectNotices(events);
   const finished = sessionEnded(events, ended);
   const expired = isExpired(agent.error);
@@ -482,6 +343,8 @@ export function ChatView({
                         files={files}
                         message={message}
                         onCopyPanelChange={handleCopyPanelChange}
+                        onRespond={onRespond}
+                        inputDisabled={disabled}
                       />
                       {notices.map((notice, noticeIndex) => (
                         <NoticeRow key={`${message.id}-notice-${noticeIndex}`} notice={notice} />
@@ -509,15 +372,6 @@ export function ChatView({
                     <NoticeRow key={`${turnId}-${index}`} notice={notice} />
                   )),
                 )}
-
-              {openInputs.map((input) => (
-                <InputPrompt
-                  disabled={disabled}
-                  input={input}
-                  key={input.request.requestId}
-                  onRespond={onRespond}
-                />
-              ))}
 
               {errorNotice === null || errorNotice === undefined ? null : (
                 <Alert variant="destructive">
@@ -557,7 +411,10 @@ export function ChatView({
           showSessions ? "order-2 border-b" : "border-t",
         )}
       >
-        <div className="mx-auto w-full max-w-3xl">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+          {pinnedInputs.map((input) => (
+            <InputPrompt disabled={disabled} input={input} key={input.request.requestId} onRespond={onRespond} />
+          ))}
           {finished || expired ? (
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">
@@ -570,9 +427,16 @@ export function ChatView({
           ) : (
             <ChatComposer
               attachments={attachments}
-              disabled={disabled}
+              disabled={disabled || responseBlocked}
+              placeholder={responsePlaceholder}
               onCancel={onCancel}
-              onSend={onSend}
+              onSend={async (content) => {
+                if (typeof content === "string" && firstRequest?.kind === "question" && firstRequest.allowFreeform) {
+                  await onRespond([{ requestId: firstRequest.requestId, text: content }]);
+                } else {
+                  await onSend(content);
+                }
+              }}
               status={status}
             />
           )}

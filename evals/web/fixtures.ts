@@ -30,6 +30,7 @@ export function readStub(id: string, url: string, title: string, content: string
 const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices"] as const;
 
 const isolationStubs: readonly ToolStub[] = [
+  { id: "isolate-question", tool: "ask_question", outcome: { response: { status: "unavailable" } } },
   {
     id: "isolate-bash", tool: "bash",
     outcome: { response: { status: "completed", exitCode: 0, stdout: "", stderr: "", truncated: false } },

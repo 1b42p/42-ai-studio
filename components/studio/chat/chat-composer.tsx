@@ -4,6 +4,7 @@ import type { UserContent } from "ai";
 import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { isTouchInput } from "@/components/studio/chat/keyboard";
 import { isBusyStatus, type ChatStatus } from "@/components/studio/chat/chat-status";
 import { AttachmentCard } from "@/components/studio/chat/attachment-card";
 import { messageContent, type AttachmentsController } from "@/components/studio/chat/attachments";
@@ -19,16 +20,11 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-/** На сенсорном вводе Enter переносит строку, отправляет кнопка. */
-function isTouchInput(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.matchMedia("(pointer: coarse)").matches;
-}
-
 export interface ChatComposerProps {
   status: ChatStatus;
   /** Поле заблокировано, пока грузится история или сессия недоступна. */
   disabled?: boolean;
+  placeholder?: string;
   /** Загрузчик вложений; без него скрепки и предпросмотра нет. */
   attachments?: AttachmentsController;
   onSend: (content: string | UserContent) => void | Promise<void>;
@@ -43,6 +39,7 @@ export interface ChatComposerProps {
 export function ChatComposer({
   status,
   disabled = false,
+  placeholder: placeholderProp,
   attachments,
   onSend,
   onCancel,
@@ -88,9 +85,9 @@ export function ChatComposer({
 
   const placeholder = resuming
     ? "Восстанавливаем беседу…"
-    : busy
+    : placeholderProp ?? (busy
       ? "Поправка к заданию…"
-      : "Напишите задание…";
+      : "Напишите задание…");
 
   return (
     <form
@@ -121,7 +118,7 @@ export function ChatComposer({
           disabled={inputDisabled}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !isTouchInput()) {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && !isTouchInput()) {
               event.preventDefault();
               void submit();
             }

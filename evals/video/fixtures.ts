@@ -8,6 +8,7 @@ export const VIDEO_EVAL_TIMEOUT_MS = 60 * 60 * 1000;
 const PROJECT = "/workspace/morning-exercise";
 function videoStubs(): readonly ToolStub[] {
   return [
+    { id: "isolate-question", tool: "ask_question", outcome: { response: { status: "unavailable" } } },
     // Persistent-инструмент требует безусловной подмены, иначе может стартовать копия.
     { id: "isolate-agent", tool: "agent", outcome: { throw: { message: "Этот короткий ролик собери основным агентом; делегирование в оценке отключено." } } },
     {
