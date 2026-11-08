@@ -79,6 +79,7 @@ test("свободный ответ: кнопка, Enter, Shift+Enter и сен�
   expect(onRespond).toHaveBeenLastCalledWith([{ requestId: q.request.requestId, text: "Кофе" }]);
   await userEvent.type(text, "{Shift>}{Enter}{/Shift}");
   expect(onRespond).toHaveBeenCalledTimes(1);
+  await expect.element(text).toHaveValue("  Кофе  \n");
   await userEvent.keyboard("{Enter}");
   expect(onRespond).toHaveBeenCalledTimes(2);
   // Viewport alone does not change the host's pointer; emulate a touch keyboard.

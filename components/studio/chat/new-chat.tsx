@@ -89,7 +89,7 @@ export function NewChat({ initialPage, initialQuery, initialError = false }: New
   const handleSend = async (content: string | UserContent) => {
     await ensureSession();
     const busy = isBusyStatus(agent.status);
-    await agent.send(content, busy ? { turnPolicy: "steer" } : undefined);
+    await agent.send(content, busy || Array.isArray(content) ? { turnPolicy: "steer" } : undefined);
   };
 
   return (
