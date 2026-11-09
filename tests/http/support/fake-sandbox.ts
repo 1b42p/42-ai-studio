@@ -42,5 +42,10 @@ export const fakeSandbox = {
   failUsage: (apiKey: string, failure: FakeUsageFailure | null) => store().failUsage(apiKey, failure),
   usageCalls: (apiKey?: string) => store().usageCalls(apiKey),
   counters: () => store().counters(),
+  states: (appSessionId?: string) => store().states(appSessionId),
+  creationLog: (appSessionId?: string) => store().creationLog(appSessionId),
+  lifecycleLog: (appSessionId?: string) => store().lifecycleLog(appSessionId),
+  setTimes: (appSessionId: string, times: { lastActivityAt?: number; stoppedAt?: number }) =>
+    store().setTimes(appSessionId, times),
   reset: () => store().reset(),
 };

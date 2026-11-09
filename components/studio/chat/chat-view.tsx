@@ -18,6 +18,7 @@ import {
   type MessageFilesState,
 } from "@/components/studio/chat/message-files";
 import { MessageRow } from "@/components/studio/chat/message-row";
+import { SandboxStatusBanner } from "@/components/studio/chat/sandbox-status-banner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +52,7 @@ import {
 } from "@/components/ui/questionnaire";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import type { SandboxStatus } from "@/lib/sandbox/status";
 
 /** Готовое состояние беседы: компонент не вызывает хук сам. */
 export interface ChatViewAgent {
@@ -78,6 +80,8 @@ export interface ChatViewProps {
   ended?: boolean;
   /** Сессия приложения: карточки команд опрашивают задания из неё. */
   appSessionId?: string | null;
+  /** Состояние песочницы приходит от обёртки, без сети внутри представления. */
+  sandboxStatus?: SandboxStatus | null;
   /** Файлы из ответов агента; без них ссылки показывают «Файл недоступен». */
   messageFiles?: MessageFilesState;
   /** Загрузчик вложений поля ввода; без него скрепка неактивна. */
@@ -339,6 +343,7 @@ export function ChatView({
   inputDisabled = false,
   ended = false,
   appSessionId = null,
+  sandboxStatus,
   messageFiles,
   attachments,
   onSend,
@@ -557,7 +562,8 @@ export function ChatView({
           showSessions ? "order-2 border-b" : "border-t",
         )}
       >
-        <div className="mx-auto w-full max-w-3xl">
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+          <SandboxStatusBanner status={sandboxStatus} />
           {finished || expired ? (
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">

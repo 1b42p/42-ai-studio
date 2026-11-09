@@ -200,6 +200,9 @@ export const sandboxes = pgTable("sandboxes", {
   startingSince: timestamp("starting_since", { withTimezone: true }),
   /** Что резервирует строка в квоте пула: создание, пробуждение или восстановление. */
   startingKind: sandboxLaunch("starting_kind"),
+  slotRequestId: uuid("slot_request_id"),
+  stoppedAt: timestamp("stopped_at", { withTimezone: true }),
+  daytonaActivityAt: timestamp("daytona_activity_at", { withTimezone: true }),
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -210,6 +213,30 @@ export type Sandbox = typeof sandboxes.$inferSelect;
 export type NewSandbox = typeof sandboxes.$inferInsert;
 export type SandboxState = (typeof sandboxState.enumValues)[number];
 export type SandboxLaunch = (typeof sandboxLaunch.enumValues)[number];
+
+export const queueReason = pgEnum("queue_reason", ["capacity", "own_session_busy"]);
+
+export const queueEntries = pgTable("queue_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appSessionId: uuid("app_session_id").notNull().unique()
+    .references(() => appSessions.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
+  need: sandboxLaunch("need").notNull(),
+  daytonaKeyId: uuid("daytona_key_id").references(() => daytonaKeys.id),
+  reason: queueReason("reason").notNull().default("capacity"),
+  heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("queue_entries_order_idx").on(table.enqueuedAt, table.id)]);
+
+/** Короткая аренда прохода: сеть выполняется без открытой транзакции/соединения. */
+export const sandboxDispatchers = pgTable("sandbox_dispatchers", {
+  id: uuid("id").primaryKey(),
+  leaseToken: uuid("lease_token"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
+});
+
+export type QueueEntry = typeof queueEntries.$inferSelect;
 
 /**
  * Машина, которую не удалось удалить при удалении ключа. Идентификатор
