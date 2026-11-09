@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { and, asc, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { SandboxSessionGoneError } from "eve/sandbox/provider";
 
 import { loadConfig } from "@/lib/config";
@@ -10,10 +10,11 @@ import {
   type AppSession, type DaytonaKey, type QueueEntry, type Sandbox, type SandboxLaunch,
 } from "@/lib/db/schema";
 import { sessionIsBusy } from "@/lib/sandbox/busy";
+import { sandboxState } from "@/lib/sandbox/daytona-state";
 import { errorStatus, isMissingSandbox, StudioSandboxError } from "@/lib/sandbox/errors";
 import { DAYTONA_KEY_PURPOSE, decryptSecret } from "@/lib/secrets";
 import { storedUsage } from "@/lib/daytona/usage";
-import { daytonaBackend, type DaytonaMachine } from "./daytona-backend";
+import { daytonaBackend, daytonaSandboxName, type DaytonaMachine } from "./daytona-backend";
 import { DELETED_KEY_MARKER, pickKey, refreshUsage } from "./daytona-key-pool";
 
 const DISPATCHER_ID = "00000000-0000-4000-8000-000000000024";
@@ -39,11 +40,13 @@ function liveEntries() {
 export async function reconcileSandboxStates(): Promise<Map<string, DaytonaMachine>> {
   const db = getDb();
   const [entries, rows, keys] = await Promise.all([
-    liveEntries(), db.select().from(sandboxes), db.select().from(daytonaKeys),
+    liveEntries(), db.select({ sandbox: sandboxes, eveSessionId: appSessions.eveSessionId })
+      .from(sandboxes).innerJoin(appSessions, eq(appSessions.id, sandboxes.appSessionId)),
+    db.select().from(daytonaKeys),
   ]);
   const keyIds = new Set([
     ...entries.flatMap((entry) => entry.daytonaKeyId ? [entry.daytonaKeyId] : []),
-    ...rows.filter((row) => row.state !== "gone").map((row) => row.daytonaKeyId),
+    ...rows.filter(({ sandbox }) => sandbox.state !== "gone").map(({ sandbox }) => sandbox.daytonaKeyId),
     ...keys.filter((key) => key.enabled && key.deletedAt === null).map((key) => key.id),
   ]);
   const machines = new Map<string, DaytonaMachine>();
@@ -55,37 +58,69 @@ export async function reconcileSandboxStates(): Promise<Map<string, DaytonaMachi
       for await (const machine of client.list()) {
         if (machine.labels.studio_session) listed.set(machine.id, machine);
       }
-      for (const row of rows.filter((row) => row.daytonaKeyId === key.id && row.state !== "gone")) {
+      for (const { sandbox: row, eveSessionId } of rows.filter(({ sandbox }) =>
+        sandbox.daytonaKeyId === key.id && sandbox.state !== "gone")) {
         // Не затирать резерв ещё не начавшегося/не завершившегося запуска
         // устаревшим снимком Daytona.
         if (row.state === "starting" && row.startingSince &&
             Date.now() - row.startingSince.getTime() < RESERVATION_MS) continue;
-        if (!row.daytonaSandboxId) continue;
-        let machine = listed.get(row.daytonaSandboxId);
-        if (!machine) {
-          try { machine = await client.get(row.daytonaSandboxId); }
-          catch (error) {
-            if (!isMissingSandbox(error)) throw error;
-            await db.update(sandboxes).set({ state: "gone" }).where(eq(sandboxes.id, row.id));
-            continue;
+        // До привязки первого вложения имя из appSessionId восстановить нельзя.
+        if (!row.daytonaSandboxId && !eveSessionId) continue;
+        const unchanged = and(
+          eq(sandboxes.id, row.id), eq(sandboxes.state, row.state),
+          eq(sandboxes.daytonaKeyId, row.daytonaKeyId),
+          eq(sandboxes.daytonaSandboxId, row.daytonaSandboxId),
+          row.startingSince === null ? isNull(sandboxes.startingSince)
+            : eq(sandboxes.startingSince, row.startingSince),
+          row.startingKind === null ? isNull(sandboxes.startingKind)
+            : eq(sandboxes.startingKind, row.startingKind),
+          row.slotRequestId === null ? isNull(sandboxes.slotRequestId)
+            : eq(sandboxes.slotRequestId, row.slotRequestId),
+          row.maintenanceToken === null ? isNull(sandboxes.maintenanceToken)
+            : eq(sandboxes.maintenanceToken, row.maintenanceToken),
+        );
+        try {
+          const idOrName = row.daytonaSandboxId ||
+            daytonaSandboxName(eveSessionId!);
+          let machine = listed.get(row.daytonaSandboxId);
+          // list служит снимком, а не подтверждением смены состояния (в том
+          // числе stopped после уже завершённого пробуждения).
+          if (!machine || machine.state !== row.state) {
+            try { machine = await client.get(idOrName); }
+            catch (error) {
+              if (!isMissingSandbox(error)) throw error;
+              await db.update(sandboxes).set({ state: "gone", startingSince: null, startingKind: null })
+                .where(unchanged);
+              continue;
+            }
           }
+          // Ошибку машины нельзя выдавать за новый запуск или утрату.
+          // Идентификатор незаписанного создания всё равно сохраняем.
+          let mapped = row.state;
+          try { mapped = sandboxState(machine.state); }
+          catch (error) {
+            if (!(error instanceof StudioSandboxError)) throw error;
+          }
+          const activity = machine.lastActivityAt;
+          const [updated] = await db.update(sandboxes).set({
+            daytonaSandboxId: machine.id,
+            state: mapped,
+            startingSince: mapped === "starting" ? row.startingSince : null,
+            startingKind: mapped === "starting" ? row.startingKind : null,
+            lastActiveAt: activity &&
+              activity.getTime() > (row.daytonaActivityAt?.getTime() ?? row.createdAt.getTime())
+              ? sql`greatest(${sandboxes.lastActiveAt}, ${activity.toISOString()}::timestamptz)`
+              : sql`${sandboxes.lastActiveAt}`,
+            daytonaActivityAt: activity
+              ? sql`greatest(${sandboxes.daytonaActivityAt}, ${activity.toISOString()}::timestamptz)`
+              : sql`${sandboxes.daytonaActivityAt}`,
+            stoppedAt: mapped === "stopped" ? row.stoppedAt ?? machine.stoppedAt ?? new Date() : null,
+          }).where(unchanged).returning({ id: sandboxes.id });
+          // Устаревший handle не должен попасть в последующую остановку/архивацию.
+          if (updated) machines.set(row.appSessionId, machine);
+        } catch (error) {
+          console.warn("[sandbox:queue] reconcile_failed", errorStatus(error) ?? "transport");
         }
-        machines.set(row.appSessionId, machine);
-        const state = machine.state;
-        const mapped = state === "started" ? "started"
-          : state === "stopped" || state === "stopping" ? "stopped"
-          : state === "archived" || state === "archiving" ? "archived"
-          : state === "destroyed" ? "gone" : "starting";
-        await db.update(sandboxes).set({
-          state: mapped,
-          lastActiveAt: machine.lastActivityAt &&
-            machine.lastActivityAt.getTime() > (row.daytonaActivityAt?.getTime() ?? row.createdAt.getTime()) &&
-            machine.lastActivityAt > row.lastActiveAt
-            ? machine.lastActivityAt : row.lastActiveAt,
-          daytonaActivityAt: machine.lastActivityAt ?? row.daytonaActivityAt,
-          stoppedAt: mapped === "stopped" ? row.stoppedAt ?? machine.stoppedAt ?? new Date() : null,
-        }).where(and(eq(sandboxes.id, row.id), eq(sandboxes.state, row.state),
-          eq(sandboxes.daytonaSandboxId, row.daytonaSandboxId)));
       }
       await refreshUsage(key.id, { force: true });
     } catch (error) {
@@ -118,6 +153,17 @@ async function activeRows() {
 async function stopMachine(row: Sandbox, machine: DaytonaMachine): Promise<boolean> {
   // Повторно проверить события прямо перед остановкой, не только в начале прохода.
   if (await sessionIsBusy(row.appSessionId, machine)) return false;
+  const token = randomUUID();
+  const claimed = await getSqlClient().begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(20261111, hashtext(${row.appSessionId}))`;
+    return tx`update sandboxes set maintenance_token = ${token},
+      maintenance_until = now() + interval '330 seconds'
+      where id = ${row.id} and state = 'started' and daytona_sandbox_id = ${machine.id}
+      and (maintenance_until is null or maintenance_until < now())
+      and exists (select 1 from app_sessions where id = ${row.appSessionId}
+        and sandbox_work_state <> 'active') returning id`;
+  });
+  if (!claimed.length) return false;
   try {
     await machine.stop();
     if (machine.state !== "stopped") return false;
@@ -128,6 +174,9 @@ async function stopMachine(row: Sandbox, machine: DaytonaMachine): Promise<boole
   } catch (error) {
     console.warn("[sandbox:queue] stop_failed", errorStatus(error) ?? "transport");
     return false;
+  } finally {
+    await getDb().update(sandboxes).set({ maintenanceToken: null, maintenanceUntil: null })
+      .where(and(eq(sandboxes.id, row.id), eq(sandboxes.maintenanceToken, token)));
   }
 }
 
@@ -141,25 +190,30 @@ async function reclaim(entry: QueueEntry, machines: Map<string, DaytonaMachine>)
   const db = getDb();
   const config = loadConfig();
   const rows = await activeRows();
-  let changed = false;
-  for (const { sandbox: row, userId } of rows) {
-    if (userId === entry.userId || row.state !== "started" ||
-        Date.now() - row.lastActiveAt.getTime() < config.sandboxIdleStopMinutes * 60_000) continue;
-    const machine = machines.get(row.appSessionId);
-    if (machine?.state === "started" && await stopMachine(row, machine)) changed = true;
-  }
-  if (changed) return;
-  if (entry.need === "wake") return;
   const keys = await db.select().from(daytonaKeys).where(isNull(daytonaKeys.deletedAt));
   const candidates = keys.filter((key) => entry.daytonaKeyId
     ? key.id === entry.daytonaKeyId : key.enabled);
   for (const key of candidates) {
     const usage = storedUsage(key.usage);
-    if (!usage?.cpu || !usage.memoryGb || !usage.diskGb ||
-        usage.cpu.quota - usage.cpu.used < config.sandboxCpu ||
-        usage.memoryGb.quota - usage.memoryGb.used < config.sandboxMemoryGb ||
-        usage.diskGb.quota - usage.diskGb.used >= config.sandboxDiskGb) continue;
+    if (!usage?.cpu || !usage.memoryGb || !usage.diskGb || usage.error === "unauthorized") continue;
     const poolIds = new Set(keys.filter((other) => samePool(key, other)).map((other) => other.id));
+    const reserved = rows.filter(({ sandbox: row }) => poolIds.has(row.daytonaKeyId) &&
+      row.appSessionId !== entry.appSessionId && row.state === "starting" && row.startingSince &&
+      Date.now() - row.startingSince.getTime() < RESERVATION_MS);
+    const lacksCompute = usage.cpu.quota - usage.cpu.used - reserved.length * config.sandboxCpu < config.sandboxCpu ||
+      usage.memoryGb.quota - usage.memoryGb.used - reserved.length * config.sandboxMemoryGb < config.sandboxMemoryGb;
+    if (lacksCompute) {
+      for (const { sandbox: row, userId } of rows) {
+        if (!poolIds.has(row.daytonaKeyId) || userId === entry.userId || row.state !== "started" ||
+            Date.now() - row.lastActiveAt.getTime() < config.sandboxIdleStopMinutes * 60_000) continue;
+        const machine = machines.get(row.appSessionId);
+        if (machine?.state === "started" && await stopMachine(row, machine)) return;
+      }
+      continue;
+    }
+    const diskReserved = reserved.filter(({ sandbox }) => sandbox.startingKind !== "wake").length * config.sandboxDiskGb;
+    if (entry.need === "wake" ||
+        usage.diskGb.quota - usage.diskGb.used - diskReserved >= config.sandboxDiskGb) continue;
     const stopped = rows.filter(({ sandbox: row, userId }) => row.state === "stopped" &&
       userId !== entry.userId && poolIds.has(row.daytonaKeyId))
       .sort((a, b) => (a.sandbox.stoppedAt ?? a.sandbox.lastActiveAt).getTime() -

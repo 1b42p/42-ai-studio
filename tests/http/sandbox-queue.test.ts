@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { awaitSlot, dispatchSandboxQueue } from "../../agent/lib/sandbox-queue";
 import { loadConfig } from "../../lib/config";
-import { appSessions, queueEntries, sandboxes, type User } from "../../lib/db/schema";
+import { getSqlClient } from "../../lib/db/client";
+import { appSessions, daytonaKeys, queueEntries, sandboxes, type User } from "../../lib/db/schema";
 import type { SandboxStatus } from "../../lib/sandbox/status";
 import { fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
@@ -181,6 +182,53 @@ describe("переключение сессий одного пользоват�
     expect(await status(user, second.id)).toEqual({ state: "started", queue: null });
     await expectQueueEmpty();
   }, 60_000);
+
+  test("новый ход ждёт уже принятую остановку перед работой с машиной", async () => {
+    await createDaytonaKey({ apiKey: KEY });
+    const user = await createUser();
+    const session = await newSession(user, "Работа после остановки");
+    expectRead(await sendAndWait(user, session.id, READ_FILE), "Работа после остановки");
+    await db().update(sandboxes).set({
+      maintenanceToken: "00000000-0000-4000-8000-000000000024",
+      maintenanceUntil: new Date(Date.now() + 30_000),
+    }).where(eq(sandboxes.appSessionId, session.id));
+    const pending = await startTurn(user, session.id);
+    try {
+      await expect.poll(async () => {
+        const [row] = await db().select().from(appSessions).where(eq(appSessions.id, session.id));
+        return row.sandboxWorkState;
+      }, { timeout: 5000 }).toBe("active");
+      expect(pending.settled).toBe(false);
+      await fakeSandbox.stop(session.id);
+    } finally {
+      await db().update(sandboxes).set({ maintenanceToken: null, maintenanceUntil: null })
+        .where(eq(sandboxes.appSessionId, session.id));
+    }
+    expectRead(await pending.events, "Работа после остановки");
+    expect((await sandboxRow(session.id)).state).toBe("started");
+  }, 30_000);
+
+  test("сбой барьера отменяет ход до инструмента; следующий ход после восстановления работает", async () => {
+    await createDaytonaKey({ apiKey: KEY });
+    const user = await createUser();
+    const session = await newSession(user, "После восстановления базы");
+    const sql = getSqlClient();
+    await sql.unsafe(`create function studio_test_fail_sandbox_work() returns trigger language plpgsql as $$
+      begin raise exception 'temporary work-state write failure' using errcode = '40001'; end $$`);
+    try {
+      await sql.unsafe(`create trigger studio_test_fail_sandbox_work before update of sandbox_work_state
+        on app_sessions for each row when (NEW.sandbox_work_state = 'active')
+        execute function studio_test_fail_sandbox_work()`);
+      const events = await sendAndWait(user, session.id, READ_FILE);
+      expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
+      expect(events.filter((event) => event.type === "action.result")).toHaveLength(0);
+      expect((await fakeSandbox.counters()).created).toBe(0);
+    } finally {
+      await sql.unsafe("drop trigger if exists studio_test_fail_sandbox_work on app_sessions");
+      await sql.unsafe("drop function studio_test_fail_sandbox_work()");
+    }
+    expectRead(await sendAndWait(user, session.id, READ_FILE), "После восстановления базы");
+  }, 30_000);
 });
 
 describe("ёмкость и FIFO", () => {
@@ -274,6 +322,25 @@ describe("ёмкость и FIFO", () => {
     expect(await fakeSandbox.counters()).toMatchObject({ created: 2, archived: 2, restored: 1 });
     await expectQueueEmpty();
   }, 60_000);
+
+  test("отказ Daytona по квоте при пробуждении возвращает в очередь, не теряя файлов", async () => {
+    const key = await createDaytonaKey({ apiKey: KEY });
+    const user = await createUser();
+    const session = await newSession(user, "После временного отказа квоты");
+    expectRead(await sendAndWait(user, session.id, READ_FILE), "После временного отказа квоты");
+    await fakeSandbox.stop(session.id);
+    await fakeSandbox.failNextStartForQuota();
+    const pending = await startTurn(user, session.id);
+    await expect.poll(async () => {
+      const [row] = await db().select().from(daytonaKeys).where(eq(daytonaKeys.id, key.id));
+      return row.exhaustedUntil;
+    }, { timeout: 5000, interval: 50 }).not.toBeNull();
+    await expectQueued(user, session.id, { position: 1, total: 1, reason: "capacity" });
+    expect(pending.settled).toBe(false);
+    await db().update(daytonaKeys).set({ exhaustedUntil: null }).where(eq(daytonaKeys.id, key.id));
+    expectRead(await pending.events, "После временного отказа квоты");
+    expect((await fakeSandbox.counters()).created).toBe(1);
+  }, 30_000);
 });
 
 describe("отмена, таймаут и уборка заявок", () => {

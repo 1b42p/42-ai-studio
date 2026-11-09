@@ -74,6 +74,9 @@ class FakeMachineHandle implements FakeMachine {
   }
 
   async start(): Promise<void> {
+    if (await this.store.consumeStartQuotaFailure()) {
+      throw Object.assign(new Error("Total CPU limit exceeded."), { status: 400 });
+    }
     await this.store.setState(this.id, "started");
     await this.configureLifecycle();
   }
@@ -96,6 +99,7 @@ class FakeMachineHandle implements FakeMachine {
 
   async recover(): Promise<void> {
     await this.store.setState(this.id, "started");
+    await this.configureLifecycle();
   }
 
   async delete(): Promise<void> {

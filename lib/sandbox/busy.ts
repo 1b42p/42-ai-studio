@@ -1,8 +1,8 @@
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 
 import type { DaytonaMachine } from "@/agent/lib/daytona-backend";
 import { getDb } from "@/lib/db/client";
-import { bashJobs, sessionEvents } from "@/lib/db/schema";
+import { appSessions, bashJobs, sessionEvents } from "@/lib/db/schema";
 
 const FRESH_EVENT_MS = 2 * 60_000;
 const MAX_JOB_AGE_MS = 6 * 60 * 60_000;
@@ -31,6 +31,12 @@ export function turnIsBusy(events: readonly BusyEvent[], now = Date.now()): bool
     if (typeof type !== "string") continue;
     latestAt = event.createdAt.getTime();
     const eventTurnId = typeof data.turnId === "string" ? data.turnId : undefined;
+    if (state === "idle" && eventTurnId !== undefined && eventTurnId !== turnId &&
+        type !== "turn.completed" && type !== "turn.failed" && type !== "turn.cancelled") {
+      // Поток мог ещё не сохранить начало следующего хода.
+      state = "unknown";
+      turnId = eventTurnId;
+    }
     const sameTurn = turnId === undefined || eventTurnId === turnId;
 
     if (type === "turn.started") {
@@ -70,12 +76,37 @@ export async function sessionIsBusy(
   machine: Pick<DaytonaMachine, "readJobDirectory"> & Partial<Pick<DaytonaMachine, "state">>,
   now = Date.now(),
 ): Promise<boolean> {
+  const [session] = await getDb().select({
+    state: appSessions.sandboxWorkState, eventId: appSessions.sandboxWorkEventId,
+  }).from(appSessions)
+    .where(eq(appSessions.id, appSessionId));
   const events = await getDb()
-    .select({ payload: sessionEvents.payload, createdAt: sessionEvents.createdAt })
+    .select({
+      payload: sql`jsonb_build_object('type', ${sessionEvents.payload}->>'type',
+        'data', jsonb_build_object('turnId', ${sessionEvents.payload}->'data'->>'turnId',
+          'on', ${sessionEvents.payload}->'data'->>'on'))`,
+      createdAt: sessionEvents.createdAt,
+      eventId: sessionEvents.eventId,
+    })
     .from(sessionEvents)
-    .where(eq(sessionEvents.appSessionId, appSessionId))
+    .where(and(eq(sessionEvents.appSessionId, appSessionId), sql`(
+      ${sessionEvents.payload}->>'type' in (
+        'turn.started', 'turn.completed', 'turn.failed', 'turn.cancelled',
+        'turn.waiting', 'step.started', 'input.resolved',
+        'session.waiting', 'session.failed', 'session.completed')
+      or ${sessionEvents.seq} = (select max(seq) from session_events where app_session_id = ${appSessionId})
+    )`))
     .orderBy(asc(sessionEvents.seq));
+  if (session?.state === "active" &&
+      (!session.eventId || !events.some((event) => event.eventId === session.eventId))) return true;
   if (turnIsBusy(events, now)) return true;
+  if (session?.state === "active" && session.eventId) {
+    const [released] = await getDb().update(appSessions).set({ sandboxWorkState: "idle" })
+      .where(and(eq(appSessions.id, appSessionId), eq(appSessions.sandboxWorkState, "active"),
+        eq(appSessions.sandboxWorkEventId, session.eventId))).returning({ id: appSessions.id });
+    // Новый шаг мог уже сменить отметку после чтения истории.
+    if (!released) return true;
+  }
   if ("state" in machine && machine.state !== "started") return false;
 
   const jobs = await getDb().select({ jobId: bashJobs.jobId }).from(bashJobs).where(and(

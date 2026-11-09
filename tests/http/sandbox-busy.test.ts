@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { eq } from "drizzle-orm";
 
 import { appSessions, bashJobs, sessionEvents } from "../../lib/db/schema";
 import { sessionIsBusy, turnIsBusy } from "../../lib/sandbox/busy";
@@ -22,6 +23,13 @@ describe("turnIsBusy", () => {
 
   test("открытый ход остаётся занят даже без свежих событий", () => {
     expect(turnIsBusy([event("turn.started", { turnId: "a" }, SIX_HOURS)], NOW)).toBe(true);
+  });
+
+  test("неполный следующий ход не наследует свободное состояние завершённого", () => {
+    const completed = [event("turn.started", { turnId: "a" }), event("turn.completed", { turnId: "a" })];
+    expect(turnIsBusy([...completed, event("step.started", { turnId: "b" })], NOW)).toBe(true);
+    expect(turnIsBusy([...completed, event("message.appended", { turnId: "b" })], NOW)).toBe(true);
+    expect(turnIsBusy([...completed, event("message.appended", { turnId: "b" }, 120_000)], NOW)).toBe(false);
   });
 
   test.each(["turn.completed", "turn.failed", "turn.cancelled"])(
@@ -118,6 +126,24 @@ describe("sessionIsBusy: база и граница чтения машины", 
     });
     expect(await sessionIsBusy(id, { readJobDirectory }, NOW)).toBe(true);
     expect(readJobDirectory).not.toHaveBeenCalled();
+  });
+
+  test("сохранённая граница хода освобождает active, даже если запись idle сорвалась", async () => {
+    const id = await session();
+    await db().update(appSessions).set({ sandboxWorkState: "active", sandboxWorkEventId: "begin" })
+      .where(eq(appSessions.id, id));
+    const machine = { readJobDirectory: async () => emptyReading() };
+    expect(await sessionIsBusy(id, machine, NOW)).toBe(true);
+    await db().insert(sessionEvents).values([
+      { appSessionId: id, seq: 0, eventId: "begin", ...event("turn.started", { turnId: "a" }) },
+      { appSessionId: id, seq: 1, eventId: "end", ...event("turn.completed", { turnId: "a" }) },
+    ]);
+    expect(await sessionIsBusy(id, machine, NOW)).toBe(false);
+    const [released] = await db().select().from(appSessions).where(eq(appSessions.id, id));
+    expect(released.sandboxWorkState).toBe("idle");
+    await db().update(appSessions).set({ sandboxWorkState: "active", sandboxWorkEventId: "next-begin" })
+      .where(eq(appSessions.id, id));
+    expect(await sessionIsBusy(id, machine, NOW)).toBe(true);
   });
 
   test.each([

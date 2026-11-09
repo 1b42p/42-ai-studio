@@ -196,7 +196,8 @@ export async function pickKey(
           select 1 from sandboxes s join app_sessions a on a.id = s.app_session_id
           where a.user_id = q.user_id and a.id <> q.app_session_id
           and s.state in ('starting', 'started')
-        ) for update`;
+        ) and not exists (select 1 from sandboxes s where s.app_session_id = q.app_session_id
+          and s.maintenance_until > now()) for update`;
       if (entries.length === 0) return { kind: "no_capacity" } as const;
     }
     for (const pool of candidatePools) {

@@ -42,6 +42,10 @@ export interface DaytonaBackend {
 
 const clients = new Map<string, Daytona>();
 
+export function daytonaSandboxName(eveSessionId: string): string {
+  return `studio-${createHash("sha256").update(eveSessionId).digest("hex").slice(0, 32)}`;
+}
+
 function parsedDate(value: string | undefined): Date | undefined {
   if (value === undefined) return undefined;
   const date = new Date(value);
@@ -95,7 +99,10 @@ function wrap(sandbox: Sandbox): DaytonaMachine {
       await sandbox.refreshData();
     },
     configureLifecycle,
-    recover: () => sandbox.recover(300),
+    recover: async () => {
+      await sandbox.recover(300);
+      await configureLifecycle();
+    },
     ready: () => sandbox.waitUntilStarted(300),
     delete: () => sandbox.delete(300, true),
     connect: (callbacks) => connectDaytona(sandbox, callbacks),

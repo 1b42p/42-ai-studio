@@ -97,6 +97,7 @@ interface StoreData {
   failNextCreate?: FakeCreateFailure;
   failNextDelete?: FakeDeleteFailure;
   failNextGet?: FakeGetFailure;
+  failNextStartQuota?: boolean;
   /** Задержка создания, чтобы тест успел удалить ключ во время старта. */
   createDelayMs: number;
   keys: Record<string, FakeKeyConfig>;
@@ -594,6 +595,18 @@ export class FakeStore {
     });
   }
 
+  async failNextStartForQuota(): Promise<void> {
+    await this.transaction((data) => { data.failNextStartQuota = true; });
+  }
+
+  async consumeStartQuotaFailure(): Promise<boolean> {
+    return this.transaction((data) => {
+      const failure = data.failNextStartQuota === true;
+      delete data.failNextStartQuota;
+      return failure;
+    });
+  }
+
   async counters(): Promise<FakeCounters> {
     return this.transaction((data) => ({ ...data.counters }));
   }
@@ -613,6 +626,7 @@ export class FakeStore {
       delete data.failNextCreate;
       delete data.failNextDelete;
       delete data.failNextGet;
+      delete data.failNextStartQuota;
     });
   }
 

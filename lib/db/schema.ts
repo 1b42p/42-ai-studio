@@ -84,6 +84,9 @@ export const appSessions = pgTable(
     streamCursor: integer("stream_cursor").notNull().default(0),
     /** Когда пользователь начал создание сессии eve; окно привязки — 60 секунд. */
     startRequestedAt: timestamp("start_requested_at", { withTimezone: true }),
+    sandboxWorkState: text("sandbox_work_state").$type<"active" | "input" | "idle">().notNull().default("idle"),
+    sandboxWorkTurnId: text("sandbox_work_turn_id"),
+    sandboxWorkEventId: text("sandbox_work_event_id"),
     createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
     /**
      * Миллисекундная точность: по этому столбцу #6 строит постраничную выдачу,
@@ -203,6 +206,8 @@ export const sandboxes = pgTable("sandboxes", {
   slotRequestId: uuid("slot_request_id"),
   stoppedAt: timestamp("stopped_at", { withTimezone: true }),
   daytonaActivityAt: timestamp("daytona_activity_at", { withTimezone: true }),
+  maintenanceToken: uuid("maintenance_token"),
+  maintenanceUntil: timestamp("maintenance_until", { withTimezone: true }),
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
