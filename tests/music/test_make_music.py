@@ -8,7 +8,9 @@
 # ///
 """Контракт make_music.py: WAV, громкость, края и seed.
 
-Громкость измеряет фильтр ffmpeg loudnorm, не pyloudnorm.
+Громкость измеряет системный ffmpeg `loudnorm` — тот же фильтр, что включает
+сборка Remotion. В корневом пакете бинарника Remotion нет, pyloudnorm
+для проверки не используется.
 """
 
 import array

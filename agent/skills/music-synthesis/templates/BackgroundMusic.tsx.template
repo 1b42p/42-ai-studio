@@ -17,6 +17,12 @@ export function BackgroundMusic({
   level?: number;
 }) {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  return <Audio src={staticFile(src)} volume={level * duckingGain(speech, fps, frame)} />;
+  const { fps, durationInFrames } = useVideoConfig();
+  return (
+    <Audio
+      src={staticFile(src)}
+      durationInFrames={durationInFrames}
+      volume={level * duckingGain(speech, fps, frame)}
+    />
+  );
 }
