@@ -5,7 +5,7 @@ import type { MessageStreamEvent } from "eve/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { awaitSlot, dispatchSandboxQueue, reconcileSandboxStates } from "../../agent/lib/sandbox-queue";
-import { pickKey } from "../../agent/lib/daytona-key-pool";
+import { pickKey, refreshUsage } from "../../agent/lib/daytona-key-pool";
 import { loadConfig } from "../../lib/config";
 import { getSqlClient } from "../../lib/db/client";
 import { appSessions, daytonaKeys, queueEntries, sandboxes, type User } from "../../lib/db/schema";
@@ -263,6 +263,26 @@ describe("ёмкость и FIFO", () => {
     const [younger] = await db().insert(queueEntries).values({ appSessionId: second.id,
       userId: secondUser.id, need: "create" }).returning();
     expect(await pickKey(ONE_SLOT, { appSessionId: second.id, queueEntryId: younger.id }))
+      .toMatchObject({ kind: "key", key: { id: a.id } });
+  });
+
+  test("старшая create не блокирует wake на отключённом ключе другого пула", async () => {
+    const a = await createDaytonaKey({ apiKey: KEY, enabled: false });
+    const b = await createDaytonaKey({ apiKey: "dtn_full_enabled_queue_pool" });
+    await fakeSandbox.setQuota("dtn_full_enabled_queue_pool", { cpu: 0, memoryGb: 0, diskGb: 0 });
+    await refreshUsage(b.id, { force: true });
+    const firstUser = await createUser();
+    const secondUser = await createUser();
+    const first = await createSessionAs(firstUser);
+    const second = await createSessionAs(secondUser);
+    await db().insert(sandboxes).values({ appSessionId: second.id, daytonaKeyId: a.id,
+      daytonaSandboxId: "existing-stopped-machine", state: "stopped" });
+    await db().insert(queueEntries).values({ appSessionId: first.id, userId: firstUser.id,
+      need: "create", enqueuedAt: new Date(Date.now() - 1000) });
+    const [younger] = await db().insert(queueEntries).values({ appSessionId: second.id,
+      userId: secondUser.id, need: "wake", daytonaKeyId: a.id }).returning();
+    expect(await pickKey({ ...ONE_SLOT, diskGb: 0 }, { appSessionId: second.id,
+      queueEntryId: younger.id, keyId: a.id, launch: "wake" }))
       .toMatchObject({ kind: "key", key: { id: a.id } });
   });
 

@@ -3,13 +3,31 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { SandboxSessionContext } from "eve/sandbox/provider";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
 import { loadConfig } from "../../lib/config";
+import { getFakeBackend } from "../../lib/sandbox/fake";
 import { appSessions, daytonaKeys, sandboxes } from "../../lib/db/schema";
 import { createDaytonaKey, createUser, db } from "./support/db";
 import { fakeSandbox } from "./support/fake-sandbox";
+
+beforeEach(() => fakeSandbox.reset());
+
+test("имена машин уникальны внутри организации, но не между организациями", async () => {
+  const directory = loadConfig().fakeSandboxDir!;
+  const resources = { cpu: 2, memoryGb: 4, diskGb: 8 };
+  const a = getFakeBackend(directory, "dtn_names_a", resources);
+  const b = getFakeBackend(directory, "dtn_names_b", resources);
+  const appSessionId = randomUUID();
+  const first = await a.create({ name: "same-name", appSessionId });
+  const second = await b.create({ name: "same-name", appSessionId });
+  expect(first.id).not.toBe(second.id);
+  expect((await a.get("same-name")).id).toBe(first.id);
+  expect((await b.get("same-name")).id).toBe(second.id);
+  await expect(a.create({ name: "same-name", appSessionId })).rejects.toMatchObject({ status: 409 });
+  await Promise.all([first.delete(), second.delete()]);
+});
 
 test("два одновременных start одной сессии создают одну песочницу и возвращают её обоим клиентам", async () => {
   const key = await createDaytonaKey();

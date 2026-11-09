@@ -750,7 +750,8 @@ export class FakeStore {
   ): Promise<{ machine?: FakeRecord; failure?: FakeCreateFailure | "quota" }> {
     return this.transaction(async (data) => {
       data.counters.createAttempts++;
-      if (data.machines.some((machine) => machine.name === name && machine.state !== "destroyed")) {
+      if (data.machines.some((machine) => machine.name === name && machine.state !== "destroyed" &&
+          organizationOf(data, machine.apiKey) === organizationOf(data, apiKey))) {
         throw Object.assign(new Error("Fake Daytona: name exists (dtn_test_secret_value)"), { status: 409 });
       }
       if (data.createDelayMs > 0) await delay(data.createDelayMs);

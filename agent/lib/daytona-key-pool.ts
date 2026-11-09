@@ -267,7 +267,12 @@ export async function pickKey(
       if (usage?.error === "unauthorized") continue;
       if (!fits(pool.usage, pool.reserved, need)) continue;
       const olderCanUsePool = earlier.some((entry) => {
-        if (entry.keyId !== null) {
+        if (entry.keyId === null) {
+          if (entry.need !== "create" || !keys.some((key) => key.enabled && key.deletedAt === null &&
+              storedUsage(key.usage)?.error !== "unauthorized" && organizationByKey.get(key.id) === poolId)) {
+            return false;
+          }
+        } else {
           const key = keys.find((key) => key.id === entry.keyId);
           if (!key || key.deletedAt !== null || storedUsage(key.usage)?.error === "unauthorized" ||
               organizationByKey.get(entry.keyId) !== poolId) return false;
