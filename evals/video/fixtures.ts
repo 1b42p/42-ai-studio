@@ -1,5 +1,5 @@
 import type { EveEvalContext, ToolStub } from "eve/evals";
-import { blockedRead, emptySearch } from "../web/fixtures";
+import { blockedRead, emptySearch, isolateDownload } from "../web/fixtures";
 import { resumableSession } from "../support/resumable-session";
 
 export const VIDEO_REQUEST = "Сделай 30-секундный вертикальный ролик 9:16 о пользе утренней зарядки, без озвучки, три сцены.";
@@ -17,6 +17,7 @@ function videoStubs(): readonly ToolStub[] {
         wordCount: 1, text: "Подмена", media: { audioId: "00000000-0000-4000-8000-000000000001" } } },
     },
     { id: "isolate-voices", tool: "list_voices", outcome: { response: { voices: [] } } },
+    isolateDownload,
     blockedRead, emptySearch,
   ];
 }

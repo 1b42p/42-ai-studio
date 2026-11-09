@@ -176,3 +176,18 @@ export async function safeFetch(input: string, init: SafeFetchInit, policy: Outb
     await agent.destroy();
   }
 }
+
+/**
+ * Проверяет адрес и DNS, не отправляя запрос. Перенаправления не выполняет:
+ * вызывающий сам решает, можно ли их делать.
+ */
+export async function checkOutboundAddress(
+  input: string,
+  policy: OutboundPolicy,
+  signal?: AbortSignal,
+): Promise<URL> {
+  const url = acceptUrl(input, policy);
+  const stop = signal ?? AbortSignal.timeout(policy.timeoutMs);
+  await withSignal(resolveHost(url, policy), stop);
+  return url;
+}
