@@ -213,6 +213,19 @@ export async function pickKey(
       order by created_at, id`) as CandidateRow[];
     if (rows.length === 0) return { kind: "no_key" } as const;
 
+    const earlier = options.queueEntryId === undefined ? [] : (await tx`
+      select q.need, q.daytona_key_id as "keyId" from queue_entries q
+      where q.heartbeat_at > now() - interval '60 seconds'
+      and (q.enqueued_at, q.id) < (
+        select enqueued_at, id from queue_entries where id = ${options.queueEntryId}
+      ) and not exists (
+        select 1 from sandboxes s join app_sessions a on a.id = s.app_session_id
+        where a.user_id = q.user_id and a.id <> q.app_session_id
+          and s.state in ('starting', 'started')
+      ) and not exists (select 1 from sandboxes s where s.app_session_id = q.app_session_id
+        and s.maintenance_until > now())
+    `) as Array<{ need: SandboxLaunch; keyId: string | null }>;
+
     const starting = (await tx`
       select app_session_id as "appSessionId", daytona_key_id as "daytonaKeyId",
              starting_kind as "startingKind"
@@ -253,6 +266,17 @@ export async function pickKey(
       // Отозванный или истёкший ключ не выбирается, даже если числа прежние.
       if (usage?.error === "unauthorized") continue;
       if (!fits(pool.usage, pool.reserved, need)) continue;
+      const olderCanUsePool = earlier.some((entry) => {
+        if (entry.keyId !== null) {
+          const key = keys.find((key) => key.id === entry.keyId);
+          if (!key || key.deletedAt !== null || storedUsage(key.usage)?.error === "unauthorized" ||
+              organizationByKey.get(entry.keyId) !== poolId) return false;
+        }
+        return fits(pool.usage, pool.reserved, {
+          ...sandboxSize, diskGb: entry.need === "wake" ? 0 : sandboxSize.diskGb,
+        });
+      });
+      if (olderCanUsePool) continue;
 
       if (options.appSessionId !== undefined) {
         await tx`

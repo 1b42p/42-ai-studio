@@ -4,7 +4,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import type { MessageStreamEvent } from "eve/client";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
-import { awaitSlot, dispatchSandboxQueue } from "../../agent/lib/sandbox-queue";
+import { awaitSlot, dispatchSandboxQueue, reconcileSandboxStates } from "../../agent/lib/sandbox-queue";
+import { pickKey } from "../../agent/lib/daytona-key-pool";
 import { loadConfig } from "../../lib/config";
 import { getSqlClient } from "../../lib/db/client";
 import { appSessions, daytonaKeys, queueEntries, sandboxes, type User } from "../../lib/db/schema";
@@ -232,6 +233,39 @@ describe("переключение сессий одного пользоват�
 });
 
 describe("ёмкость и FIFO", () => {
+  test("выдача не обходит более старшую подходящую заявку при обновлении квоты", async () => {
+    const key = await createDaytonaKey({ apiKey: KEY });
+    const a = await createUser();
+    const b = await createUser();
+    const first = await createSessionAs(a);
+    const second = await createSessionAs(b);
+    const [older] = await db().insert(queueEntries).values({
+      appSessionId: first.id, userId: a.id, need: "create", enqueuedAt: new Date(Date.now() - 1000),
+    }).returning();
+    const [younger] = await db().insert(queueEntries).values({
+      appSessionId: second.id, userId: b.id, need: "create",
+    }).returning();
+    expect(await pickKey(ONE_SLOT, { appSessionId: second.id, queueEntryId: younger.id }))
+      .toEqual({ kind: "no_capacity" });
+    const admitted = await pickKey(ONE_SLOT, { appSessionId: first.id, queueEntryId: older.id });
+    expect(admitted).toMatchObject({ kind: "key", key: { id: key.id } });
+  });
+
+  test("старшая заявка другого пула не блокирует свободный ключ", async () => {
+    const a = await createDaytonaKey({ apiKey: KEY, createdAt: new Date(Date.now() - 1000) });
+    const b = await createDaytonaKey({ apiKey: "dtn_other_queue_pool" });
+    const firstUser = await createUser();
+    const secondUser = await createUser();
+    const first = await createSessionAs(firstUser);
+    const second = await createSessionAs(secondUser);
+    await db().insert(queueEntries).values({ appSessionId: first.id, userId: firstUser.id,
+      need: "wake", daytonaKeyId: b.id, enqueuedAt: new Date(Date.now() - 1000) });
+    const [younger] = await db().insert(queueEntries).values({ appSessionId: second.id,
+      userId: secondUser.id, need: "create" }).returning();
+    expect(await pickKey(ONE_SLOT, { appSessionId: second.id, queueEntryId: younger.id }))
+      .toMatchObject({ kind: "key", key: { id: a.id } });
+  });
+
   test("C получает первый освободившийся слот, D следующий, без повторной отправки", async () => {
     await createDaytonaKey({ apiKey: KEY });
     await fakeSandbox.setQuota(KEY, { cpu: 4, memoryGb: 8, diskGb: 16 });
@@ -483,6 +517,7 @@ test("создание и пробуждение выставляют настр
   const [created] = await fakeSandbox.creationLog(session.id);
   expect(created).toMatchObject({ ...intervals, autoDeleteInterval: -1 });
   const original = await sandboxRow(session.id);
+  await db().update(sandboxes).set({ stoppedAt: new Date(0) }).where(eq(sandboxes.id, original.id));
   const before = await fakeSandbox.lifecycleLog(session.id);
   await fakeSandbox.stop(session.id);
   expectRead(await sendAndWait(user, session.id, READ_FILE), "Переживает остановку");
@@ -492,5 +527,10 @@ test("создание и пробуждение выставляют настр
     expect.objectContaining({ ...intervals, id: original.daytonaSandboxId, appSessionId: session.id }),
   ]));
   expect((await sandboxRow(session.id)).daytonaSandboxId).toBe(original.daytonaSandboxId);
+  expect((await sandboxRow(session.id)).stoppedAt).toBeNull();
+  const stoppedSince = Date.now();
+  await fakeSandbox.stop(session.id);
+  await reconcileSandboxStates();
+  expect((await sandboxRow(session.id)).stoppedAt!.getTime()).toBeGreaterThanOrEqual(stoppedSince);
   expect((await fakeSandbox.counters()).created).toBe(1);
 }, 60_000);

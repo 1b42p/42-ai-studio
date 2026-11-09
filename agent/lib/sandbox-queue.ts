@@ -114,7 +114,9 @@ export async function reconcileSandboxStates(): Promise<Map<string, DaytonaMachi
             daytonaActivityAt: activity
               ? sql`greatest(${sandboxes.daytonaActivityAt}, ${activity.toISOString()}::timestamptz)`
               : sql`${sandboxes.daytonaActivityAt}`,
-            stoppedAt: mapped === "stopped" ? row.stoppedAt ?? machine.stoppedAt ?? new Date() : null,
+            stoppedAt: machine.state === "stopped"
+              ? (row.state === "stopped" ? row.stoppedAt : null) ?? machine.stoppedAt ?? new Date()
+              : null,
           }).where(unchanged).returning({ id: sandboxes.id });
           // Устаревший handle не должен попасть в последующую остановку/архивацию.
           if (updated) machines.set(row.appSessionId, machine);
@@ -186,7 +188,7 @@ function samePool(left: DaytonaKey, right: DaytonaKey): boolean {
 }
 
 /** Освобождение диска допускается только когда vCPU и памяти уже достаточно. */
-async function reclaim(entry: QueueEntry, machines: Map<string, DaytonaMachine>) {
+async function reclaim(entry: QueueEntry, machines: Map<string, DaytonaMachine>): Promise<boolean> {
   const db = getDb();
   const config = loadConfig();
   const rows = await activeRows();
@@ -207,7 +209,7 @@ async function reclaim(entry: QueueEntry, machines: Map<string, DaytonaMachine>)
         if (!poolIds.has(row.daytonaKeyId) || userId === entry.userId || row.state !== "started" ||
             Date.now() - row.lastActiveAt.getTime() < config.sandboxIdleStopMinutes * 60_000) continue;
         const machine = machines.get(row.appSessionId);
-        if (machine?.state === "started" && await stopMachine(row, machine)) return;
+        if (machine?.state === "started" && await stopMachine(row, machine)) return true;
       }
       continue;
     }
@@ -227,12 +229,14 @@ async function reclaim(entry: QueueEntry, machines: Map<string, DaytonaMachine>)
         if ((machine as DaytonaMachine).state === "archived") {
           await db.update(sandboxes).set({ state: "archived" }).where(eq(sandboxes.id, row.id));
         }
+        return true;
       } catch (error) {
         console.warn("[sandbox:queue] archive_failed", errorStatus(error) ?? "transport");
       }
-      return;
+      return false;
     }
   }
+  return false;
 }
 
 /** Один проход; аренда координирует процессы, но не держит соединение на сети. */
@@ -291,7 +295,7 @@ export async function dispatchSandboxQueue(): Promise<void> {
         appSessionId: entry.appSessionId, keyId: entry.daytonaKeyId ?? undefined,
         launch: entry.need, queueEntryId: entry.id,
       });
-      if (picked.kind === "no_capacity") await reclaim(entry, machines);
+      if (picked.kind === "no_capacity" && await reclaim(entry, machines)) return;
     }
   } finally {
     clearInterval(renew);

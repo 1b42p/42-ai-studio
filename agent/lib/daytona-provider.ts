@@ -201,6 +201,7 @@ async function checkpointMachine(
         startingKind: null,
         lastActiveAt: new Date(),
         daytonaActivityAt: machine.lastActivityAt ?? null,
+        stoppedAt: null,
       })
       .where(eq(sandboxes.appSessionId, appSessionId));
     return true;
@@ -232,12 +233,12 @@ async function connected(machine: DaytonaMachine, appSessionId: string): Promise
   const identity = and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.daytonaSandboxId, machine.id));
   await db.update(sandboxes)
     .set({ state: sandboxState(machine.state), startingSince: null, startingKind: null,
-      lastActiveAt: new Date(), daytonaActivityAt: machine.lastActivityAt ?? null })
+      lastActiveAt: new Date(), daytonaActivityAt: machine.lastActivityAt ?? null, stoppedAt: null })
     .where(identity);
   const connection = machine.connect({
     async onStop() {
       await db.update(sandboxes)
-        .set({ state: "stopped", startingSince: null, startingKind: null })
+        .set({ state: "stopped", startingSince: null, startingKind: null, stoppedAt: new Date() })
         .where(identity);
     },
     async onActivity() {
