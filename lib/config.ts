@@ -120,6 +120,20 @@ export interface AppConfig {
   readonly edgeTtsWssUrl: string | undefined;
   /** Список голосов Edge TTS. Пусто — адрес библиотеки. */
   readonly edgeTtsVoicesUrl: string | undefined;
+  /** Исполняемый файл yt-dlp. По умолчанию имя из PATH. */
+  readonly ytdlpPath: string;
+  /** Каталог или файл ffmpeg для yt-dlp. Пусто — ffmpeg из PATH самого yt-dlp. */
+  readonly ffmpegPath: string | undefined;
+  /** Исполняемый файл ffprobe. По умолчанию имя из PATH. */
+  readonly ffprobePath: string;
+  /** Среда JavaScript для yt-dlp: `node` или `deno`. `bun` отвергается при вызове. */
+  readonly ytdlpJsRuntime: string;
+  /** Текст cookies Netscape. Пусто — YouTube без входа. */
+  readonly youtubeCookies: string | undefined;
+  /** Предел размера скачиваемого видео, байты. */
+  readonly downloadMaxBytes: number;
+  /** Срок метаданных и скачивания yt-dlp, миллисекунды. */
+  readonly downloadTimeoutMs: number;
 }
 
 /** Значение из `.env.example`: в production не годится в качестве секрета. */
@@ -274,7 +288,38 @@ const envSchema = z.object({
   EDGE_TTS_VOICES_URL: envUrl
     .refine((value) => /^https?:\/\//.test(value), "ожидается URL с http:// или https://")
     .optional(),
+  YTDLP_PATH: envString.optional().default("yt-dlp"),
+  FFMPEG_PATH: envString.optional(),
+  FFPROBE_PATH: envString.optional().default("ffprobe"),
+  YTDLP_JS_RUNTIME: envString.optional().default("node"),
+  YOUTUBE_COOKIES: z.string().optional(),
+  DOWNLOAD_MAX_BYTES: z.coerce
+    .number({ error: "ожидается целое число не меньше 1048576" })
+    .int("ожидается целое число не меньше 1048576")
+    .min(1_048_576, "ожидается целое число не меньше 1048576")
+    .optional()
+    .default(1_073_741_824),
+  DOWNLOAD_TIMEOUT_MS: z.coerce
+    .number({ error: "ожидается целое число от 10000 до 3600000" })
+    .int("ожидается целое число от 10000 до 3600000")
+    .min(10_000, "ожидается целое число от 10000 до 3600000")
+    .max(3_600_000, "ожидается целое число от 10000 до 3600000")
+    .optional()
+    .default(600_000),
 });
+
+/**
+ * Настоящие переводы строк, затем литералы `\r\n`, `\n` и `\t` из одной строки `.env`.
+ * Так файл Netscape собирается и из многострочного значения, и из одной строки.
+ */
+export function normalizeCookieText(value: string): string {
+  return value.replace(/\r\n/g, "\n").replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+}
+
+function cookieHeaderValid(value: string): boolean {
+  const first = value.split("\n")[0]?.trim();
+  return first === "# Netscape HTTP Cookie File" || first === "# HTTP Cookie File";
+}
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -317,9 +362,19 @@ export function parseConfig(env: EnvRecord): AppConfig {
     extra.set(name, `${name}: ${message}`);
   };
 
+  let youtubeCookies: string | undefined;
   if (result.success) {
     const data = result.data;
     const production = normalized.NODE_ENV === "production";
+    if (data.YOUTUBE_COOKIES !== undefined) {
+      youtubeCookies = normalizeCookieText(data.YOUTUBE_COOKIES);
+      if (!cookieHeaderValid(youtubeCookies)) {
+        addIssue(
+          "YOUTUBE_COOKIES",
+          "первая строка должна быть «# Netscape HTTP Cookie File» или «# HTTP Cookie File»",
+        );
+      }
+    }
 
     if (data.APP_TEST_MODE && data.FAKE_SANDBOX_DIR === undefined) {
       addIssue("FAKE_SANDBOX_DIR", "обязательна при APP_TEST_MODE=1");
@@ -442,6 +497,13 @@ export function parseConfig(env: EnvRecord): AppConfig {
     fakeSandboxDir: data.FAKE_SANDBOX_DIR === undefined ? undefined : resolve(data.FAKE_SANDBOX_DIR),
     edgeTtsWssUrl: data.EDGE_TTS_WSS_URL,
     edgeTtsVoicesUrl: data.EDGE_TTS_VOICES_URL,
+    ytdlpPath: data.YTDLP_PATH,
+    ffmpegPath: data.FFMPEG_PATH,
+    ffprobePath: data.FFPROBE_PATH,
+    ytdlpJsRuntime: data.YTDLP_JS_RUNTIME,
+    youtubeCookies,
+    downloadMaxBytes: data.DOWNLOAD_MAX_BYTES,
+    downloadTimeoutMs: data.DOWNLOAD_TIMEOUT_MS,
   };
 }
 

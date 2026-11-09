@@ -30,7 +30,8 @@ export async function buildSandboxDeliveryArtifact(files: Record<string, string 
   const directory = await fs.mkdtemp("/tmp/opencode/sandbox-delivery-");
   try {
     // Allowlist намеренно не включает .env*, .eve, .git и результаты сборок.
-    for (const entry of ["agent", "lib", "package.json", "tsconfig.json"]) {
+    // `agent/lib` импортирует фикстуры из `evals/`, поэтому сборка их видит.
+    for (const entry of ["agent", "evals", "lib", "package.json", "tsconfig.json"]) {
       await fs.cp(path.join(projectRoot, entry), path.join(directory, entry), {
         recursive: true,
         filter: (source) => !path.basename(source).startsWith(".env"),

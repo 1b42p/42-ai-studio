@@ -244,16 +244,20 @@ export async function voiceoverSession(t: EveEvalContext, fallback: boolean) {
     ...projectStubs(),
     ...mediaStubs(fallback),
     ...speechStubs(fallback),
-    {
-      id: "unexpected-speech",
-      tool: "speak",
-      outcome: {
-        throw: {
-          message:
-            "speak_bad_input: Укажите утверждённый текст сцены, голос ru-RU-SvetlanaNeural и путь calm-morning/public/voice/scene-NN без расширения. Абсолютный путь от /workspace также допустим.",
-        },
-      },
-    },
+    // При запасном пути speak и так недоступен целиком: вторая безусловная
+    // подмена не срабатывает и не помещается в предел в 100 подмен.
+    ...(fallback
+      ? []
+      : [{
+          id: "unexpected-speech",
+          tool: "speak",
+          outcome: {
+            throw: {
+              message:
+                "speak_bad_input: Укажите утверждённый текст сцены, голос ru-RU-SvetlanaNeural и путь calm-morning/public/voice/scene-NN без расширения. Абсолютный путь от /workspace также допустим.",
+            },
+          },
+        }]),
     {
       id: "voices",
       tool: "list_voices",
