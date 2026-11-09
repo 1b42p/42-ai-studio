@@ -8,13 +8,12 @@ import { awaitSlot, dispatchSandboxQueue } from "../../agent/lib/sandbox-queue";
 import { loadConfig } from "../../lib/config";
 import { appSessions, queueEntries, sandboxes, type User } from "../../lib/db/schema";
 import type { SandboxStatus } from "../../lib/sandbox/status";
-import { fetchApp, startApp } from "./support/app";
+import { fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import {
   createSessionAs,
   eveClientAs,
   readStreamUntil,
-  sendContentAndWait,
   sendAndWait,
   waitForStoredEvents,
 } from "./support/chat";
@@ -356,10 +355,13 @@ describe("отмена, таймаут и уборка заявок", () => {
     const b = await createUser();
     const occupied = await newSession(a, "Занимает слот");
     expectRead(await sendAndWait(a, occupied.id, READ_FILE), "Занимает слот");
-    const app = await startApp({ env: { SANDBOX_QUEUE_MAX_WAIT_SECONDS: "5" } });
-    try {
-      const queued = await createSessionAs(b, { baseUrl: app.url });
-      const events = await sendContentAndWait(b, queued.id, READ_FILE, { baseUrl: app.url });
+      const queued = await newSession(b, "Ожидание истекло");
+      const turn = await startTurn(b, queued.id);
+      await expectQueued(b, queued.id, { position: 1, total: 1, reason: "capacity" });
+      await db().update(queueEntries).set({ enqueuedAt: new Date(Date.now() -
+        (loadConfig().sandboxQueueMaxWaitSeconds + 1) * 1000) })
+        .where(eq(queueEntries.appSessionId, queued.id));
+      const events = await turn.events;
       const results = events.filter((event) => event.type === "action.result");
       expect(results).toHaveLength(1);
       expect(results[0].data).toMatchObject({ status: "failed" });
@@ -368,10 +370,7 @@ describe("отмена, таймаут и уборка заявок", () => {
       await dispatchSandboxQueue();
       await expectQueueEmpty();
       expect((await fakeSandbox.counters()).created).toBe(1);
-    } finally {
-      await app.stop();
-    }
-  }, 90_000);
+  }, 30_000);
 
   test("старше минуты не учитываются в позиции; старше пяти минут удаляются", async () => {
     await createDaytonaKey({ apiKey: KEY });

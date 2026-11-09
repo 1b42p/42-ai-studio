@@ -262,7 +262,8 @@ export async function awaitSlot(
   const [entry] = await db.insert(queueEntries).values({
     appSessionId: session.id, userId: session.userId, need, daytonaKeyId: keyId,
   }).onConflictDoUpdate({ target: queueEntries.appSessionId, set: { heartbeatAt: new Date() } }).returning();
-  const deadline = Date.now() + (options.maxWaitSeconds ?? config.sandboxQueueMaxWaitSeconds) * 1000;
+  const maxWaitMs = (options.maxWaitSeconds ?? config.sandboxQueueMaxWaitSeconds) * 1000;
+  const deadline = Date.now() + maxWaitMs;
   try {
     while (true) {
       const [row] = await db.select().from(queueEntries).where(eq(queueEntries.id, entry.id));
@@ -275,7 +276,9 @@ export async function awaitSlot(
         }
         throw new StudioSandboxError("sandbox_wait_cancelled");
       }
-      if (Date.now() >= deadline) throw new StudioSandboxError("sandbox_queue_timeout");
+      if (Date.now() >= deadline || Date.now() - row.enqueuedAt.getTime() >= maxWaitMs) {
+        throw new StudioSandboxError("sandbox_queue_timeout");
+      }
       if (keyId) {
         const [key] = await db.select().from(daytonaKeys).where(eq(daytonaKeys.id, keyId));
         if (!key || key.deletedAt !== null) throw new SandboxSessionGoneError("Ключ песочницы удалён.");
