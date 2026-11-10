@@ -56,6 +56,7 @@
 
 `aevalsrc`, `anoisesrc`, `afade` и `ebur128` в списке нет. `sine`, `amix`,
 `volume`, `adelay`, `apad`, `atrim`, `loudnorm` и `silencedetect` есть.
+У `-f null` нет видеокодека: `loudnorm=print_format=json` по mp4 идёт с `-vn`.
 
 ## Кандидаты
 
@@ -73,9 +74,10 @@
 
 Выбран A. Повторный прогон `calm` 45 с с seed 1 дал тот же файл.
 `calm` 45 с: 1,9 с вместе с импортом, пик 305 МиБ, JSON
-`peakDbfs` −10,67 и `integratedLufs` −24,0. `upbeat` и `dramatic` измерены
-на 60 с (2,3 с / 346 МиБ и 2,4 с / 346 МиБ) — это дольше запрошенных 45 с
-и всё ещё внутри 30 с и 1 ГиБ. Скачок соседних отсчётов одного канала
+`peakDbfs` −10,67 и `integratedLufs` −24,0. `upbeat` и `dramatic` на 60 с —
+2,3 с / 346 МиБ и 2,4 с / 346 МиБ. Повтор той же команды на 45 с дал
+`upbeat` `peakDbfs` −6,58 и `dramatic` `peakDbfs` −9,05, оба `integratedLufs`
+−24,0 и `durationMs` 45000. Скачок соседних отсчётов одного канала
 (не больше 0,5 полной шкалы) и края тише −60 dBFS проверяет
 `tests/music/test_make_music.py` на этом скрипте.
 
