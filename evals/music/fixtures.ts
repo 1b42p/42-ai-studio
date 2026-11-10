@@ -59,6 +59,7 @@ export async function musicSession(t: EveEvalContext) {
     bash("make-music", "make_music\\.py", `${MUSIC_JSON}\n`),
     bash("loudnorm", "loudnorm", LOUDNORM, LOUDNORM),
     bash("ffprobe", "ffprobe", "20000\n"),
+    bash("skill-files", "\\.agents/skills", "Навык уже загружен в этот ход.\n"),
     bash("cat", "\\b(cat|find|pwd)\\b", PROJECT_TEXT),
     bash("ls", "(^|[;&|]\\s*)ls(\\s|$)", [
       "NOTES.md",
