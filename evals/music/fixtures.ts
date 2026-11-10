@@ -46,19 +46,57 @@ const words = [
   "}",
 ].join("\n");
 
+const PROJECT_TEXT = [
+  "NOTES.md",
+  "Формат: 16:9, 1920×1080, 30 к/с, 20 с",
+  "",
+  "public/voice/scene-01.words.json",
+  words,
+].join("\n");
+
 export async function musicSession(t: EveEvalContext) {
   return webSession(t, [
     bash("make-music", "make_music\\.py", `${MUSIC_JSON}\n`),
     bash("loudnorm", "loudnorm", LOUDNORM, LOUDNORM),
     bash("ffprobe", "ffprobe", "20000\n"),
+    bash("cat", "\\b(cat|find|pwd)\\b", PROJECT_TEXT),
     bash("ls", "(^|[;&|]\\s*)ls(\\s|$)", [
       "NOTES.md",
-      "public/music/bg.wav",
-      "public/voice/scene-01.mp3",
-      "public/voice/scene-01.words.json",
       "src/Root.tsx",
-      "out/calm-bed.mp4",
+      "public/voice/scene-01.words.json",
     ].join("\n")),
+    {
+      id: "speak",
+      tool: "speak",
+      outcome: {
+        response: {
+          audioPath: `${MUSIC_PROJECT}/public/voice/scene-01.mp3`,
+          timingsPath: `${MUSIC_PROJECT}/public/voice/scene-01.words.json`,
+          voice: "ru-RU-SvetlanaNeural",
+          language: "ru-RU",
+          format: "mp3",
+          durationMs: 16000,
+          wordCount: 2,
+          text: "Спокойное утро",
+          media: { audioId: "00000000-0000-4000-8000-000000000001" },
+        },
+      },
+    },
+    {
+      id: "edit",
+      tool: "edit_file",
+      outcome: {
+        response: {
+          path: `${MUSIC_PROJECT}/src/Root.tsx`,
+          created: true,
+          replacements: 1,
+          oldContent: "",
+          newContent: "",
+          linesAdded: 1,
+          linesRemoved: 0,
+        },
+      },
+    },
     {
       id: "words",
       tool: "read_file",
