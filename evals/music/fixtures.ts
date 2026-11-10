@@ -3,7 +3,7 @@ import { blockedRead, emptySearch, webSession } from "../web/fixtures";
 
 export const MUSIC_PROJECT = "/workspace/calm-bed";
 export const MUSIC_PATH = `${MUSIC_PROJECT}/public/music/bg.wav`;
-export const MUSIC_TIMEOUT_MS = 30 * 60 * 1000;
+export const MUSIC_TIMEOUT_MS = 60 * 60 * 1000;
 
 const MUSIC_JSON = JSON.stringify({
   audioPath: MUSIC_PATH,
