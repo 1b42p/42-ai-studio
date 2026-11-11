@@ -51,11 +51,12 @@ function bash(id: string, pattern: string, stdout: string, stderr = ""): ToolStu
 }
 
 function bashSequence(id: string, pattern: string, stdouts: readonly [string, ...string[]]): ToolStub {
+  const [first, ...rest] = stdouts;
   return {
     id,
     tool: "bash",
     match: { command: { pattern } },
-    outcomes: stdouts.map((stdout) => bashResult(stdout)) as ToolStub["outcomes"],
+    outcomes: [bashResult(first), ...rest.map((stdout) => bashResult(stdout))],
   };
 }
 
