@@ -3,13 +3,50 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { SandboxSessionContext } from "eve/sandbox/provider";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
 import { loadConfig } from "../../lib/config";
 import { appSessions, daytonaKeys, sandboxes } from "../../lib/db/schema";
-import { createDaytonaKey, createUser, db } from "./support/db";
+import { assertEveSessionAccess } from "../../lib/sessions/access";
+import { createDaytonaKey, createUser, db, resetDatabase } from "./support/db";
 import { fakeSandbox } from "./support/fake-sandbox";
+
+beforeEach(async () => {
+  await resetDatabase();
+  await fakeSandbox.reset();
+});
+
+test("первое вложение привязывает поток к владельцу до session.started", async () => {
+  await createDaytonaKey();
+  const user = await createUser();
+  const other = await createUser();
+  const eveSessionId = randomUUID();
+  const [session] = await db().insert(appSessions).values({ userId: user.id, startRequestedAt: new Date() }).returning();
+  const principal = {
+    authenticator: "studio", principalType: "user" as const, principalId: user.id,
+    attributes: { appSessionId: session.id },
+  };
+  const ctx = {
+    kind: "session",
+    session: { id: eveSessionId, auth: { current: principal, initiator: principal }, turn: { id: randomUUID(), sequence: 0 } },
+    storagePath: loadConfig().fakeSandboxDir!,
+    resolveProjectPath: (filename: string) => path.resolve(filename),
+  } satisfies SandboxSessionContext;
+  const lifecycle = createDaytonaLifecycle();
+  const artifact = { templateKey: "first-attachment", dockerfile: "FROM python:3.12-slim-bookworm\n", files: [] };
+  // Нет хука session.started: eve ещё раскладывает входящее вложение.
+  const opened = await lifecycle.start(ctx, undefined, artifact);
+  try {
+    const [bound] = await db().select().from(appSessions).where(eq(appSessions.id, session.id));
+    expect(bound.eveSessionId).toBe(eveSessionId);
+    await expect(assertEveSessionAccess(user, eveSessionId, "stream")).resolves.toBeUndefined();
+    await expect(assertEveSessionAccess(other, eveSessionId, "stream")).rejects.toMatchObject({ code: "session_forbidden" });
+  } finally {
+    await opened.connection.close?.();
+    await lifecycle.onSessionEnd(ctx, opened.state, { reason: "deleted" });
+  }
+});
 
 test("два одновременных start одной сессии создают одну песочницу и возвращают её обоим клиентам", async () => {
   const key = await createDaytonaKey();

@@ -9,7 +9,7 @@ import {
 import { loadConfig } from "@/lib/config";
 import { getDb, getLockSqlClient } from "@/lib/db/client";
 import { appSessions, daytonaKeys, sandboxes, type DaytonaKey, type SandboxLaunch } from "@/lib/db/schema";
-import { findAppSessionById } from "@/lib/sessions/service";
+import { bindAppSession, findAppSessionById } from "@/lib/sessions/service";
 import { decryptSecret, DAYTONA_KEY_PURPOSE } from "@/lib/secrets";
 import { errorStatus, isMissingSandbox, sandboxFailure, StudioSandboxError } from "@/lib/sandbox/errors";
 import { abortable } from "@/lib/sandbox/abort";
@@ -71,7 +71,17 @@ async function boundSession(
       session.userId === initiator.principalId &&
       (session.eveSessionId === null || session.eveSessionId === eveSessionId)
     ) {
-      return session;
+      if (session.eveSessionId === eveSessionId) return session;
+      // Стрим открывается ещё до session.started. Подготовка вложения может
+      // длиться дольше окна ожидания канала: закрепляем владельца до Daytona,
+      // тем же атомарным способом, которым это делает хук сохранения.
+      if (await bindAppSession(session.id, initiator.principalId, eveSessionId)) {
+        return { ...session, eveSessionId };
+      }
+      const current = await findAppSessionById(session.id);
+      if (current?.userId === initiator.principalId && current.eveSessionId === eveSessionId) {
+        return current;
+      }
     }
   }
 

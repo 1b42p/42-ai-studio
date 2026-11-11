@@ -26,6 +26,19 @@ export default defineSandbox(async ({ session }) => {
   const sandbox = await environment.open(videoEval ? { networkPolicy: renderFails ? "deny-all" : "allow-all" } : undefined);
   if (videoEval) {
     await initializeNativeVideoEval(sandbox, renderFails);
+    if (session.auth.initiator?.attributes.videoEvalMissingEntrypoint === "1") {
+      // Seed once per disposable eval sandbox, never repair it on subsequent opens.
+      const seeded = await sandbox.run({ command: `
+if ! test -e /workspace/.eve/missing-entrypoint-seeded; then
+  mkdir -p /workspace/unfinished /workspace/.eve &&
+  cp /opt/remotion/package.json /opt/remotion/tsconfig.json /opt/remotion/remotion.config.ts /workspace/unfinished/ &&
+  cp -r /opt/remotion/src /workspace/unfinished/src &&
+  ln -s /opt/remotion/node_modules /workspace/unfinished/node_modules &&
+  rm /workspace/unfinished/src/index.ts &&
+  touch /workspace/.eve/missing-entrypoint-seeded
+fi` });
+      if (seeded.exitCode !== 0) throw new Error(`Cannot seed missing entrypoint eval project: ${seeded.stderr}`);
+    }
   }
   return sandbox;
 });
