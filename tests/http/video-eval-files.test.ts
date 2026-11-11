@@ -60,6 +60,19 @@ async function tool(target: ClientSession, name: string, input: object, events?:
 const CREATE_PROJECT = "cp -r /opt/remotion/src /workspace/src && cp /opt/remotion/package.json /opt/remotion/tsconfig.json /opt/remotion/remotion.config.ts /workspace/ && ln -s /opt/remotion/node_modules /workspace/node_modules";
 const CREATE_JPEG = "python3 -c 'from PIL import Image; Image.new(\"RGB\", (64,64), (70,30,10)).save(\"/workspace/input.jpeg\")'";
 
+test("оценки видео: незавершённый проект действительно лишён точки входа и создаётся один раз", async () => {
+  const target = await session("missing-entrypoint");
+  expect(await tool(target, "bash", {
+    command: "test -s unfinished/src/Root.tsx && test -s unfinished/package.json && test -d unfinished/node_modules && test ! -e unfinished/src/index.ts",
+  })).toMatchObject({ result: { output: { exitCode: 0 } } });
+  expect(await tool(target, "bash", {
+    command: "cp /opt/remotion/src/index.ts unfinished/src/index.ts && printf '// preserved\\n' >> unfinished/src/Root.tsx",
+  })).toMatchObject({ result: { output: { exitCode: 0 } } });
+  expect(await tool(target, "bash", {
+    command: "test -s unfinished/src/index.ts && tail -1 unfinished/src/Root.tsx",
+  })).toMatchObject({ result: { output: { exitCode: 0, stdout: expect.stringContaining("// preserved") } } });
+});
+
 test("оценки видео: SIGINT оставляет читаемый MP4, но скрытый ненулевой исход FFmpeg не подтверждает успех", async () => {
   const target = await session();
   const script = String.raw`

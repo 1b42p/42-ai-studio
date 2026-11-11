@@ -1,0 +1,1 @@
+ALTER TABLE "app_sessions" ADD COLUMN "sandbox_work_event_id" text;

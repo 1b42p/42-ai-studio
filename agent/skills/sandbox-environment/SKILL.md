@@ -13,6 +13,17 @@ description: Перед Remotion, установкой пакетов, сеть�
 
 Ролик 30 с, 1080p, 30 к/с на 2 vCPU и 4 ГБ рендерится около 65 с; эталон из репозитория на той же квоте занял 71 с при пике 1,92 ГиБ. Remotion по умолчанию берёт половину vCPU. Рендер дольше 30 с запускай фоновым заданием `bash`: в ответе `status: "running"` и каталог `outputDirectory`, прогресс читай оттуда.
 
+### Черновик и финал
+
+Замер на Daytona, 2 vCPU / 4 ГБ, Remotion 4.0.538: статическая `Main` из шаблона образа, изменённая до 1920×1080, 30 к/с и указанной длительности. Каждый рендер — в свежей песочнице. Черновик: `--scale=0.5 --x264-preset=superfast --crf=32`; финал — обычный рендер без этих флагов.
+
+| Длительность | Черновик | Финал | Пик памяти черновика |
+| --- | --- | --- | --- |
+| 30 с | 47,9 с | 62,9 с | 802 МиБ |
+| 90 с | 138,0 с | 182,0 с | 821 МиБ |
+
+Время измерено по монотонным часам вокруг команды, память — `cat /sys/fs/cgroup/memory.peak` сразу после рендера: это сумма процессов cgroup, не максимум одного процесса. В отдельной свежей песочнице motion-композиция про кофе на 90 с дала 139,1 с и 902 МиБ для черновика. Сложность композиции влияет на время и память; проверочные кадры перед черновиком рендерятся в полном качестве по `frame-review`.
+
 ## Нехватка памяти
 
 Если рендер завершился кодом 137, повтори его с `--disallow-parallel-encoding` и `--concurrency=1`. Если памяти всё ещё не хватает, упрости композицию. На эталоне 2 vCPU / 4 ГБ эти флаги дали те же 1,92 ГиБ пика и 100 с вместо 71 с: пик не снизился.
@@ -47,7 +58,21 @@ Python-библиотеку со своими потоками (ONNX Runtime у 
 
 ## Remotion
 
-Новый проект создавай копированием шаблона. `mkdir -p /workspace/<имя>`, скопируй из `/opt/remotion` файлы `package.json`, `tsconfig.json`, `remotion.config.ts` и каталог `src`, затем сделай ссылку `ln -s /opt/remotion/node_modules /workspace/<имя>/node_modules`. Chrome Headless Shell лежит в `/opt/remotion/node_modules/.remotion` и в новый проект не скачивается. `npx create-video` не запускай. Studio не открывай. Результат проверяй кадрами `npx remotion still` и `npx remotion render … --frames=…`, затем полным рендером.
+Новый проект создавай целиком из шаблона, затем меняй композиции через `edit_file`:
+
+```sh
+project=/workspace/<имя>
+mkdir "$project" &&
+cp /opt/remotion/package.json /opt/remotion/tsconfig.json /opt/remotion/remotion.config.ts "$project/" &&
+cp -r /opt/remotion/src "$project/src" &&
+ln -s /opt/remotion/node_modules "$project/node_modules"
+```
+
+Перед первым вызовом Remotion в новом или существующем проекте проверь `pwd`, `ls -la src`, `test -s src/index.ts`, `test -s src/Root.tsx`, `test -s package.json` и `test -d node_modules` из каталога проекта. Продолжай, когда все проверки успешны. Существующий проект сохраняй: восстанавливай только отсутствующие файлы.
+
+При `No entry point specified`, `Cannot find module` или `ENOENT` сначала проверь существование названного файла и прочитай его импорты. Отсутствующий `src/index.ts` восстанови из `/opt/remotion/src/index.ts`, сверив импорт и экспорт `RemotionRoot` в существующем `Root.tsx`. Затем повтори исходную команду. Изменение относительного пути на абсолютный или флагов CLI не восстанавливает файл; повтор допустим после устранения установленной причины. Лимит попыток — в разделе «Неудача» основных инструкций.
+
+Chrome Headless Shell лежит в `/opt/remotion/node_modules/.remotion` и в новый проект не скачивается. `npx create-video` не запускай. Studio не открывай. Результат проверяй кадрами `npx remotion still` и `npx remotion render … --frames=…`, затем полным рендером.
 
 Пакет, которого нет в шаблоне, ставь в шаблон: `cd /opt/remotion && npx remotion add <пакет>`. В каталоге `/workspace/<имя>` не запускай `npx remotion add`, `npm install` и `npm i <пакет>`: без lockfile установка падает, а `npm` заменяет ссылку `node_modules` каталогом без браузера, и следующий рендер пойдёт за браузером на `remotion.media`.
 

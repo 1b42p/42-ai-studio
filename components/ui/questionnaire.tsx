@@ -4,7 +4,8 @@ import * as React from "react"
 import { Questionnaire as QuestionnairePrimitive } from "@shadcn/react/questionnaire"
 import { cn } from "cn"
 
-import { buttonVariants, type Button } from "@/components/ui/button"
+import { buttonVariants, Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
 import { CheckIcon } from "lucide-react"
 
 function Questionnaire({
@@ -152,6 +153,25 @@ function QuestionnaireChoiceDescription({
       {...props}
     />
   )
+}
+
+/** An immediate answer is an action, rather than a radio selection awaiting submit. */
+function QuestionnaireAnswer({ className, ...props }: React.ComponentProps<typeof Button>) {
+  return (
+    <Button
+      data-slot="questionnaire-answer"
+      variant="outline"
+      size="sm"
+      type="button"
+      className={cn("h-auto min-h-11 w-full flex-col items-start whitespace-normal text-start wrap-anywhere", className)}
+      {...props}
+    />
+  )
+}
+
+/** Registers a multiline freeform answer with the questionnaire's validation. */
+function QuestionnaireTextarea(props: React.ComponentProps<typeof QuestionnairePrimitive.Input>) {
+  return <QuestionnairePrimitive.Input render={<Textarea />} {...props} />
 }
 
 function QuestionnaireInput({
@@ -307,6 +327,7 @@ function QuestionnaireSubmit({
 
 export {
   Questionnaire,
+  QuestionnaireAnswer,
   QuestionnaireActions,
   QuestionnaireChoice,
   QuestionnaireChoiceDescription,
@@ -321,4 +342,5 @@ export {
   QuestionnaireSkip,
   QuestionnaireSubmit,
   QuestionnaireTitle,
+  QuestionnaireTextarea,
 }

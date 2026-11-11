@@ -8,11 +8,12 @@ import { ChatView, type ChatViewProps } from "@/components/studio/chat/chat-view
 import { useAttachments } from "@/components/studio/chat/use-attachments";
 import { useMessageFiles } from "@/components/studio/chat/use-message-files";
 import { useSessionTitle } from "@/components/studio/chat/use-session-title";
+import { useSandboxStatus } from "@/components/studio/chat/use-sandbox-status";
 
 export type ChatAgent = UseEveAgentHelpers<ConversationState>;
 
 export interface ChatPanelProps
-  extends Omit<ChatViewProps, "agent" | "attachments" | "onCancel" | "onRespond" | "onSend"> {
+  extends Omit<ChatViewProps, "agent" | "attachments" | "sandboxStatus" | "onCancel" | "onRespond" | "onSend"> {
   agent: ChatAgent;
   /** Ошибка подготовки сессии, показывается вместо ошибки хука. */
   errorOverride?: Error;
@@ -41,6 +42,7 @@ export function ChatPanel({
   ...props
 }: ChatPanelProps) {
   const busy = isBusyStatus(agent.status);
+  const sandboxStatus = useSandboxStatus(appSessionId, busy);
   const polled = useSessionTitle(appSessionId, agent.events, initialTitle);
   const attachments = useAttachments({ appSessionId, ensureSession });
   const messageFiles = useMessageFiles({
@@ -58,6 +60,7 @@ export function ChatPanel({
       {...props}
       appSessionId={appSessionId}
       attachments={attachments}
+      sandboxStatus={sandboxStatus}
       messageFiles={props.messageFiles ?? messageFiles}
       agent={{
         data: agent.data,
@@ -74,7 +77,7 @@ export function ChatPanel({
       onSend={
         onSend ??
         (async (content) => {
-          await agent.send(content, busy ? { turnPolicy: "steer" } : undefined);
+          await agent.send(content, busy || Array.isArray(content) ? { turnPolicy: "steer" } : undefined);
         })
       }
       title={title}

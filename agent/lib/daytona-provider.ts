@@ -1,6 +1,5 @@
-import { createHash } from "node:crypto";
 import { setTimeout } from "node:timers/promises";
-import { and, eq, isNull, lt, ne } from "drizzle-orm";
+import { and, eq, isNull, lt, ne, sql as sqlExpression } from "drizzle-orm";
 import {
   defineSandboxProvider, SandboxSessionGoneError,
   type SandboxConnection, type SandboxPrepareContext, type SandboxSessionContext,
@@ -9,19 +8,25 @@ import {
 import { loadConfig } from "@/lib/config";
 import { getDb, getLockSqlClient } from "@/lib/db/client";
 import { appSessions, daytonaKeys, sandboxes, type DaytonaKey, type SandboxLaunch } from "@/lib/db/schema";
-import { findAppSessionById } from "@/lib/sessions/service";
+import { bindAppSession, findAppSessionById } from "@/lib/sessions/service";
 import { decryptSecret, DAYTONA_KEY_PURPOSE } from "@/lib/secrets";
 import { errorStatus, isMissingSandbox, sandboxFailure, StudioSandboxError } from "@/lib/sandbox/errors";
 import { abortable } from "@/lib/sandbox/abort";
-import { daytonaBackend, type DaytonaBackend, type DaytonaMachine } from "./daytona-backend";
+import { sandboxState } from "@/lib/sandbox/daytona-state";
+import type { SandboxState as StoredState } from "@/lib/db/schema";
+export { sandboxState } from "@/lib/sandbox/daytona-state";
+import { waitForSandboxMaintenance } from "@/lib/sandbox/maintenance";
+import {
+  assertSandboxWait, beginSandboxLaunch, captureSandboxWait, readSandboxCopyWait, type SandboxWait,
+} from "@/lib/sandbox/wait-generation";
+import { daytonaBackend, daytonaSandboxName, type DaytonaBackend, type DaytonaMachine } from "./daytona-backend";
+import { awaitSlot } from "./sandbox-queue";
 import {
   DELETED_KEY_MARKER,
-  enabledKeyCount,
   exhaustPool,
   forgetPendingDeletion,
   isQuotaExceeded,
   markKeyUnauthorized,
-  pickKey,
   rememberPendingDeletion,
 } from "./daytona-key-pool";
 
@@ -36,24 +41,6 @@ class KeepReservationError extends Error {
     this.name = "KeepReservationError";
   }
 }
-type StoredState = "started" | "stopped" | "archived" | "starting" | "gone";
-
-export function sandboxState(state: string | undefined): StoredState {
-  switch (state) {
-    case "started": return "started";
-    case "stopped": case "stopping": return "stopped";
-    case "archived": case "archiving": return "archived";
-    case "destroyed": case "destroying": return "gone";
-    case "creating": case "starting": case "restoring": case "pending_build":
-    case "building_snapshot": case "pulling_snapshot": case "resizing":
-    case "snapshotting": case "forking": case "resuming": return "starting";
-    case "error": case "build_failed": throw new StudioSandboxError("sandbox_start_failed");
-    default:
-      console.warn("[sandbox] unexpected_state");
-      return "starting";
-  }
-}
-
 async function boundSession(
   eveSessionId: string,
   auth?: SandboxSessionContext["session"]["auth"],
@@ -71,7 +58,17 @@ async function boundSession(
       session.userId === initiator.principalId &&
       (session.eveSessionId === null || session.eveSessionId === eveSessionId)
     ) {
-      return session;
+      if (session.eveSessionId === eveSessionId) return session;
+      // Стрим открывается ещё до session.started. Подготовка вложения может
+      // длиться дольше окна ожидания канала: закрепляем владельца до Daytona,
+      // тем же атомарным способом, которым это делает хук сохранения.
+      if (await bindAppSession(session.id, initiator.principalId, eveSessionId)) {
+        return { ...session, eveSessionId };
+      }
+      const current = await findAppSessionById(session.id);
+      if (current?.userId === initiator.principalId && current.eveSessionId === eveSessionId) {
+        return current;
+      }
     }
   }
 
@@ -100,7 +97,8 @@ function backendForKey(key: Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deleted
 async function liveMachine(
   backend: DaytonaBackend,
   id: string,
-  onLaunch?: (kind: SandboxLaunch) => Promise<void>,
+  onLaunch?: (kind: SandboxLaunch) => Promise<DaytonaMachine | void>,
+  guard?: () => Promise<void>,
 ): Promise<DaytonaMachine> {
   let machine: DaytonaMachine;
   try { machine = await backend.get(id); }
@@ -120,10 +118,12 @@ async function liveMachine(
       throw error;
     }
   }
+  await guard?.();
   if (sandboxStateForLoss(machine.state)) throw new SandboxSessionGoneError("Песочница утрачена.");
   if (machine.state === "error" || machine.state === "build_failed") {
     if (machine.state === "error" && machine.recoverable) {
-      await onLaunch?.("restore");
+      const opened = await onLaunch?.("restore");
+      if (opened) return opened;
       await machine.recover();
     } else {
       await machine.delete();
@@ -132,7 +132,8 @@ async function liveMachine(
   } else if (machine.state === "stopped" || machine.state === "archived") {
     // Строка `starting` резервирует место в квоте, пока Daytona не покажет
     // запущенную машину: её данные отстают от изменения.
-    await onLaunch?.(machine.state === "archived" ? "restore" : "wake");
+    const opened = await onLaunch?.(machine.state === "archived" ? "restore" : "wake");
+    if (opened) return opened;
     await machine.start();
   } else if (machine.state !== "started") {
     sandboxState(machine.state);
@@ -142,39 +143,41 @@ async function liveMachine(
 }
 
 /** Резерв места в пуле до того, как Daytona обновит использование. */
-async function reserveLaunch(appSessionId: string, keyId: string, kind: SandboxLaunch): Promise<void> {
+async function reserveLaunch(appSessionId: string, keyId: string, kind: SandboxLaunch, wait: SandboxWait): Promise<void> {
   await getDb()
     .update(sandboxes)
     .set({ daytonaKeyId: keyId, state: "starting", startingSince: new Date(), startingKind: kind })
-    .where(eq(sandboxes.appSessionId, appSessionId));
+    .where(and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.waitGeneration, wait.generation)));
 }
 
 /** Снимает резерв; сбой записи не должен подменять исходную ошибку старта. */
 async function updateReservation(
   appSessionId: string,
   values: { state?: "gone"; startingSince: null; startingKind: null },
+  wait: SandboxWait,
 ): Promise<void> {
   try {
     await getDb()
       .update(sandboxes)
       .set(values)
-      .where(and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.state, "starting")));
+      .where(and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.state, "starting"),
+        eq(sandboxes.waitGeneration, wait.generation)));
   } catch (error) {
     console.error("[sandbox] reservation_release_failed", errorStatus(error) ?? "db");
   }
 }
 
 /** Неудачное создание не должно держать место в пуле пять минут. */
-function releaseReservation(appSessionId: string): Promise<void> {
-  return updateReservation(appSessionId, { state: "gone", startingSince: null, startingKind: null });
+function releaseReservation(appSessionId: string, wait: SandboxWait): Promise<void> {
+  return updateReservation(appSessionId, { state: "gone", startingSince: null, startingKind: null }, wait);
 }
 
 /**
  * Снимает резерв с неудавшегося пробуждения, не теряя саму машину: следующее
  * обращение снова попробует её запустить.
  */
-function clearLaunchReservation(appSessionId: string): Promise<void> {
-  return updateReservation(appSessionId, { startingSince: null, startingKind: null });
+function clearLaunchReservation(appSessionId: string, wait: SandboxWait): Promise<void> {
+  return updateReservation(appSessionId, { startingSince: null, startingKind: null }, wait);
 }
 
 /**
@@ -187,6 +190,7 @@ async function checkpointMachine(
   appSessionId: string,
   keyId: string,
   machine: DaytonaMachine,
+  wait: SandboxWait,
 ): Promise<boolean> {
   return getDb().transaction(async (tx) => {
     const [key] = await tx
@@ -199,7 +203,7 @@ async function checkpointMachine(
       ))
       .for("update");
     if (key === undefined) return false;
-    await tx
+    const updated = await tx
       .update(sandboxes)
       .set({
         daytonaKeyId: keyId,
@@ -208,9 +212,18 @@ async function checkpointMachine(
         startingSince: null,
         startingKind: null,
         lastActiveAt: new Date(),
+        daytonaActivityAt: machine.lastActivityAt ?? null,
+        stoppedAt: null,
+        waitGeneration: wait.generation,
+        launchStartedAt: null,
       })
-      .where(eq(sandboxes.appSessionId, appSessionId));
-    return true;
+      .where(and(eq(sandboxes.appSessionId, appSessionId), sqlExpression`
+        ${sandboxes.waitGeneration} <= ${wait.generation} and (
+          ${sandboxes.waitGeneration} = ${wait.generation} or exists (
+            select 1 from app_sessions where id = ${appSessionId}
+              and sandbox_wait_generation = ${wait.generation}))`))
+      .returning({ id: sandboxes.id });
+    return updated.length > 0;
   });
 }
 
@@ -233,16 +246,23 @@ function sandboxStateForLoss(state: string | undefined) {
   return state === "destroyed" || state === "destroying";
 }
 
-async function connected(machine: DaytonaMachine, appSessionId: string): Promise<SandboxConnection> {
+async function connected(machine: DaytonaMachine, appSessionId: string, wait: SandboxWait): Promise<SandboxConnection> {
+  await waitForSandboxMaintenance(appSessionId);
+  await assertSandboxWait(wait);
   const db = getDb();
   const identity = and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.daytonaSandboxId, machine.id));
-  await db.update(sandboxes)
-    .set({ state: sandboxState(machine.state), startingSince: null, startingKind: null, lastActiveAt: new Date() })
-    .where(identity);
+  const updated = await db.update(sandboxes)
+    .set({ state: sandboxState(machine.state), startingSince: null, startingKind: null,
+      lastActiveAt: new Date(), daytonaActivityAt: machine.lastActivityAt ?? null, stoppedAt: null,
+      waitGeneration: wait.generation, launchStartedAt: null })
+    .where(and(identity, sqlExpression`exists (select 1 from app_sessions
+      where id = ${appSessionId} and sandbox_wait_generation = ${wait.generation})`))
+    .returning({ id: sandboxes.id });
+  if (!updated.length) throw new StudioSandboxError("sandbox_wait_cancelled");
   const connection = machine.connect({
     async onStop() {
       await db.update(sandboxes)
-        .set({ state: "stopped", startingSince: null, startingKind: null })
+        .set({ state: "stopped", startingSince: null, startingKind: null, stoppedAt: new Date() })
         .where(identity);
     },
     async onActivity() {
@@ -293,17 +313,25 @@ async function seed(connection: SandboxConnection, artifact: Readonly<Artifact>)
   })) });
 }
 
-async function provision(backend: DaytonaBackend, name: string, appSessionId: string, artifact: Readonly<Artifact>, previousId?: string) {
+async function provision(
+  backend: DaytonaBackend, name: string, appSessionId: string,
+  artifact: Readonly<Artifact>, wait: SandboxWait, previousId?: string,
+) {
   let machine: DaytonaMachine | undefined;
   try {
     const found = await backend.get(name);
+    await assertSandboxWait(wait);
     if (found.id === previousId) await found.delete();
-    else machine = await liveMachine(backend, found.id);
+    else machine = await liveMachine(backend, found.id,
+      () => beginSandboxLaunch(wait), () => assertSandboxWait(wait));
   } catch (error) {
     if (!isMissingSandbox(error) && !(error instanceof SandboxSessionGoneError)) throw error;
   }
   try {
-    machine ??= await backend.create({ name, appSessionId, dockerfile: artifact.dockerfile });
+    if (!machine) {
+      await beginSandboxLaunch(wait);
+      machine = await backend.create({ name, appSessionId, dockerfile: artifact.dockerfile });
+    }
     if (machine.state === "build_failed") throw new StudioSandboxError("sandbox_create_failed");
     // No database checkpoint means no tool has used this machine yet. Reapply
     // seeds even after a crash between native creation and initial file delivery.
@@ -312,6 +340,7 @@ async function provision(backend: DaytonaBackend, name: string, appSessionId: st
     finally { await connection.close?.(); }
     return machine;
   } catch (error) {
+    if (error instanceof StudioSandboxError && error.code === "sandbox_wait_cancelled") throw error;
     let cleanupFailed = false;
     try { await (await backend.get(name)).delete(); }
     catch (cleanupError) {
@@ -349,154 +378,205 @@ export function createDaytonaLifecycle() {
     },
     async start(ctx: SandboxSessionContext, _options: undefined, artifact: Readonly<Artifact>) {
       const session = await boundSession(ctx.session.id, ctx.session.auth);
-      const sql = await getLockSqlClient().reserve();
-      let locked = false;
-      let opened: { machine: DaytonaMachine; state: State } | undefined;
-      try {
-        await sql`select pg_advisory_lock(1, hashtext(${session.id}::text))`;
-        locked = true;
-        const [existing] = await sql<{ id: string; daytonaKeyId: string; daytonaSandboxId: string; state: StoredState }[]>`
-          select id, daytona_key_id as "daytonaKeyId", daytona_sandbox_id as "daytonaSandboxId", state
-          from sandboxes where app_session_id = ${session.id}`;
-        if (existing !== undefined && existing.state !== "gone" && existing.daytonaSandboxId !== "") {
-          try {
-            const [key] = await sql<Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deletedAt">[]>`
-              select id, api_key_encrypted as "apiKeyEncrypted", deleted_at as "deletedAt"
-              from daytona_keys where id = ${existing.daytonaKeyId}`;
-            const backend = backendForKey(key);
-            const machine = await liveMachine(
-              backend,
-              existing.daytonaSandboxId,
-              (kind) => reserveLaunch(session.id, existing.daytonaKeyId, kind),
-            );
-            opened = { machine, state: { keyId: existing.daytonaKeyId, sandboxId: machine.id } };
-          } catch (error) {
-            if (!(error instanceof SandboxSessionGoneError)) throw error;
-            await sql`update sandboxes set state = 'gone' where id = ${existing.id}`;
+      const wait = ctx.session.parent
+        ? await readSandboxCopyWait(session, ctx.session.parent.callId, ctx.session.turn.id)
+        : await captureSandboxWait(session, ctx.session.turn.id);
+      const deadline = Date.now() + loadConfig().sandboxQueueMaxWaitSeconds * 1000;
+      while (true) {
+        await assertSandboxWait(wait);
+        if (Date.now() >= deadline) throw new StudioSandboxError("sandbox_queue_timeout");
+        const [row] = await getDb().select().from(sandboxes).where(eq(sandboxes.appSessionId, session.id));
+        if (row && row.state !== "gone" && row.daytonaSandboxId === "") {
+          // Восстановление/уборка машины до нового резерва: иначе смена ключа
+          // затрёт единственный след машины, созданной перед падением процесса.
+          try { return await openWithSlot(undefined); }
+          catch (error) {
+            if (!(error instanceof StudioSandboxError) || error.code !== "capacity_exhausted") throw error;
           }
         }
-        const name = `studio-${createHash("sha256").update(ctx.session.id).digest("hex").slice(0, 32)}`;
-        const config = loadConfig();
-        if (opened === undefined) {
-          const need = {
-            cpu: config.sandboxCpu,
-            memoryGb: config.sandboxMemoryGb,
-            diskGb: config.sandboxDiskGb,
-          };
+        let grant: DaytonaKey | undefined;
+        let needsSlot = true;
+        let launch: SandboxLaunch = "create";
+        if (row && row.state !== "gone") {
+          try {
+            const backend = await backendFor(row.daytonaKeyId);
+            const name = daytonaSandboxName(ctx.session.id);
+            const machine = await backend.get(row.daytonaSandboxId || name);
+            needsSlot = machine.state !== "started";
+            launch = row.daytonaSandboxId
+              ? machine.state === "archived" || machine.state === "archiving" ? "restore" : "wake"
+              : "create";
+          } catch (error) {
+            if (errorStatus(error) === 401) {
+              await markKeyUnauthorized(row.daytonaKeyId);
+            } else if (!isMissingSandbox(error) && !(error instanceof SandboxSessionGoneError)) {
+              throw sandboxFailure(error, "sandbox_start_failed");
+            }
+          }
+        }
+        if (needsSlot) {
+          try {
+            grant = await awaitSlot(session, launch,
+              launch === "create" ? undefined : row?.daytonaKeyId,
+              { maxWaitSeconds: Math.max(0, (deadline - Date.now()) / 1000), wait });
+          } catch (error) {
+            if (launch === "create" && error instanceof SandboxSessionGoneError) {
+              await releaseReservation(session.id, wait);
+              continue;
+            }
+            throw error;
+          }
+        }
+        try { return await openWithSlot(grant); }
+        catch (error) {
+          if (!(error instanceof StudioSandboxError) || error.code !== "capacity_exhausted") throw error;
+        }
+      }
 
-          // Процесс мог упасть после создания машины, но до записи её id.
-          // Имя детерминировано, поэтому сначала ищем её и только потом
-          // требуем место у пула: иначе машина занимает последний слот, а
-          // `pickKey` отвечает `capacity_exhausted`.
-          if (existing !== undefined && existing.state !== "gone" && existing.daytonaSandboxId === "") {
-            const [key] = await sql<Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deletedAt">[]>`
-              select id, api_key_encrypted as "apiKeyEncrypted", deleted_at as "deletedAt"
-              from daytona_keys where id = ${existing.daytonaKeyId}`;
-            if (key !== undefined && key.apiKeyEncrypted !== DELETED_KEY_MARKER) {
-              const backend = daytonaBackend(
-                key.id,
-                decryptSecret(key.apiKeyEncrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
+      async function openWithSlot(grant: DaytonaKey | undefined) {
+        const sql = await getLockSqlClient().reserve();
+        let locked = false;
+        let opened: { machine: DaytonaMachine; state: State } | undefined;
+        try {
+          await sql`select pg_advisory_lock(1, hashtext(${session.id}::text))`;
+          locked = true;
+          await assertSandboxWait(wait);
+          const [existing] = await sql<{ id: string; daytonaKeyId: string; daytonaSandboxId: string; state: StoredState }[]>`
+            select id, daytona_key_id as "daytonaKeyId", daytona_sandbox_id as "daytonaSandboxId", state
+            from sandboxes where app_session_id = ${session.id}`;
+          if (existing !== undefined && existing.state !== "gone" && existing.daytonaSandboxId !== "") {
+            try {
+              const [key] = await sql<Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deletedAt">[]>`
+                select id, api_key_encrypted as "apiKeyEncrypted", deleted_at as "deletedAt"
+                from daytona_keys where id = ${existing.daytonaKeyId}`;
+              const backend = backendForKey(key);
+              const machine = await liveMachine(
+                backend,
+                existing.daytonaSandboxId,
+                async (kind) => {
+                  if (!grant) throw new StudioSandboxError("capacity_exhausted");
+                  await reserveLaunch(session.id, existing.daytonaKeyId, kind, wait);
+                  await beginSandboxLaunch(wait);
+                },
+                () => assertSandboxWait(wait),
               );
-              // У мягко удалённого ключа шифротекст ещё есть: созданную до
-              // падения машину нужно найти и убрать, а не оставить сиротой.
-              const deleted = key.deletedAt !== null;
-              try {
-                const found = await backend.get(name);
-                if (deleted) {
-                  // Машину удалённого ключа не будим и не сеем: сразу в очистку.
-                  await discardMachine(key.id, found);
-                } else {
-                  const machine = await provision(
-                    backend,
-                    name,
-                    session.id,
-                    artifact,
-                    existing.daytonaSandboxId,
-                  );
-                  if (await checkpointMachine(session.id, key.id, machine)) {
-                    opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
+              opened = { machine, state: { keyId: existing.daytonaKeyId, sandboxId: machine.id } };
+            } catch (error) {
+              if (!(error instanceof SandboxSessionGoneError)) throw error;
+              await sql`update sandboxes set state = 'gone' where id = ${existing.id}`;
+            }
+          }
+          const name = daytonaSandboxName(ctx.session.id);
+          const config = loadConfig();
+          if (opened === undefined) {
+            // Процесс мог упасть после создания машины, но до записи её id.
+            // Имя детерминировано, поэтому сначала ищем её и только потом
+            // требуем место у пула: иначе машина занимает последний слот, а
+            // `pickKey` отвечает `capacity_exhausted`.
+            if (existing !== undefined && existing.state !== "gone" && existing.daytonaSandboxId === "") {
+              const [key] = await sql<Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deletedAt">[]>`
+                select id, api_key_encrypted as "apiKeyEncrypted", deleted_at as "deletedAt"
+                from daytona_keys where id = ${existing.daytonaKeyId}`;
+              if (key !== undefined && key.apiKeyEncrypted !== DELETED_KEY_MARKER) {
+                const backend = daytonaBackend(
+                  key.id,
+                  decryptSecret(key.apiKeyEncrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
+                );
+                // У мягко удалённого ключа шифротекст ещё есть: созданную до
+                // падения машину нужно найти и убрать, а не оставить сиротой.
+                const deleted = key.deletedAt !== null;
+                try {
+                  const found = await backend.get(name);
+                  if (deleted) {
+                    // Машину удалённого ключа не будим и не сеем: сразу в очистку.
+                    await discardMachine(key.id, found);
                   } else {
-                    await discardMachine(key.id, machine);
+                    if (found.state !== "started" && !grant) {
+                      throw new StudioSandboxError("capacity_exhausted");
+                    }
+                    const machine = await provision(
+                      backend,
+                      name,
+                      session.id,
+                      artifact,
+                      wait,
+                      existing.daytonaSandboxId,
+                    );
+                    if (await checkpointMachine(session.id, key.id, machine, wait)) {
+                      opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
+                    } else {
+                      await assertSandboxWait(wait);
+                      await discardMachine(key.id, machine);
+                    }
+                  }
+                } catch (error) {
+                  if (isMissingSandbox(error)) {
+                    // Машины по имени нет — обычный путь создания.
+                  } else if (errorStatus(error) === 401) {
+                    // Ключ отозван: помечаем и переходим к следующему, иначе
+                    // пустой резерв будет вечно повторять этот же отказ.
+                    await markKeyUnauthorized(key.id);
+                  } else {
+                    throw error;
                   }
                 }
-              } catch (error) {
-                if (isMissingSandbox(error)) {
-                  // Машины по имени нет — обычный путь создания.
-                } else if (errorStatus(error) === 401) {
-                  // Ключ отозван: помечаем и переходим к следующему, иначе
-                  // пустой резерв будет вечно повторять этот же отказ.
-                  await markKeyUnauthorized(key.id);
-                } else {
-                  throw error;
-                }
               }
             }
-          }
 
-          if (opened === undefined) {
-            const attempts = Math.max(1, await enabledKeyCount());
-            let lastError: unknown;
-            let created: DaytonaMachine | undefined;
-            try {
-              for (let attempt = 0; attempt < attempts; attempt += 1) {
-                const picked = await pickKey(need, { appSessionId: session.id });
-                if (picked.kind === "no_key") throw new StudioSandboxError("no_daytona_key");
-                if (picked.kind === "no_capacity") throw new StudioSandboxError("capacity_exhausted");
-                const secret = decryptSecret(
-                  picked.key.apiKeyEncrypted,
-                  config.secretsEncryptionKey,
-                  DAYTONA_KEY_PURPOSE,
-                );
-                const backend = daytonaBackend(picked.key.id, secret);
-                let machine: DaytonaMachine;
+            if (opened === undefined) {
+              let created: DaytonaMachine | undefined;
+              try {
+                if (!grant) throw new StudioSandboxError("capacity_exhausted");
+                const backend = backendForKey(grant);
                 try {
-                  machine = await provision(backend, name, session.id, artifact, existing?.daytonaSandboxId);
+                  created = await provision(backend, name, session.id, artifact, wait, existing?.daytonaSandboxId);
                 } catch (error) {
-                  lastError = error;
-                  // Исчерпанная квота Daytona — сигнал пулу на 60 секунд; отозванный
-                  // ключ (401) выбывает из выбора, остальные ошибки не помечают ключ.
-                  if (isQuotaExceeded(error)) { await exhaustPool(picked.key.id); continue; }
-                  if (errorStatus(error) === 401) { await markKeyUnauthorized(picked.key.id); continue; }
+                  if (isQuotaExceeded(error)) {
+                    await exhaustPool(grant.id);
+                    throw new StudioSandboxError("capacity_exhausted");
+                  }
+                  if (errorStatus(error) === 401) {
+                    await markKeyUnauthorized(grant.id);
+                    throw new StudioSandboxError("capacity_exhausted");
+                  }
                   throw error;
                 }
-                created = machine;
-                const state = { keyId: picked.key.id, sandboxId: machine.id };
-                if (await checkpointMachine(session.id, picked.key.id, machine)) {
-                  opened = { machine, state };
+                if (await checkpointMachine(session.id, grant.id, created, wait)) {
+                  opened = { machine: created, state: { keyId: grant.id, sandboxId: created.id } };
                   created = undefined;
-                  break;
+                } else {
+                  await assertSandboxWait(wait);
+                  await discardMachine(grant.id, created);
+                  created = undefined;
+                  throw new StudioSandboxError("capacity_exhausted");
                 }
-                await discardMachine(picked.key.id, machine);
-                created = undefined;
+              } catch (error) {
+                // Если машина уже создана, но запись id или очистка после сбоя
+                // сорвалась, резерв оставляем восстановимым по имени.
+                if (created === undefined && !(error instanceof KeepReservationError)) {
+                  await releaseReservation(session.id, wait);
+                } else {
+                  await clearLaunchReservation(session.id, wait);
+                }
+                throw error;
               }
-            } catch (error) {
-              // Если машина уже создана, но запись id или очистка после сбоя
-              // сорвалась, резерв оставляем восстановимым по имени.
-              if (created === undefined && !(error instanceof KeepReservationError)) {
-                await releaseReservation(session.id);
-              } else {
-                await clearLaunchReservation(session.id);
-              }
-              throw error;
-            }
-            if (opened === undefined) {
-              await releaseReservation(session.id);
-              // Последняя попытка тоже упёрлась в квоту: места нет, а не сбой сборки.
-              if (isQuotaExceeded(lastError)) throw new StudioSandboxError("capacity_exhausted");
-              throw sandboxFailure(lastError ?? new StudioSandboxError("sandbox_create_failed"), "sandbox_create_failed");
             }
           }
+        } catch (error) {
+          await clearLaunchReservation(session.id, wait);
+          if (grant && isQuotaExceeded(error)) {
+            await exhaustPool(grant.id);
+            throw new StudioSandboxError("capacity_exhausted");
+          }
+          throw sandboxFailure(error, "sandbox_create_failed");
         }
-      } catch (error) {
-        await clearLaunchReservation(session.id);
-        throw sandboxFailure(error, "sandbox_create_failed");
+        finally {
+          try { if (locked) await sql`select pg_advisory_unlock(1, hashtext(${session.id}::text))`; }
+          finally { await sql.release(); }
+        }
+        if (opened === undefined) throw new StudioSandboxError("sandbox_create_failed");
+        return { state: opened.state, connection: await connected(opened.machine, session.id, wait) };
       }
-      finally {
-        try { if (locked) await sql`select pg_advisory_unlock(1, hashtext(${session.id}::text))`; }
-        finally { await sql.release(); }
-      }
-      if (opened === undefined) throw new StudioSandboxError("sandbox_create_failed");
-      return { state: opened.state, connection: await connected(opened.machine, session.id) };
     },
     async resume(ctx: SandboxSessionContext, _artifact: Readonly<Artifact>, state: Readonly<State>) {
       if (
@@ -505,22 +585,60 @@ export function createDaytonaLifecycle() {
         typeof state.sandboxId !== "string" || state.sandboxId.length === 0
       ) throw new SandboxSessionGoneError("Некорректное состояние песочницы.");
       const session = await boundSession(ctx.session.id, ctx.session.auth);
-      try {
-        const backend = await backendFor(state.keyId);
-        const machine = await liveMachine(
-          backend,
-          state.sandboxId,
-          (kind) => reserveLaunch(session.id, state.keyId, kind),
-        );
-        return await connected(machine, session.id);
-      } catch (error) {
-        if (error instanceof SandboxSessionGoneError) {
-          await getDb().update(sandboxes).set({ state: "gone" })
-            .where(and(eq(sandboxes.appSessionId, session.id), eq(sandboxes.daytonaSandboxId, state.sandboxId)));
-          throw error;
+      const wait = ctx.session.parent
+        ? await readSandboxCopyWait(session, ctx.session.parent.callId, ctx.session.turn.id)
+        : await captureSandboxWait(session, ctx.session.turn.id);
+      const deadline = Date.now() + loadConfig().sandboxQueueMaxWaitSeconds * 1000;
+      while (true) {
+        await assertSandboxWait(wait);
+        if (Date.now() >= deadline) throw new StudioSandboxError("sandbox_queue_timeout");
+        try {
+          await waitForSandboxMaintenance(session.id);
+          const backend = await backendFor(state.keyId);
+          const machine = await liveMachine(
+            backend,
+            state.sandboxId,
+            async (kind) => {
+              await awaitSlot(
+                session,
+                kind,
+                state.keyId,
+                { maxWaitSeconds: Math.max(0, (deadline - Date.now()) / 1000), wait },
+              );
+              const lock = await getLockSqlClient().reserve();
+              let locked = false;
+              try {
+                await lock`select pg_advisory_lock(1, hashtext(${session.id}::text))`;
+                locked = true;
+                return await liveMachine(
+                  backend, state.sandboxId,
+                  () => beginSandboxLaunch(wait),
+                  () => assertSandboxWait(wait),
+                );
+              } finally {
+                try {
+                  if (locked) await lock`select pg_advisory_unlock(1, hashtext(${session.id}::text))`;
+                } finally {
+                  lock.release();
+                }
+              }
+            },
+            () => assertSandboxWait(wait),
+          );
+          return await connected(machine, session.id, wait);
+        } catch (error) {
+          if (error instanceof SandboxSessionGoneError) {
+            await getDb().update(sandboxes).set({ state: "gone" })
+              .where(and(eq(sandboxes.appSessionId, session.id), eq(sandboxes.daytonaSandboxId, state.sandboxId)));
+            throw error;
+          }
+          await clearLaunchReservation(session.id, wait);
+          if (isQuotaExceeded(error)) {
+            await exhaustPool(state.keyId);
+            continue;
+          }
+          throw sandboxFailure(error, "sandbox_start_failed");
         }
-        await clearLaunchReservation(session.id);
-        throw sandboxFailure(error, "sandbox_start_failed");
       }
     },
     async onSessionEnd(ctx: SandboxSessionContext, state: Readonly<State> | null, options: SandboxSessionEndOptions) {

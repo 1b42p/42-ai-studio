@@ -108,6 +108,10 @@ export interface AppConfig {
   readonly sandboxCpu: number;
   readonly sandboxMemoryGb: number;
   readonly sandboxDiskGb: number;
+  readonly sandboxIdleStopMinutes: number;
+  readonly sandboxArchiveAfterDays: number;
+  readonly sandboxQueueMaxWaitSeconds: number;
+  readonly sandboxQueuePollMs: number;
   /** Предельный размер файла, который копируется из ответа агента в S3. */
   readonly mediaCopyMaxBytes: number;
   /** Предельный размер одного загружаемого файла, байты. */
@@ -203,6 +207,10 @@ const envSchema = z.object({
   SANDBOX_CPU: z.coerce.number().int().min(1).max(4).optional().default(2),
   SANDBOX_MEMORY_GB: z.coerce.number().int().min(3).max(8).optional().default(4),
   SANDBOX_DISK_GB: z.coerce.number().int().min(1).max(10).optional().default(8),
+  SANDBOX_IDLE_STOP_MINUTES: z.coerce.number().int().min(1).max(1440).optional().default(15),
+  SANDBOX_ARCHIVE_AFTER_DAYS: z.coerce.number().int().min(1).max(30).optional().default(7),
+  SANDBOX_QUEUE_MAX_WAIT_SECONDS: z.coerce.number().int().min(5).max(14400).optional().default(1800),
+  SANDBOX_QUEUE_POLL_MS: z.coerce.number().int().min(100).max(10000).optional().default(2000),
   MEDIA_COPY_MAX_BYTES: z.coerce
     .number({ error: "ожидается целое число больше нуля" })
     .int("ожидается целое число больше нуля")
@@ -505,6 +513,10 @@ export function parseConfig(env: EnvRecord): AppConfig {
     sandboxCpu: data.SANDBOX_CPU,
     sandboxMemoryGb: data.SANDBOX_MEMORY_GB,
     sandboxDiskGb: data.SANDBOX_DISK_GB,
+    sandboxIdleStopMinutes: data.SANDBOX_IDLE_STOP_MINUTES,
+    sandboxArchiveAfterDays: data.SANDBOX_ARCHIVE_AFTER_DAYS,
+    sandboxQueueMaxWaitSeconds: data.SANDBOX_QUEUE_MAX_WAIT_SECONDS,
+    sandboxQueuePollMs: data.SANDBOX_QUEUE_POLL_MS,
     mediaCopyMaxBytes: data.MEDIA_COPY_MAX_BYTES,
     uploadMaxBytes: data.UPLOAD_MAX_BYTES,
     tavilyApiKey: data.TAVILY_API_KEY,

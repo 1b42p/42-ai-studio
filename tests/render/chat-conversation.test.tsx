@@ -101,8 +101,7 @@ test("открытый вопрос отвечает вариантом и св�
   await renderOnDesktop(view(questionConversation(), { onRespond }));
 
   await expect.element(page.getByText("Какой стиль выбрать?")).toBeVisible();
-  await page.getByRole("radio", { name: /Ретро/ }).click();
-  await page.getByRole("button", { name: "Ответить" }).click();
+  await page.getByRole("button", { name: /Ретро/ }).click();
   expect(onRespond).toHaveBeenCalledWith([{ optionId: "retro", requestId: "req_1" }]);
 
   await page.getByRole("textbox", { name: "Свой ответ" }).fill("Свой вариант");
