@@ -1,0 +1,1159 @@
+{
+  "description": "Sanitized requested actions from the three failed music-bed attempts. No provider responses, headers, cookies, identities or credentials.",
+  "cases": [
+    {
+      "index": 0,
+      "actions": [
+        {
+          "position": 0,
+          "kind": "skill",
+          "name": "voiceover",
+          "input": {
+            "name": "voiceover"
+          }
+        },
+        {
+          "position": 1,
+          "kind": "skill",
+          "name": "music-synthesis",
+          "input": {
+            "name": "music-synthesis"
+          }
+        },
+        {
+          "position": 2,
+          "kind": "skill",
+          "name": "sandbox-environment",
+          "input": {
+            "name": "sandbox-environment"
+          }
+        },
+        {
+          "position": 3,
+          "kind": "skill",
+          "name": "remotion-markup",
+          "input": {
+            "name": "remotion-markup"
+          }
+        },
+        {
+          "position": 4,
+          "kind": "skill",
+          "name": "frame-review",
+          "input": {
+            "name": "frame-review"
+          }
+        },
+        {
+          "position": 5,
+          "kind": "tool",
+          "name": "speak",
+          "input": {
+            "text": "Налейте стакан воды и сделайте небольшой глоток.",
+            "voice": "ru-RU-SvetlanaNeural",
+            "language": "ru-RU",
+            "rate": 0,
+            "outputPath": "/workspace/calm-bed/public/voice/scene-02"
+          }
+        },
+        {
+          "position": 6,
+          "kind": "tool",
+          "name": "speak",
+          "input": {
+            "text": "Потянитесь без спешки и спокойно расправьте плечи.",
+            "voice": "ru-RU-SvetlanaNeural",
+            "language": "ru-RU",
+            "rate": 0,
+            "outputPath": "/workspace/calm-bed/public/voice/scene-03"
+          }
+        },
+        {
+          "position": 7,
+          "kind": "tool",
+          "name": "speak",
+          "input": {
+            "text": "Выберите одно простое дело для начала дня.",
+            "voice": "ru-RU-SvetlanaNeural",
+            "language": "ru-RU",
+            "rate": 0,
+            "outputPath": "/workspace/calm-bed/public/voice/scene-04"
+          }
+        },
+        {
+          "position": 8,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "pwd && ls -la /workspace/calm-bed && ls -la /workspace/calm-bed/src && ls -la /workspace/calm-bed/public && find /workspace/calm-bed -maxdepth 3 -type f -printf '%p\\n' | sort | head -150 && df -h /workspace && sandbox-vcpu"
+          }
+        },
+        {
+          "position": 9,
+          "kind": "tool",
+          "name": "speak",
+          "input": {
+            "text": "Откройте шторы и впустите мягкий утренний свет.",
+            "voice": "ru-RU-SvetlanaNeural",
+            "language": "ru-RU",
+            "rate": 0,
+            "outputPath": "/workspace/calm-bed/public/voice/scene-01"
+          }
+        },
+        {
+          "position": 10,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/remotion-interactivity/timeline-structure.md"
+          }
+        },
+        {
+          "position": 11,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/frame-review/references/notes-template.md"
+          }
+        },
+        {
+          "position": 12,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/voiceover/references/remotion.md"
+          }
+        },
+        {
+          "position": 13,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md"
+          }
+        },
+        {
+          "position": 14,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/package.json"
+          }
+        },
+        {
+          "position": 15,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/BackgroundMusic.tsx"
+          }
+        },
+        {
+          "position": 16,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/index.ts"
+          }
+        },
+        {
+          "position": 17,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/ducking.ts"
+          }
+        },
+        {
+          "position": 18,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/voice/scene-02.words.json"
+          }
+        },
+        {
+          "position": 19,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/voice/scene-01.words.json"
+          }
+        },
+        {
+          "position": 20,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/voice/scene-03.words.json"
+          }
+        },
+        {
+          "position": 21,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/voice/scene-04.words.json"
+          }
+        },
+        {
+          "position": 22,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "ls -la /workspace/calm-bed && ls -la /workspace/calm-bed/src && find /workspace/calm-bed/public -maxdepth 4 -type f -printf '%p %s bytes\\n' | sort && test -d /workspace/calm-bed/node_modules && echo node_modules-ok && test -s /workspace/calm-bed/src/index.ts && test -s /workspace/calm-bed/src/Root.tsx && test -s /workspace/calm-bed/package.json && df -h /workspace && sandbox-vcpu"
+          }
+        },
+        {
+          "position": 23,
+          "kind": "skill",
+          "name": "remotion-captions",
+          "input": {
+            "name": "remotion-captions"
+          }
+        },
+        {
+          "position": 24,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "find /workspace/calm-bed -maxdepth 4 -type f -printf '%p %s bytes\\n' | sort"
+          }
+        },
+        {
+          "position": 25,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx"
+          }
+        },
+        {
+          "position": 26,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/remotion-captions/display-captions.md"
+          }
+        },
+        {
+          "position": 27,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "python3 \"$HOME/.agents/skills/music-synthesis/scripts/make_music.py\" --mood calm --seconds 20 --seed 1 --lufs -18 --out /workspace/calm-bed/public/music/bg"
+          }
+        },
+        {
+          "position": 28,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/music-synthesis/templates/BackgroundMusic.tsx.template"
+          }
+        },
+        {
+          "position": 29,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && pwd && ls -la src && test -s src/index.ts && test -s src/Root.tsx && test -s package.json && test -d node_modules && echo project-checks-ok && find public -maxdepth 3 -type f -printf '%p %s bytes\\n' | sort && ls -la out"
+          }
+        },
+        {
+          "position": 30,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/music-synthesis/templates/ducking.ts"
+          }
+        },
+        {
+          "position": 31,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx",
+            "oldString": "import { Audio } from \"@remotion/media\";\nimport { AbsoluteFill, Composition, Sequence, staticFile } from \"remotion\";\nconst scenes = [{\"durationMs\":4166,\"text\":\"Откройте шторы и впустите мягкий утренний свет.\",\"name\":\"scene-01\"},{\"durationMs\":4166,\"text\":\"Налейте стакан воды и сделайте небольшой глоток.\",\"name\":\"scene-02\"},{\"durationMs\":4166,\"text\":\"Потянитесь без спешки и спокойно расправьте плечи.\",\"name\":\"scene-03\"},{\"durationMs\":4166,\"text\":\"Выберите одно простое дело для начала дня.\",\"name\":\"scene-04\"}];\ntype SpeechSpan = { startMs: number; endMs: number };\n// audioMode isolates the actual mix routes for loudness measurements; visuals and duration stay unchanged.\ntype AudioMode = \"mix\" | \"voice-only\" | \"music-only\";\nconst Film = ({ speech, audioMode }: { speech: SpeechSpan[]; audioMode: AudioMode }) => (\n  <AbsoluteFill>\n    {scenes.map((scene, index) => <Sequence key={scene.name} from={index * 150} durationInFrames={150}><AbsoluteFill style={{ background: \"#172c35\", color: \"white\", justifyContent: \"center\", alignItems: \"center\", fontSize: 64, padding: 100 }}>{scene.text}</AbsoluteFill>{audioMode !== \"music-only\" && <Sequence from={10}><Audio src={staticFile(`voice/${scene.name}.mp3`)} volume={1.26} /></Sequence>}</Sequence>)}\n  </AbsoluteFill>\n);\nexport const RemotionRoot = () => (\n  <Composition id=\"Main\" component={Film} width={1920} height={1080} fps={30}\n    durationInFrames={600} defaultProps={{ speech: [] as SpeechSpan[], audioMode: \"mix\" as AudioMode }}\n    calculateMetadata={async ({ props }) => {\n      const timings = await Promise.all(scenes.map((scene) =>\n        fetch(staticFile(`voice/${scene.name}.words.json`)).then((response) => response.json())));\n      let from = 0;\n      const speech = timings.flatMap((timing) => {\n        const offsetMs = (from + 10) / 30 * 1000;\n        from += Math.max(150, Math.ceil(timing.durationMs / 1000 * 30) + 25);\n        return timing.sentences.map((span: SpeechSpan) => ({\n          startMs: offsetMs + span.startMs, endMs: offsetMs + span.endMs,\n        }));\n      });\n      return { durationInFrames: from, props: { ...props, speech } };\n    }}\n  />\n);\n",
+            "newString": "import { Audio } from \"@remotion/media\";\nimport { BackgroundMusic } from \"./BackgroundMusic\";\nimport { AbsoluteFill, Composition, Sequence, staticFile, useCurrentFrame, useVideoConfig } from \"remotion\";\n\ntype WordTiming = { text: string; startMs: number; endMs: number };\ntype SceneTiming = { durationMs: number; words: WordTiming[] };\ntype SpeechSpan = { startMs: number; endMs: number };\ntype AudioMode = \"mix\" | \"voice-only\" | \"music-only\";\n\nconst scenes = [\n  { name: \"scene-01\", text: \"Откройте шторы и впустите мягкий утренний свет.\" },\n  { name: \"scene-02\", text: \"Налейте стакан воды и сделайте небольшой глоток.\" },\n  { name: \"scene-03\", text: \"Потянитесь без спешки и спокойно расправьте плечи.\" },\n  { name: \"scene-04\", text: \"Выберите одно простое дело для начала дня.\" },\n];\n\nconst SceneCaption = ({ words }: { words: WordTiming[] }) => {\n  const frame = useCurrentFrame();\n  const { fps } = useVideoConfig();\n  const timeMs = frame / fps * 1000;\n  return (\n    <div style={{ position: \"absolute\", bottom: 100, left: 120, right: 120, textAlign: \"center\", fontFamily: \"Arial, sans-serif\", fontSize: 42, lineHeight: 1.35, fontWeight: 600, textShadow: \"0 2px 12px #000\", background: \"rgba(0,0,0,0.32)\", padding: \"20px 28px\", borderRadius: 12 }}>\n      {words.map((word, index) => <span key={`${word.startMs}-${index}`} style={{ color: timeMs >= word.startMs + 10 / fps * 1000 && timeMs < word.endMs + 10 / fps * 1000 ? \"#f3d89b\" : \"white\" }}>{index ? \" \" : \"\"}{word.text}</span>)}\n    </div>\n  );\n};\n\nconst Film = ({ timings, speech, audioMode }: { timings: SceneTiming[]; speech: SpeechSpan[]; audioMode: AudioMode }) => (\n  <AbsoluteFill>\n    {audioMode !== \"voice-only\" && <BackgroundMusic src=\"music/bg.wav\" speech={speech} />}\n    {scenes.map((scene, index) => {\n      const timing = timings[index];\n      const durationInFrames = Math.ceil(10 + timing.durationMs / 1000 * 30 + 15);\n      const from = timings.slice(0, index).reduce((total, item) => total + Math.ceil(10 + item.durationMs / 1000 * 30 + 15), 0);\n      return (\n        <Sequence key={scene.name} from={from} durationInFrames={durationInFrames}>\n          <AbsoluteFill style={{ background: \"#172c35\", color: \"white\", justifyContent: \"center\", alignItems: \"center\", fontSize: 64, padding: 100 }}>{scene.text}</AbsoluteFill>\n          <SceneCaption words={timing.words} />\n          {audioMode !== \"music-only\" && <Sequence from={10}><Audio src={staticFile(`voice/${scene.name}.mp3`)} volume={1.26} /></Sequence>}\n        </Sequence>\n      );\n    })}\n  </AbsoluteFill>\n);\n\nexport const RemotionRoot = () => (\n  <Composition id=\"Main\" component={Film} width={1920} height={1080} fps={30}\n    durationInFrames={600} defaultProps={{ timings: [] as SceneTiming[], speech: [] as SpeechSpan[], audioMode: \"mix\" as AudioMode }}\n    calculateMetadata={async ({ props, abortSignal }) => {\n      const timings = await Promise.all(scenes.map(async (scene) => {\n        const response = await fetch(staticFile(`voice/${scene.name}.words.json`), { signal: abortSignal });\n        return await response.json() as SceneTiming;\n      }));\n      let from = 0;\n      const speech = timings.flatMap((timing) => {\n        const offsetMs = (from + 10) / 30 * 1000;\n        from += Math.ceil(10 + timing.durationMs / 1000 * 30 + 15);\n        return [{ startMs: offsetMs, endMs: offsetMs + timing.durationMs }];\n      });\n      return { durationInFrames: from, props: { ...props, timings, speech } };\n    }}\n  />\n);\n"
+          }
+        },
+        {
+          "position": 32,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md",
+            "oldString": "Формат: 16:9, 1920×1080, 30 к/с. Длительность: 20 секунд. Утверждено сцен: 4; каждая по 5 секунд.\nscene-01: Откройте шторы и впустите мягкий утренний свет.\nscene-02: Налейте стакан воды и сделайте небольшой глоток.\nscene-03: Потянитесь без спешки и спокойно расправьте плечи.\nscene-04: Выберите одно простое дело для начала дня.\nКонтрольные кадры: 0, 100, 150, 300, 450, 599; каталог out/frames-1.\nМузыка и озвучка ещё не созданы.\nКомпозиция поддерживает audioMode: mix (по умолчанию), voice-only и music-only; переключение сохраняет те же gain, ducking, графику и длительность. Измерения выполнять после подключения музыки, без изменения gain для измерительных режимов. Примеры команд из каталога проекта:\nnpx remotion render src/index.ts Main out/voice-only.wav --props='{\"audioMode\":\"voice-only\"}'\nnpx remotion render src/index.ts Main out/music-only.wav --props='{\"audioMode\":\"music-only\"}'\nnpx remotion ffmpeg -i out/voice-only.wav -vn -af loudnorm=print_format=json -f null -\nnpx remotion ffmpeg -ss 1 -t 2 -i out/voice-only.wav -vn -af loudnorm=print_format=json -f null -\nnpx remotion ffmpeg -ss 1 -t 2 -i out/music-only.wav -vn -af loudnorm=print_format=json -f null -\nnpx remotion ffmpeg -i out/music-only.wav -vn -filter_complex \"[0:a]atrim=start=4.91:end=5.12,asetpts=PTS-STARTPTS[a];[0:a]atrim=start=9.91:end=10.12,asetpts=PTS-STARTPTS[b];[0:a]atrim=start=14.91:end=15.12,asetpts=PTS-STARTPTS[c];[a][b][c]concat=n=3:v=0:a=1,loudnorm=print_format=json\" -f null -\nОкно 1–3 с находится в речи; три промежутка 4.91–5.12, 9.91–10.12 и 14.91–15.12 с находятся вне речи и переходов огибающей. Их объединение длиннее 400 мс, минимального окна интегрального loudnorm. Сравнивайте голос и приглушённую музыку на одном окне. Исходные MP3 — моно, измерительный WAV и готовый ролик — стерео.\n",
+            "newString": "# Спокойное начало утра\nФормат: 16:9, 1920×1080, 30 к/с, длительность около 20 секунд\nПоследний рендер: не выполнен\nОзвучка: Edge TTS, ru-RU-SvetlanaNeural, rate 0\nМузыка: calm, 80 bpm, seed 1, файл public/music/bg.wav\nГромкость голоса: множитель 1.26; измерение ожидает рендера\n\n## Сцены\n| № | Текст | Кадр начала | Кадр конца |\n| --- | --- | ---: | ---: |\n| 1 | Откройте шторы и впустите мягкий утренний свет. | 0 | 149 |\n| 2 | Налейте стакан воды и сделайте небольшой глоток. | 150 | 299 |\n| 3 | Потянитесь без спешки и спокойно расправьте плечи. | 300 | 449 |\n| 4 | Выберите одно простое дело для начала дня. | 450 | 599 |\n\n## Озвучка и субтитры\n| Сцена | Текст/файл текста | Аудио | Тайминги | durationMs | mode |\n| --- | --- | --- | --- | ---: | --- |\n| 1 | Откройте шторы и впустите мягкий утренний свет. | public/voice/scene-01.mp3 | public/voice/scene-01.words.json | 4166 | word timestamps |\n| 2 | Налейте стакан воды и сделайте небольшой глоток. | public/voice/scene-02.mp3 | public/voice/scene-02.words.json | 4166 | word timestamps |\n| 3 | Потянитесь без спешки и спокойно расправьте плечи. | public/voice/scene-03.mp3 | public/voice/scene-03.words.json | 4166 | word timestamps |\n| 4 | Выберите одно простое дело для начала дня. | public/voice/scene-04.mp3 | public/voice/scene-04.words.json | 4166 | word timestamps |\nСмещение звука: 10 кадров; заключительная пауза сцены: 0,5 с\nПроверка: главные фразы начинаются на кадрах 10, 160, 310, 460; длина дорожек и синхронизация ожидают рендера\n\n## Проверка кадров\nПроход: 1; каталог: out/frames-1\nОпорные кадры и причины выбора: 0 и 599 (границы), 38 и 188 (ранние сцены), 338 и 488 (поздние сцены), 300 (граница фраз)\nПросмотрены: ожидают проверки\nИсправления: нет; общий счётчик попыток 1/3\nНужно перепроверить: все опорные кадры\nУпрощения: нет\n"
+          }
+        },
+        {
+          "position": 33,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md",
+            "oldString": "Опорные кадры и причины выбора: 0 и 599 (границы), 38 и 188 (ранние сцены), 338 и 488 (поздние сцены), 300 (граница фраз)",
+            "newString": "Опорные кадры и причины выбора: 0 и 599 (границы), 38 и 188 (25% первых двух сцен), 150 (граница сцен и фраз), 300 (самый плотный текст в 3-й сцене), 488 (85% финальной сцены)"
+          }
+        },
+        {
+          "position": 34,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && npx remotion render src/index.ts Main out/frames-1 --frames=0,38,150,188,300,488,599 --image-format=jpeg --jpeg-quality=90 && ls out/frames-1 && python3 \"$HOME/.agents/skills/frame-review/scripts/check-frames.py\" out/frames-1/*.jpeg"
+          }
+        },
+        {
+          "position": 35,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && npx remotion compositions src/index.ts"
+          }
+        },
+        {
+          "position": 36,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && npx tsc --noEmit"
+          }
+        },
+        {
+          "position": 37,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-000.jpeg"
+          }
+        },
+        {
+          "position": 38,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-150.jpeg"
+          }
+        },
+        {
+          "position": 39,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-450.jpeg"
+          }
+        },
+        {
+          "position": 40,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-300.jpeg"
+          }
+        },
+        {
+          "position": 41,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-100.jpeg"
+          }
+        },
+        {
+          "position": 42,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && ls -la out && find out -maxdepth 2 -type f -printf '%p %s bytes\\n' | sort"
+          }
+        },
+        {
+          "position": 43,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-599.jpeg"
+          }
+        },
+        {
+          "position": 44,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx"
+          }
+        },
+        {
+          "position": 45,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md"
+          }
+        },
+        {
+          "position": 46,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && ls -la out && find out -maxdepth 2 -type f -printf '%p %s\\n' | sort && ls -la src public public/voice public/music"
+          }
+        },
+        {
+          "position": 47,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx",
+            "newString": "import { Audio } from \"@remotion/media\";\nimport { BackgroundMusic } from \"./BackgroundMusic\";\nimport { AbsoluteFill, Composition, Sequence, staticFile, useCurrentFrame, useVideoConfig } from \"remotion\";\n\ntype WordTiming = { text: string; startMs: number; endMs: number };\ntype SceneTiming = { durationMs: number; words: WordTiming[] };\ntype SpeechSpan = { startMs: number; endMs: number };\ntype AudioMode = \"mix\" | \"voice-only\" | \"music-only\";\nconst sceneTexts = [\n  \"Откройте шторы и впустите мягкий утренний свет.\",\n  \"Налейте стакан воды и сделайте небольшой глоток.\",\n  \"Потянитесь без спешки и спокойно расправьте плечи.\",\n  \"Выберите одно простое дело для начала дня.\",\n];\n\nconst Caption = ({ words }: { words: WordTiming[] }) => {\n  const frame = useCurrentFrame();\n  const { fps } = useVideoConfig();\n  const timeMs = frame / fps * 1000;\n  return (\n    <div style={{ position: \"absolute\", left: 120, right: 120, bottom: 88, textAlign: \"center\", fontFamily: \"Arial, sans-serif\", fontSize: 48, lineHeight: 1.35, fontWeight: 600, textShadow: \"0 2px 12px #000\", background: \"rgba(0,0,0,0.32)\", padding: \"20px 28px\", borderRadius: 12 }}>\n      {words.map((word, index) => <span key={`${word.startMs}-${index}`} style={{ color: timeMs >= word.startMs + 10 / fps * 1000 && timeMs < word.endMs + 10 / fps * 1000 ? \"#f3d89b\" : \"white\" }}>{index ? \" \" : \"\"}{word.text}</span>)}\n    </div>\n  );\n};\n\nconst Film = ({ timings, speech, audioMode }: { timings: SceneTiming[]; speech: SpeechSpan[]; audioMode: AudioMode }) => (\n  <AbsoluteFill>\n    {audioMode !== \"voice-only\" && <BackgroundMusic src=\"music/bg.wav\" speech={speech} />}\n    {sceneTexts.map((text, index) => (\n      <Sequence key={index} from={index * 150} durationInFrames={150}>\n        <AbsoluteFill style={{ background: \"#172c35\", color: \"white\", justifyContent: \"center\", alignItems: \"center\", fontSize: 64, padding: 100 }}>{text}</AbsoluteFill>\n        <Caption words={timings[index]?.words ?? []} />\n        {audioMode !== \"music-only\" && <Sequence from={10}><Audio src={staticFile(`voice/scene-0${index + 1}.mp3`)} volume={1.26} /></Sequence>}\n      </Sequence>\n    ))}\n  </AbsoluteFill>\n);\n\nexport const RemotionRoot = () => (\n  <Composition id=\"Main\" component={Film} width={1920} height={1080} fps={30} durationInFrames={600}\n    defaultProps={{ timings: [] as SceneTiming[], speech: [] as SpeechSpan[], audioMode: \"mix\" as AudioMode }}\n    calculateMetadata={async ({ props, abortSignal }) => {\n      const timings = await Promise.all([1, 2, 3, 4].map(async (index) => {\n        const response = await fetch(staticFile(`voice/scene-0${index}.words.json`), { signal: abortSignal });\n        return await response.json() as SceneTiming;\n      }));\n      const speech = timings.flatMap((timing, index) => [{\n        startMs: index * 5000 + 10 / 30 * 1000,\n        endMs: index * 5000 + 10 / 30 * 1000 + timing.durationMs,\n      }]);\n      return { props: { ...props, timings, speech } };\n    }}\n  />\n);\n",
+            "overwrite": true
+          }
+        },
+        {
+          "position": 48,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md",
+            "newString": "# Спокойное начало утра\nФормат: 16:9, 1920×1080, 30 к/с, длительность 20 с\nПоследний рендер: не выполнен\nОзвучка: Edge TTS, ru-RU-SvetlanaNeural, rate 0\nМузыка: calm, 80 bpm, seed 1, файл public/music/bg.wav\nГромкость голоса: множитель 1.26; проверка после рендера\n\n## Сцены\n| № | Текст | Кадр начала | Кадр конца |\n| --- | --- | ---: | ---: |\n| 1 | Откройте шторы и впустите мягкий утренний свет. | 0 | 149 |\n| 2 | Налейте стакан воды и сделайте небольшой глоток. | 150 | 299 |\n| 3 | Потянитесь без спешки и спокойно расправьте плечи. | 300 | 449 |\n| 4 | Выберите одно простое дело для начала дня. | 450 | 599 |\n\n## Озвучка и субтитры\n| Сцена | Текст/файл текста | Аудио | Тайминги | durationMs | mode |\n| --- | --- | --- | --- | ---: | --- |\n| 1 | Откройте шторы и впустите мягкий утренний свет. | public/voice/scene-01.mp3 | public/voice/scene-01.words.json | 4166 | word timestamps |\n| 2 | Налейте стакан воды и сделайте небольшой глоток. | public/voice/scene-02.mp3 | public/voice/scene-02.words.json | 4166 | word timestamps |\n| 3 | Потянитесь без спешки и спокойно расправьте плечи. | public/voice/scene-03.mp3 | public/voice/scene-03.words.json | 4166 | word timestamps |\n| 4 | Выберите одно простое дело для начала дня. | public/voice/scene-04.mp3 | public/voice/scene-04.words.json | 4166 | word timestamps |\nСмещение звука: 10 кадров; заключительная пауза сцены: 0,5 с\nПроверка синхронизации и длительностей аудио: после рендера\n\n## Проверка кадров\nПроход: 1; каталог: out/frames-1\nОпорные кадры и причины выбора: 0 и 599 (границы), 38 и 188 (25% первых сцен), 150 (граница фраз), 300 (граница сцен), 488 (85% финальной сцены)\nПросмотрены: 0, 100, 150, 300, 450, 599; текст в пределах кадра, исходная графика сохранена\nИсправления: подключена озвучка, музыка и подсвечиваемые субтитры; общий счётчик попыток 1/3\nНужно перепроверить: субтитры на новых опорных кадрах\nУпрощения: нет\n"
+          }
+        },
+        {
+          "position": 49,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx"
+          }
+        },
+        {
+          "position": 50,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && ls -la out && npx remotion compositions src/index.ts"
+          }
+        },
+        {
+          "position": 51,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md"
+          }
+        },
+        {
+          "position": 52,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && stat src/Root.tsx NOTES.md && pwd && ls -la && head -c 500 src/Root.tsx"
+          }
+        },
+        {
+          "position": 53,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && npx remotion ffprobe -v error -show_entries stream=codec_name,codec_type,width,height,duration:format=duration -of default=nw=1 out/final.mp4"
+          }
+        },
+        {
+          "position": 54,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && test -s out/final.mp4 && stat -c '%n %s bytes' out/final.mp4"
+          }
+        },
+        {
+          "position": 55,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && npx remotion ffmpeg -i out/final.mp4 -vn -af loudnorm=print_format=json -f null -"
+          }
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "actions": [
+        {
+          "position": 0,
+          "kind": "skill",
+          "name": "voiceover",
+          "input": {
+            "name": "voiceover"
+          }
+        },
+        {
+          "position": 1,
+          "kind": "skill",
+          "name": "music-synthesis",
+          "input": {
+            "name": "music-synthesis"
+          }
+        },
+        {
+          "position": 2,
+          "kind": "skill",
+          "name": "sandbox-environment",
+          "input": {
+            "name": "sandbox-environment"
+          }
+        },
+        {
+          "position": 3,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "ls -la /workspace/calm-bed && rg --files /workspace/calm-bed | head -80"
+          }
+        },
+        {
+          "position": 4,
+          "kind": "skill",
+          "name": "remotion-create",
+          "input": {
+            "name": "remotion-create"
+          }
+        },
+        {
+          "position": 5,
+          "kind": "skill",
+          "name": "remotion-markup",
+          "input": {
+            "name": "remotion-markup"
+          }
+        },
+        {
+          "position": 6,
+          "kind": "skill",
+          "name": "remotion-interactivity",
+          "input": {
+            "name": "remotion-interactivity"
+          }
+        },
+        {
+          "position": 7,
+          "kind": "skill",
+          "name": "frame-review",
+          "input": {
+            "name": "frame-review"
+          }
+        },
+        {
+          "position": 8,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md"
+          }
+        },
+        {
+          "position": 9,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx"
+          }
+        },
+        {
+          "position": 10,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "find /workspace/calm-bed -maxdepth 5 -type f -printf '%p %s bytes\\n' | sort"
+          }
+        },
+        {
+          "position": 11,
+          "kind": "skill",
+          "name": "remotion-captions",
+          "input": {
+            "name": "remotion-captions"
+          }
+        },
+        {
+          "position": 12,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/package.json"
+          }
+        },
+        {
+          "position": 13,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "ls -la /workspace/calm-bed/public /workspace/calm-bed/public/voice /workspace/calm-bed/public/music; find /workspace/calm-bed/public -type f -printf '%p %s bytes\\n'; pwd; cd /workspace/calm-bed && test -s src/index.ts && test -s src/Root.tsx && test -s package.json && test -d node_modules && echo PROJECT_OK"
+          }
+        },
+        {
+          "position": 14,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && pwd && ls -la public && find public -maxdepth 3 -type f -printf '%p %s bytes\\n' && test -s src/index.ts && test -s src/Root.tsx && test -s package.json && test -d node_modules && echo PROJECT_OK"
+          }
+        },
+        {
+          "position": 15,
+          "kind": "tool",
+          "name": "speak",
+          "input": {
+            "text": "Выберите одно простое дело для начала дня.",
+            "voice": "ru-RU-SvetlanaNeural",
+            "language": "ru-RU",
+            "rate": 0,
+            "outputPath": "/workspace/calm-bed/public/voice/scene-04"
+          }
+        },
+        {
+          "position": 16,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "python3 \"$HOME/.agents/skills/music-synthesis/scripts/make_music.py\" --mood calm --seconds 20 --seed 1 --lufs -18 --out /workspace/calm-bed/public/music/bg.wav"
+          }
+        },
+        {
+          "position": 17,
+          "kind": "tool",
+          "name": "speak",
+          "input": {
+            "text": "Потянитесь без спешки и спокойно расправьте плечи.",
+            "voice": "ru-RU-SvetlanaNeural",
+            "language": "ru-RU",
+            "rate": 0,
+            "outputPath": "/workspace/calm-bed/public/voice/scene-03"
+          }
+        },
+        {
+          "position": 18,
+          "kind": "tool",
+          "name": "speak",
+          "input": {
+            "text": "Налейте стакан воды и сделайте небольшой глоток.",
+            "voice": "ru-RU-SvetlanaNeural",
+            "language": "ru-RU",
+            "rate": 0,
+            "outputPath": "/workspace/calm-bed/public/voice/scene-02"
+          }
+        },
+        {
+          "position": 19,
+          "kind": "tool",
+          "name": "speak",
+          "input": {
+            "text": "Откройте шторы и впустите мягкий утренний свет.",
+            "voice": "ru-RU-SvetlanaNeural",
+            "language": "ru-RU",
+            "rate": 0,
+            "outputPath": "/workspace/calm-bed/public/voice/scene-01"
+          }
+        },
+        {
+          "position": 20,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/voice/scene-01.words.json"
+          }
+        },
+        {
+          "position": 21,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/voice/scene-02.words.json"
+          }
+        },
+        {
+          "position": 22,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/voice/scene-03.words.json"
+          }
+        },
+        {
+          "position": 23,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/music-synthesis/templates/BackgroundMusic.tsx.template"
+          }
+        },
+        {
+          "position": 24,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/music-synthesis/templates/ducking.ts"
+          }
+        },
+        {
+          "position": 25,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/voiceover/references/remotion.md"
+          }
+        },
+        {
+          "position": 26,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/voice/scene-04.words.json"
+          }
+        },
+        {
+          "position": 27,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/frame-review/references/notes-template.md"
+          }
+        },
+        {
+          "position": 28,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && find public -type f -printf '%p %s bytes\\n'"
+          }
+        },
+        {
+          "position": 29,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cp \"$HOME/.agents/skills/music-synthesis/templates/ducking.ts\" /workspace/calm-bed/src/ducking.ts && cp \"$HOME/.agents/skills/music-synthesis/templates/BackgroundMusic.tsx.template\" /workspace/calm-bed/src/BackgroundMusic.tsx"
+          }
+        },
+        {
+          "position": 30,
+          "kind": "tool",
+          "name": "read_page",
+          "input": {
+            "url": "https://www.remotion.dev/elements/captions/basic-captions.md"
+          }
+        },
+        {
+          "position": 31,
+          "kind": "tool",
+          "name": "read_page",
+          "input": {
+            "url": "https://www.remotion.dev/elements/captions/basic-captions"
+          }
+        },
+        {
+          "position": 32,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/public/"
+          }
+        },
+        {
+          "position": 33,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && npx remotion ffmpeg -i public/voice/scene-01.mp3 -vn -af loudnorm=print_format=json -f null -"
+          }
+        },
+        {
+          "position": 34,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md",
+            "newString": "# Спокойное начало утра\nФормат: 16:9, 1920×1080, 30 к/с, длительность 20 секунд\nПоследний рендер: не выполнен\nОзвучка: Edge TTS, ru-RU, ru-RU-SvetlanaNeural, rate 0\nМузыка: calm, 80 bpm, seed 1, файл public/music/bg.wav\nГромкость голоса: множитель Audio 1.26; исходный голос −21 LUFS, ожидаемо около −16 LUFS в стереомиксе\n\n## Сцены\n| № | Текст | Кадр начала | Кадр конца |\n| --- | --- | ---: | ---: |\n| 1 | Откройте шторы и впустите мягкий утренний свет. | 0 | 149 |\n| 2 | Налейте стакан воды и сделайте небольшой глоток. | 150 | 299 |\n| 3 | Потянитесь без спешки и спокойно расправьте плечи. | 300 | 449 |\n| 4 | Выберите одно простое дело для начала дня. | 450 | 599 |\n\n## Озвучка и субтитры\n| Сцена | Текст/файл текста | Аудио | Тайминги | durationMs | mode |\n| --- | --- | --- | --- | ---: | --- |\n| 1 | Откройте шторы и впустите мягкий утренний свет. | public/voice/scene-01.mp3 | public/voice/scene-01.words.json | 4166 | speak |\n| 2 | Налейте стакан воды и сделайте небольшой глоток. | public/voice/scene-02.mp3 | public/voice/scene-02.words.json | 4166 | speak |\n| 3 | Потянитесь без спешки и спокойно расправьте плечи. | public/voice/scene-03.mp3 | public/voice/scene-03.words.json | 4166 | speak |\n| 4 | Выберите одно простое дело для начала дня. | public/voice/scene-04.mp3 | public/voice/scene-04.words.json | 4166 | speak |\nСмещение звука: 10 кадров; заключительная пауза ролика: 0,5 с после конца последней реплики.\nМузыка синтезирована: calm, 80 bpm, seed 1, −18 LUFS; ослабление во время речи на 8 дБ, атака 200 мс, возврат 400 мс.\n\n## Проверка кадров\nПроход: 1; каталог: out/frames-1\nОпорные кадры и причины выбора: 0 и 599 (смысловое начало и завершение), 37, 127, 187, 277 — выборка сцен, 300 — стык сцен.\nПросмотрены: ожидает просмотра.\nИсправления: нет; общий счётчик попыток 1 из 3.\nНужно перепроверить: нет.\nУпрощения: нет.\n",
+            "overwrite": true
+          }
+        },
+        {
+          "position": 35,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx",
+            "oldString": "import { Audio } from \"@remotion/media\";\nimport { AbsoluteFill, Composition, Sequence, staticFile } from \"remotion\";",
+            "newString": "import { Audio } from \"@remotion/media\";\nimport { BackgroundMusic } from \"./BackgroundMusic\";\nimport { AbsoluteFill, Composition, Sequence, staticFile } from \"remotion\";"
+          }
+        },
+        {
+          "position": 36,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx"
+          }
+        },
+        {
+          "position": 37,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx",
+            "oldString": "const Film = ({ speech, audioMode }: { speech: SpeechSpan[]; audioMode: AudioMode }) => (\n  <AbsoluteFill>\n    {audioMode !== \"voice-only\" && <BackgroundMusic src=\"music/bg.wav\" speech={speech} />}\n    {scenes.map((scene, index) => <Sequence key={scene.name} from={index * 150} durationInFrames={150}><AbsoluteFill style={{ background: \"#172c35\", color: \"white\", justifyContent: \"center\", alignItems: \"center\", fontSize: 64, padding: 100 }}>{scene.text}</AbsoluteFill>{audioMode !== \"music-only\" && <Sequence from={10}><Audio src={staticFile(`voice/${scene.name}.mp3`)} volume={1.26} /></Sequence>}</Sequence>)}\n  </AbsoluteFill>\n);",
+            "newString": "const Film = ({ speech, audioMode }: { speech: SpeechSpan[]; audioMode: AudioMode }) => (\n  <AbsoluteFill>\n    {audioMode !== \"voice-only\" && <BackgroundMusic src=\"music/bg.wav\" speech={speech} />}\n    {scenes.map((scene, index) => <Sequence key={scene.name} from={index * 150} durationInFrames={150}><AbsoluteFill style={{ background: \"#172c35\", color: \"white\", justifyContent: \"center\", alignItems: \"center\", fontSize: 64, padding: 100 }}>{scene.text}</AbsoluteFill>{audioMode !== \"music-only\" && <Sequence from={10}><Audio src={staticFile(`voice/${scene.name}.mp3`)} volume={1.26} /></Sequence>}</Sequence>)}\n  </AbsoluteFill>\n);"
+          }
+        },
+        {
+          "position": 38,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && pwd && ls -la && ls -la public && test -s src/index.ts && test -s src/Root.tsx && test -s package.json && test -d node_modules && echo PROJECT_OK && npx remotion render src/index.ts Main out/frames-1 --frames=0,37,127,187,277,300,599 --image-format=jpeg --jpeg-quality=90"
+          }
+        },
+        {
+          "position": 39,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && python3 \"$HOME/.agents/skills/frame-review/scripts/check-frames.py\" out/frames-1/*.jpeg && ls -l out/frames-1"
+          }
+        },
+        {
+          "position": 40,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-100.jpeg"
+          }
+        },
+        {
+          "position": 41,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-000.jpeg"
+          }
+        },
+        {
+          "position": 42,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-450.jpeg"
+          }
+        },
+        {
+          "position": 43,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-300.jpeg"
+          }
+        },
+        {
+          "position": 44,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-150.jpeg"
+          }
+        },
+        {
+          "position": 45,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/out/frames-1/element-599.jpeg"
+          }
+        },
+        {
+          "position": 46,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md",
+            "oldString": "Проход: 1; каталог: out/frames-1\nОпорные кадры и причины выбора: 0 и 599 (смысловое начало и завершение), 37, 127, 187, 277 — выборка сцен, 300 — стык сцен.\nПросмотрены: ожидает просмотра.\nИсправления: нет; общий счётчик попыток 1 из 3.\nНужно перепроверить: нет.\nУпрощения: нет.\n",
+            "newString": "Проход: 1; каталог: out/frames-1\nОпорные кадры и причины выбора: кадры 0, 100, 150, 300, 450, 599 (границы и выборка сцен, включая стык сцен).\nПросмотрены: 0, 100, 150, 300, 450, 599 — исходный тёмно-бирюзовый фон и белая строка сцены, без обрезки текста или пустых кадров; текст виден в начале и последнем кадре.\nИсправления: нет; общий счётчик попыток 1 из 3.\nНужно перепроверить: нет.\nУпрощения: нет.\n"
+          }
+        },
+        {
+          "position": 47,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && npx remotion render src/index.ts Main out/final.mp4"
+          }
+        },
+        {
+          "position": 48,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && npx remotion ffmpeg -i out/final.mp4 -vn -af loudnorm=print_format=json -f null -"
+          }
+        },
+        {
+          "position": 49,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && test -s out/final.mp4 && ls -l out/final.mp4 && npx remotion ffprobe -v error -show_entries stream=codec_name,codec_type,width,height,duration:format=duration -of default=nw=1 out/final.mp4"
+          }
+        },
+        {
+          "position": 50,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && ls -lh out/final.mp4 && npx remotion ffprobe -v error -select_streams a:0 -show_entries stream=duration -of default=nw=1 out/final.mp4"
+          }
+        },
+        {
+          "position": 51,
+          "kind": "tool",
+          "name": "edit_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md",
+            "oldString": "Последний рендер: не выполнен",
+            "newString": "Последний рендер: out/final.mp4 — проверен, 1920×1080, 20,000 с; видео и аудио по 20,000 с, пик −2,0 dBTP."
+          }
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "actions": [
+        {
+          "position": 0,
+          "kind": "skill",
+          "name": "voiceover",
+          "input": {
+            "name": "voiceover"
+          }
+        },
+        {
+          "position": 1,
+          "kind": "skill",
+          "name": "music-synthesis",
+          "input": {
+            "name": "music-synthesis"
+          }
+        },
+        {
+          "position": 2,
+          "kind": "skill",
+          "name": "sandbox-environment",
+          "input": {
+            "name": "sandbox-environment"
+          }
+        },
+        {
+          "position": 3,
+          "kind": "skill",
+          "name": "remotion-create",
+          "input": {
+            "name": "remotion-create"
+          }
+        },
+        {
+          "position": 4,
+          "kind": "skill",
+          "name": "remotion-markup",
+          "input": {
+            "name": "remotion-markup"
+          }
+        },
+        {
+          "position": 5,
+          "kind": "skill",
+          "name": "frame-review",
+          "input": {
+            "name": "frame-review"
+          }
+        },
+        {
+          "position": 6,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx"
+          }
+        },
+        {
+          "position": 7,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/NOTES.md"
+          }
+        },
+        {
+          "position": 8,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/package.json"
+          }
+        },
+        {
+          "position": 9,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "ls -la /workspace/calm-bed"
+          }
+        },
+        {
+          "position": 10,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "find /workspace/calm-bed/public -maxdepth 4 -type f -printf '%P\\t%s bytes\\n' 2>/dev/null | sort"
+          }
+        },
+        {
+          "position": 11,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/Root.tsx"
+          }
+        },
+        {
+          "position": 12,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "find /workspace/calm-bed -maxdepth 5 -type f -printf '%P\\t%s bytes\\n' | sort"
+          }
+        },
+        {
+          "position": 13,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "find /workspace/calm-bed -maxdepth 4 -type f -printf '%P\\t%s bytes\\n' | sort"
+          }
+        },
+        {
+          "position": 14,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "ls -la /workspace/calm-bed /workspace/calm-bed/public /workspace/calm-bed/src"
+          }
+        },
+        {
+          "position": 15,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/BackgroundMusic.tsx"
+          }
+        },
+        {
+          "position": 16,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/voiceover/references/remotion.md"
+          }
+        },
+        {
+          "position": 17,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "$HOME/.agents/skills/frame-review/references/notes-template.md"
+          }
+        },
+        {
+          "position": 18,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "cd /workspace/calm-bed && pwd && ls -la && ls -la src public public/voice public/music && test -s src/index.ts && test -s src/Root.tsx && test -s package.json && test -d node_modules && echo 'project checks passed'"
+          }
+        },
+        {
+          "position": 19,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "npx remotion ffprobe -v error -show_entries format=duration:stream=codec_type,codec_name,duration -of default=nw=1 /workspace/calm-bed/public/music/bg.wav"
+          }
+        },
+        {
+          "position": 20,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "for f in /workspace/calm-bed/public/voice/scene-*.mp3; do echo \"=== $f\"; npx remotion ffprobe -v error -show_entries format=duration:stream=codec_type,codec_name,duration -of default=nw=1 \"$f\"; done"
+          }
+        },
+        {
+          "position": 21,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "for f in /workspace/calm-bed/public/voice/scene-*.words.json; do echo \"=== $f\"; cat \"$f\"; done"
+          }
+        },
+        {
+          "position": 22,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "find /workspace/calm-bed -maxdepth 6 -type f"
+          }
+        },
+        {
+          "position": 23,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "pwd && ls -la /workspace/calm-bed/src && ls -la /workspace/calm-bed/public"
+          }
+        },
+        {
+          "position": 24,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/index.ts"
+          }
+        },
+        {
+          "position": 25,
+          "kind": "tool",
+          "name": "read_file",
+          "input": {
+            "filePath": "/workspace/calm-bed/src/ducking.ts"
+          }
+        },
+        {
+          "position": 26,
+          "kind": "tool",
+          "name": "bash",
+          "input": {
+            "command": "npx remotion ffmpeg -i /workspace/calm-bed/public/music/bg.wav -vn -af loudnorm=print_format=json -f null -"
+          }
+        },
+        {
+          "position": 27,
+          "kind": "tool",
+          "name": "ask_question",
+          "input": {
+            "question": "В `/workspace/calm-bed` нашлись готовые озвучка и музыка, но отдельных файлов графики нет, а композиция сейчас содержит только текст на сплошном фоне. Где находятся подготовленные графические материалы, которые нужно сохранить?"
+          }
+        }
+      ]
+    }
+  ]
+}
