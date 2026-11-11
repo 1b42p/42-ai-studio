@@ -46,7 +46,7 @@ export async function history() {
     MUSIC_FRAMES.forEach(frame => call("read_file", { filePath: `${P}/out/frames-1/${frameName(frame)}` }));
   }
   function levels() { MUSIC_LEVEL_COMMANDS.forEach(command => bash(command)); }
-  function journal() { call("edit_file", { filePath: `${P}/NOTES.md`, newString: `out/voice-only.wav out/music-only.wav\n${JSON.stringify(audit.measurements)}` }); }
+  function journal() { call("edit_file", { filePath: `${P}/NOTES.md`, newString: `out/voice-only.wav out/music-only.wav\nОкна 1–3 с; 4.91–5.12, 9.91–10.12, 14.91–15.12 с.\n${JSON.stringify(audit.measurements)}` }); }
   function render() { bash("npx remotion render src/index.ts Main out/final.mp4"); }
   function checks() {
     bash("stat -c %s out/final.mp4");

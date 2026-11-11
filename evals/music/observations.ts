@@ -4,6 +4,7 @@ import { resolveVoiceChoice } from "../../lib/speech/voices";
 import { videoLinks } from "../video/observations";
 import { MUSIC_FRAMES, MUSIC_PATH, MUSIC_PROJECT as P, MUSIC_SCENES, VOICE, frameName, musicWordsFile, sceneName } from "./data";
 import { isMusicFrameOutput } from "./media-fixture";
+import { probesComplete } from "./probe-evidence";
 
 export const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 export type CompletedCall = { name: string; input: Record<string, unknown>; output: Record<string, unknown>; requested: number; completed: number };
@@ -74,6 +75,10 @@ const option = (words: string[], key: string) => words.find(word => word.startsW
 const projectPath = (path: string) => posix.resolve(path.startsWith("calm-bed/") ? "/workspace" : P, path);
 const toolPath = (path: unknown) => typeof path === "string" ? posix.resolve("/workspace", path) : undefined;
 const text = (call: CompletedCall) => [call.output.stdout, call.output.stderr].filter(v => typeof v === "string").join("\n");
+const journalPath = (content: string, path: string) => {
+  const alternatives = [path, posix.relative(P, path)].map(value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return new RegExp(`(?<![\\p{L}\\p{N}_./-])(?:${alternatives.join("|")})(?![\\p{L}\\p{N}_/-]|\\.[\\p{L}\\p{N}_/-])`, "u").test(content);
+};
 
 function preservesSources(call: CompletedCall): boolean {
   if (call.name === "edit_file") return toolPath(call.input.filePath) === `${P}/NOTES.md`;
@@ -82,6 +87,10 @@ function preservesSources(call: CompletedCall): boolean {
   if (!shellWords(command)) return false;
   if (/[>`]/u.test(command) || /\b(?:sed|perl|rm|mv|tee|truncate|touch|node|eval|exec|echo|printf)\b/u.test(command)) return false;
   const groups = commandWords(command);
+  const commands = shellWords(command)!;
+  const last = commands.at(-1);
+  if ((commands.length === 1 || (commands.length === 2 && commands[0].join(" ") === `cd ${P}`)) &&
+    last?.length === 3 && last[0] === "mkdir" && last[1] === "-p" && projectPath(last[2]) === `${P}/out`) return true;
   for (const words of groups) {
     if (words[0] === "cp") {
       if (words.length !== 3) return false;
@@ -216,13 +225,17 @@ function measure(call: CompletedCall, tracks: Track[]): Level | undefined {
     if (!words.some(word => posix.basename(word) === "ffmpeg") || !words.includes("-vn") || words.filter(word => word === "-i").length !== 1) continue;
     const path = projectPath(option(words, "-i") ?? "");
     const track = tracks.findLast(track => track.path === path && track.completed < call.requested);
-    const filter = option(words, "-af") ?? option(words, "-filter_complex");
+    const filter = option(words, "-af") ?? option(words, "-filter:a") ?? option(words, "-filter_complex");
     if (!track || !filter?.includes("loudnorm=")) continue;
     const filters = [...filter.matchAll(/(?:^|[,;]|\])\s*([a-z][a-z0-9_]*)\s*(?:=|,|$)/gu)].map(match => match[1]);
     if (filters.some(name => !["atrim", "asetpts", "concat", "loudnorm"].includes(name)) || /\[[1-9]\d*:/u.test(filter)) continue;
     const windows = [...filter.matchAll(/atrim=(?:start=)?([\d.]+):(?:end=)?([\d.]+)/gu)].map(match => ({ start: Number(match[1]), end: Number(match[2]) }));
     if ((filter.match(/\batrim\b/gu) ?? []).length !== windows.length) continue;
     const ss = option(words, "-ss"), duration = option(words, "-t"), to = option(words, "-to");
+    // Output trimming does not constrain the samples analyzed by loudnorm.
+    // It is recorded diagnostics, never proof of an input speech window.
+    const inputAt = words.indexOf("-i");
+    if (["-ss", "-t", "-to"].some(flag => words.includes(flag) && words.indexOf(flag) > inputAt)) continue;
     if (windows.length && (ss !== undefined || duration !== undefined || to !== undefined)) continue;
     if (ss !== undefined || duration !== undefined || to !== undefined) windows.push({ start: Number(ss ?? 0), end: to === undefined ? Number(ss ?? 0) + Number(duration) : Number(to) });
     if (windows.some(window => !Number.isFinite(window.start) || !Number.isFinite(window.end) || window.start < 0 || window.end > 20 || window.end <= window.start)) continue;
@@ -244,7 +257,7 @@ export function musicLevelEvidence(events: readonly EveEvalStreamEvent[], after 
   return { tracks, levels };
 }
 
-function levelCompletion(levels: Level[]): number {
+function levelProof(levels: Level[]) {
   const speech = MUSIC_SCENES.flatMap((scene, index) => scene.sentences.map(span => ({ start: (index * 150 + 10) / 30 + span.startMs / 1000, end: (index * 150 + 10) / 30 + span.endMs / 1000 })));
   const inside = (level: Level) => level.windows.length === 1 && level.windows[0].end - level.windows[0].start >= 0.4 && speech.some(span => level.windows[0].start >= Math.max(1, span.start) && level.windows[0].end <= span.end);
   const full = levels.find(level => level.mode === "voice-only" && !level.windows.length && Math.abs(level.lufs + 16) <= 2);
@@ -252,9 +265,29 @@ function levelCompletion(levels: Level[]): number {
   const music = levels.find(level => level.mode === "music-only" && inside(level) && voices.some(voice => voice.path !== level.path && voice.windows[0].start === level.windows[0].start && voice.windows[0].end === level.windows[0].end && voice.lufs - level.lufs >= 8));
   const voice = music && voices.find(voice => voice.path !== music.path && voice.windows[0].start === music.windows[0].start && voice.windows[0].end === music.windows[0].end && voice.lufs - music.lufs >= 8);
   const outside = levels.find(level => level.mode === "music-only" && Math.abs(level.lufs + 18) <= 2 && level.windows.length > 0 && level.windows.reduce((sum, w) => sum + w.end - w.start, 0) >= 0.4 && level.windows.every((window, index) => window.start >= 1 && window.end <= 18 && (index === 0 || window.start >= level.windows[index - 1].end) && speech.every(span => window.end <= span.start - 0.2 || window.start >= span.end + 0.4)));
-  return full && music && voice && outside ? Math.max(full.completed, music.completed, voice.completed, outside.completed) : -1;
+  return full && music && voice && outside ? { levels: [full, voice, music, outside], completed: Math.max(full.completed, music.completed, voice.completed, outside.completed) } : undefined;
 }
-export const musicLevelsCompleted = (events: readonly EveEvalStreamEvent[]) => levelCompletion(musicLevelEvidence(events).levels) >= 0;
+export const musicLevelsCompleted = (events: readonly EveEvalStreamEvent[]) => !!levelProof(musicLevelEvidence(events).levels);
+
+function pixelsChecked(call: CompletedCall): boolean {
+  if (call.name !== "bash" || !String(call.input.command).includes("check-frames.py") || typeof call.output.stdout !== "string") return false;
+  const rows: Record<string, unknown>[] = [];
+  try {
+    for (const line of call.output.stdout.split("\n")) if (line.startsWith("{")) {
+      const row: unknown = JSON.parse(line);
+      if (!record(row)) return false;
+      rows.push(row);
+    }
+  } catch { return false; }
+  return rows.length === MUSIC_FRAMES.length && MUSIC_FRAMES.every(frame => {
+    const matching = rows.filter(row => typeof row.path === "string" && projectPath(row.path) === `${P}/out/frames-1/${frameName(frame)}`);
+    if (matching.length !== 1) return false;
+    const row = matching[0];
+    if (row.suspect !== null || row.error !== undefined || !Array.isArray(row.extrema) || row.extrema.length !== 3) return false;
+    return row.extrema.every(pair => Array.isArray(pair) && pair.length === 2 && pair.every(value => Number.isInteger(value) && value >= 0 && value <= 255) && pair[1] >= pair[0]) &&
+      row.extrema.some(pair => pair[1] - pair[0] > 2) && row.extrema.some(pair => pair[1] > 8);
+  });
+}
 
 export function musicWorkflowGates(events: readonly EveEvalStreamEvent[]) {
   const calls = completedMusicCalls(events);
@@ -279,19 +312,22 @@ export function musicWorkflowGates(events: readonly EveEvalStreamEvent[]) {
   const frameRender = frameWrite && renderInfo(frameWrite);
   const rendered = frameWrite && frameRender?.frames === MUSIC_FRAMES.join(",") &&
     frameRender.path === `${P}/out/frames-1` && frameWrite.requested > Math.max(ready, skillAt) ? frameWrite : undefined;
-  const pixels = rendered && calls.find(call => call.name === "bash" && String(call.input.command).includes("check-frames.py") && call.requested > rendered.completed && MUSIC_FRAMES.every(frame => text(call).includes(`${frameName(frame)} 1920x1080 ok`)));
+  const pixels = rendered && calls.find(call => call.requested > rendered.completed && pixelsChecked(call));
   const viewed = pixels ? MUSIC_FRAMES.map(frame => calls.find(call => call.name === "read_file" && toolPath(call.input.filePath) === `${P}/out/frames-1/${frameName(frame)}` && isMusicFrameOutput(call.output) && call.requested > pixels.completed)) : [];
   const frames = skillAt >= 0 && viewed.length === 6 && viewed.every(Boolean);
   const frameReady = frames ? Math.max(...viewed.map(call => call!.completed)) : Infinity;
   const evidence = musicLevelEvidence(events, frameReady);
-  const levelsReady = levelCompletion(evidence.levels);
-  const requiredLevels = evidence.levels.map(level => level.lufs);
+  const proof = levelProof(evidence.levels);
+  const levelsReady = proof?.completed ?? -1;
   const journalWrite = latest("journal");
   const journal = levelsReady >= 0 && !!journalWrite && ((call: CompletedCall) => {
     if (call.name !== "edit_file" || toolPath(call.input.filePath) !== `${P}/NOTES.md` || call.requested <= levelsReady || typeof call.input.newString !== "string") return false;
     const content = call.input.newString.replaceAll("−", "-");
-    const values = (content.match(/-?\d+(?:[.,]\d+)?/gu) ?? []).map(value => Number(value.replace(",", ".")));
-    return evidence.tracks.every(track => content.includes(posix.basename(track.path))) && requiredLevels.every(level => values.some(value => Math.abs(value - level) <= 0.11));
+    const numericText = content.replace(/(?<=\d)[-–—](?=\d)/gu, " ");
+    const values = (numericText.match(/-?\d+(?:[.,]\d+)?/gu) ?? []).map(value => Number(value.replace(",", ".")));
+    return !!proof && proof.levels.every(level => journalPath(content, level.path) &&
+      values.some(value => Math.abs(value - level.lufs) <= 0.11) && level.windows.every(window =>
+        values.some(value => Math.abs(value - window.start) < 0.001) && values.some(value => Math.abs(value - window.end) < 0.001)));
   })(journalWrite);
   const finalWrite = latest(`file:${P}/out/final.mp4`);
   const finalRender = finalWrite && renderInfo(finalWrite);
@@ -299,13 +335,13 @@ export function musicWorkflowGates(events: readonly EveEvalStreamEvent[]) {
     finalRender.mode === "mix" && finalRender.frames === undefined && finalWrite.requested > levelsReady ? finalWrite : undefined;
   const afterFinal = final ? calls.filter(call => call.requested > final.completed && commandWords(call.input.command).some(words => words.some(word => projectPath(word) === `${P}/out/final.mp4`))) : [];
   const size = afterFinal.some(call => commandWords(call.input.command).some(words => words[0] === "test" && words.includes("-s") || words[0] === "stat" && /\b[1-9]\d{3,}\b/u.test(text(call))));
-  const probe = afterFinal.some(call => {
-    if (!String(call.input.command).includes("ffprobe")) return false;
-    try { const data = JSON.parse(text(call)); return ["video", "audio"].every(type => data.streams.some((stream: Record<string, unknown>) => stream.codec_type === type && Math.abs(Number(stream.duration ?? data.format.duration) - 20) <= 0.1)); }
-    catch { return ["video", "audio"].every(type => text(call).split(/(?=^codec_type=)/mu).some(stream => stream.startsWith(`codec_type=${type}\n`) && Math.abs(Number(/^duration=(.+)$/mu.exec(stream)?.[1]) - 20) <= 0.1)); }
-  });
+  const probe = probesComplete(afterFinal.flatMap(call => commandWords(call.input.command)
+    .filter(words => words.some(word => posix.basename(word) === "ffprobe"))
+    .map(words => ({ words, stdout: String(call.output.stdout ?? "") }))));
   const peak = afterFinal.some(call => {
     if (!String(call.input.command).includes("loudnorm=") || !commandWords(call.input.command).some(words => words.includes("-vn") && words.some(word => posix.basename(word) === "ffmpeg"))) return false;
+    if (commandWords(call.input.command).some(words => words.some(word => ["-ss", "-t", "-to", "-filter_complex"].includes(word)))) return false;
+    if (!commandWords(call.input.command).some(words => (option(words, "-af") ?? option(words, "-filter:a")) === "loudnorm=print_format=json")) return false;
     const peaks = [...text(call).matchAll(/"input_tp"\s*:\s*"?(-?[\d.]+)/gu)].map(match => Number(match[1]));
     return peaks.length > 0 && peaks.every(peak => Number.isFinite(peak) && peak <= -1);
   });

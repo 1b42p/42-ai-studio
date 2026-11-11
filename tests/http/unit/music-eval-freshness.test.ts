@@ -239,8 +239,8 @@ test.each(["'", '"'])("native matcher принимает только парны
   for (const command of [
     `npx remotion render ${quote}src/index.ts${quote} Main ${quote}out/final.mp4${quote}`,
     `cd ${quote}${P}${quote} && npx remotion render src/index.ts Main out/final.mp4`,
-    `ls ${quote}.${quote}`,
-    `ls ${quote}${P}${quote}`,
+    `ls -la ${quote}.${quote}`,
+    `ls -la ${quote}${P}${quote}`,
     `test -s ${quote}package.json${quote}`,
     `npx remotion ffprobe -show_streams -show_format -of ${quote}json${quote} ${quote}out/final.mp4${quote}`,
   ]) {

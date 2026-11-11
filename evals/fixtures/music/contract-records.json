@@ -1,0 +1,877 @@
+{
+  "sourceSha256": "e25c8de41a673aab0a155535a168ce095846f364a504389c2b1a7a44f54ea6e6",
+  "mediaInputs": [
+    {
+      "path": "public/voice/scene-01.mp3",
+      "size": 51020,
+      "sha256": "b0b1874ab4a4eac1eaec3d7f5bcc9c71910f47f641500c3425c495896c1a0a7c"
+    },
+    {
+      "path": "public/voice/scene-02.mp3",
+      "size": 51020,
+      "sha256": "b464f361496e2a6d51c239d5092d7942af9c9a80acaad23f0b7c52d86632bd5c"
+    },
+    {
+      "path": "public/voice/scene-03.mp3",
+      "size": 51020,
+      "sha256": "8cf7a8d911b5e39cfed536f90b450553a93437a50ebbef014a40f8524e473364"
+    },
+    {
+      "path": "public/voice/scene-04.mp3",
+      "size": 51020,
+      "sha256": "15217cea905c0409017e4fd5eea48c6035005417556158b18ab725487cb6a28f"
+    }
+  ],
+  "artifacts": {
+    "out/voice-only.wav": "b1afb3b609030e03ab7c1b89c0defb6106538416380c27b585e46e00efba511b",
+    "out/music-only.wav": "d8c8a2f4d94d4499df507b4329c06c31347fb4389bcaf815e392ae3d2b57febb",
+    "out/final.mp4": "55759e0f7f65950a5da45c6fb018f2f80cce2254d2feb006e913c6d71f619edc"
+  },
+  "checkerSha256": "a62272f9605c86f65c24a1d971f9efaa56e0ed6f20e8f4bac9ffeec1fe7505a7",
+  "probes": [
+    {
+      "id": "whole-json",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": null,
+      "format": "json",
+      "select": null,
+      "full": true,
+      "quiet": false,
+      "args": [
+        "ffprobe",
+        "-show_streams",
+        "-show_format",
+        "-of",
+        "json"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"h264\",\n            \"codec_long_name\": \"unknown\",\n            \"profile\": \"100\",\n            \"codec_type\": \"video\",\n            \"codec_tag_string\": \"avc1\",\n            \"codec_tag\": \"0x31637661\",\n            \"width\": 1920,\n            \"height\": 1080,\n            \"coded_width\": 1920,\n            \"coded_height\": 1080,\n            \"closed_captions\": 0,\n            \"film_grain\": 0,\n            \"has_b_frames\": 2,\n            \"sample_aspect_ratio\": \"1:1\",\n            \"display_aspect_ratio\": \"16:9\",\n            \"pix_fmt\": \"yuv420p\",\n            \"level\": 40,\n            \"color_range\": \"tv\",\n            \"color_transfer\": \"iec61966-2-1\",\n            \"color_primaries\": \"bt709\",\n            \"chroma_location\": \"left\",\n            \"field_order\": \"progressive\",\n            \"refs\": 1,\n            \"is_avc\": \"true\",\n            \"nal_length_size\": \"4\",\n            \"id\": \"0x1\",\n            \"r_frame_rate\": \"30/1\",\n            \"avg_frame_rate\": \"30/1\",\n            \"time_base\": \"1/90000\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 1800000,\n            \"duration\": \"20.000000\",\n            \"bit_rate\": \"159094\",\n            \"bits_per_raw_sample\": \"8\",\n            \"nb_frames\": \"600\",\n            \"extradata_size\": 51,\n            \"disposition\": {\n                \"default\": 1,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"language\": \"und\",\n                \"handler_name\": \"VideoHandler\",\n                \"vendor_id\": \"[0][0][0][0]\"\n            }\n        },\n        {\n            \"index\": 1,\n            \"codec_name\": \"aac\",\n            \"codec_long_name\": \"unknown\",\n            \"profile\": \"1\",\n            \"codec_type\": \"audio\",\n            \"codec_tag_string\": \"mp4a\",\n            \"codec_tag\": \"0x6134706d\",\n            \"sample_fmt\": \"fltp\",\n            \"sample_rate\": \"48000\",\n            \"channels\": 2,\n            \"channel_layout\": \"stereo\",\n            \"bits_per_sample\": 0,\n            \"initial_padding\": 0,\n            \"id\": \"0x2\",\n            \"r_frame_rate\": \"0/0\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/48000\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 960528,\n            \"duration\": \"20.011000\",\n            \"bit_rate\": \"317375\",\n            \"nb_frames\": \"940\",\n            \"extradata_size\": 2,\n            \"disposition\": {\n                \"default\": 1,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"language\": \"und\",\n                \"handler_name\": \"SoundHandler\",\n                \"vendor_id\": \"[0][0][0][0]\"\n            }\n        }\n    ],\n    \"format\": {\n        \"filename\": \"out/final.mp4\",\n        \"nb_streams\": 2,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"mov,mp4,m4a,3gp,3g2,mj2\",\n        \"start_time\": \"0.000000\",\n        \"duration\": \"20.011000\",\n        \"size\": \"1216816\",\n        \"bit_rate\": \"486458\",\n        \"probe_score\": 100,\n        \"tags\": {\n            \"major_brand\": \"isom\",\n            \"minor_version\": \"512\",\n            \"compatible_brands\": \"isomiso2avc1mp41\",\n            \"encoder\": \"Lavf61.7.100\",\n            \"comment\": \"Made with Remotion 4.0.538\"\n        }\n    }\n}\n",
+        "stderr": "ffprobe version n7.1 Copyright (c) 2007-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\nInput #0, mov,mp4,m4a,3gp,3g2,mj2, from 'out/final.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    encoder         : Lavf61.7.100\n    comment         : Made with Remotion 4.0.538\n  Duration: 00:00:20.01, start: 0.000000, bitrate: 486 kb/s\n  Stream #0:0[0x1](und): Video: h264 (avc1 / 0x31637661), yuv420p(tv, unknown/bt709/iec61966-2-1, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 159 kb/s, 30 fps, 30 tbr, 90k tbn (default)\n      Metadata:\n        handler_name    : VideoHandler\n        vendor_id       : [0][0][0][0]\n  Stream #0:1[0x2](und): Audio: aac (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 317 kb/s (default)\n      Metadata:\n        handler_name    : SoundHandler\n        vendor_id       : [0][0][0][0]\n",
+        "truncated": false
+      }
+    },
+    {
+      "id": "whole-json-quiet",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": null,
+      "format": "json",
+      "select": null,
+      "full": true,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_streams",
+        "-show_format",
+        "-of",
+        "json"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\n    \"streams\": [\n        {\n            \"index\": 0,\n            \"codec_name\": \"h264\",\n            \"codec_long_name\": \"unknown\",\n            \"profile\": \"100\",\n            \"codec_type\": \"video\",\n            \"codec_tag_string\": \"avc1\",\n            \"codec_tag\": \"0x31637661\",\n            \"width\": 1920,\n            \"height\": 1080,\n            \"coded_width\": 1920,\n            \"coded_height\": 1080,\n            \"closed_captions\": 0,\n            \"film_grain\": 0,\n            \"has_b_frames\": 2,\n            \"sample_aspect_ratio\": \"1:1\",\n            \"display_aspect_ratio\": \"16:9\",\n            \"pix_fmt\": \"yuv420p\",\n            \"level\": 40,\n            \"color_range\": \"tv\",\n            \"color_transfer\": \"iec61966-2-1\",\n            \"color_primaries\": \"bt709\",\n            \"chroma_location\": \"left\",\n            \"field_order\": \"progressive\",\n            \"refs\": 1,\n            \"is_avc\": \"true\",\n            \"nal_length_size\": \"4\",\n            \"id\": \"0x1\",\n            \"r_frame_rate\": \"30/1\",\n            \"avg_frame_rate\": \"30/1\",\n            \"time_base\": \"1/90000\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 1800000,\n            \"duration\": \"20.000000\",\n            \"bit_rate\": \"159094\",\n            \"bits_per_raw_sample\": \"8\",\n            \"nb_frames\": \"600\",\n            \"extradata_size\": 51,\n            \"disposition\": {\n                \"default\": 1,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"language\": \"und\",\n                \"handler_name\": \"VideoHandler\",\n                \"vendor_id\": \"[0][0][0][0]\"\n            }\n        },\n        {\n            \"index\": 1,\n            \"codec_name\": \"aac\",\n            \"codec_long_name\": \"unknown\",\n            \"profile\": \"1\",\n            \"codec_type\": \"audio\",\n            \"codec_tag_string\": \"mp4a\",\n            \"codec_tag\": \"0x6134706d\",\n            \"sample_fmt\": \"fltp\",\n            \"sample_rate\": \"48000\",\n            \"channels\": 2,\n            \"channel_layout\": \"stereo\",\n            \"bits_per_sample\": 0,\n            \"initial_padding\": 0,\n            \"id\": \"0x2\",\n            \"r_frame_rate\": \"0/0\",\n            \"avg_frame_rate\": \"0/0\",\n            \"time_base\": \"1/48000\",\n            \"start_pts\": 0,\n            \"start_time\": \"0.000000\",\n            \"duration_ts\": 960528,\n            \"duration\": \"20.011000\",\n            \"bit_rate\": \"317375\",\n            \"nb_frames\": \"940\",\n            \"extradata_size\": 2,\n            \"disposition\": {\n                \"default\": 1,\n                \"dub\": 0,\n                \"original\": 0,\n                \"comment\": 0,\n                \"lyrics\": 0,\n                \"karaoke\": 0,\n                \"forced\": 0,\n                \"hearing_impaired\": 0,\n                \"visual_impaired\": 0,\n                \"clean_effects\": 0,\n                \"attached_pic\": 0,\n                \"timed_thumbnails\": 0,\n                \"non_diegetic\": 0,\n                \"captions\": 0,\n                \"descriptions\": 0,\n                \"metadata\": 0,\n                \"dependent\": 0,\n                \"still_image\": 0,\n                \"multilayer\": 0\n            },\n            \"tags\": {\n                \"language\": \"und\",\n                \"handler_name\": \"SoundHandler\",\n                \"vendor_id\": \"[0][0][0][0]\"\n            }\n        }\n    ],\n    \"format\": {\n        \"filename\": \"out/final.mp4\",\n        \"nb_streams\": 2,\n        \"nb_programs\": 0,\n        \"nb_stream_groups\": 0,\n        \"format_name\": \"mov,mp4,m4a,3gp,3g2,mj2\",\n        \"start_time\": \"0.000000\",\n        \"duration\": \"20.011000\",\n        \"size\": \"1216816\",\n        \"bit_rate\": \"486458\",\n        \"probe_score\": 100,\n        \"tags\": {\n            \"major_brand\": \"isom\",\n            \"minor_version\": \"512\",\n            \"compatible_brands\": \"isomiso2avc1mp41\",\n            \"encoder\": \"Lavf61.7.100\",\n            \"comment\": \"Made with Remotion 4.0.538\"\n        }\n    }\n}\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "whole-default",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": null,
+      "format": "default",
+      "select": null,
+      "full": true,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_streams",
+        "-show_format",
+        "-of",
+        "default"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "[STREAM]\nindex=0\ncodec_name=h264\ncodec_long_name=unknown\nprofile=100\ncodec_type=video\ncodec_tag_string=avc1\ncodec_tag=0x31637661\nwidth=1920\nheight=1080\ncoded_width=1920\ncoded_height=1080\nclosed_captions=0\nfilm_grain=0\nhas_b_frames=2\nsample_aspect_ratio=1:1\ndisplay_aspect_ratio=16:9\npix_fmt=yuv420p\nlevel=40\ncolor_range=tv\ncolor_space=unknown\ncolor_transfer=iec61966-2-1\ncolor_primaries=bt709\nchroma_location=left\nfield_order=progressive\nrefs=1\nis_avc=true\nnal_length_size=4\nid=0x1\nr_frame_rate=30/1\navg_frame_rate=30/1\ntime_base=1/90000\nstart_pts=0\nstart_time=0.000000\nduration_ts=1800000\nduration=20.000000\nbit_rate=159094\nmax_bit_rate=N/A\nbits_per_raw_sample=8\nnb_frames=600\nnb_read_frames=N/A\nnb_read_packets=N/A\nextradata_size=51\nDISPOSITION:default=1\nDISPOSITION:dub=0\nDISPOSITION:original=0\nDISPOSITION:comment=0\nDISPOSITION:lyrics=0\nDISPOSITION:karaoke=0\nDISPOSITION:forced=0\nDISPOSITION:hearing_impaired=0\nDISPOSITION:visual_impaired=0\nDISPOSITION:clean_effects=0\nDISPOSITION:attached_pic=0\nDISPOSITION:timed_thumbnails=0\nDISPOSITION:non_diegetic=0\nDISPOSITION:captions=0\nDISPOSITION:descriptions=0\nDISPOSITION:metadata=0\nDISPOSITION:dependent=0\nDISPOSITION:still_image=0\nDISPOSITION:multilayer=0\nTAG:language=und\nTAG:handler_name=VideoHandler\nTAG:vendor_id=[0][0][0][0]\n[/STREAM]\n[STREAM]\nindex=1\ncodec_name=aac\ncodec_long_name=unknown\nprofile=1\ncodec_type=audio\ncodec_tag_string=mp4a\ncodec_tag=0x6134706d\nsample_fmt=fltp\nsample_rate=48000\nchannels=2\nchannel_layout=stereo\nbits_per_sample=0\ninitial_padding=0\nid=0x2\nr_frame_rate=0/0\navg_frame_rate=0/0\ntime_base=1/48000\nstart_pts=0\nstart_time=0.000000\nduration_ts=960528\nduration=20.011000\nbit_rate=317375\nmax_bit_rate=N/A\nbits_per_raw_sample=N/A\nnb_frames=940\nnb_read_frames=N/A\nnb_read_packets=N/A\nextradata_size=2\nDISPOSITION:default=1\nDISPOSITION:dub=0\nDISPOSITION:original=0\nDISPOSITION:comment=0\nDISPOSITION:lyrics=0\nDISPOSITION:karaoke=0\nDISPOSITION:forced=0\nDISPOSITION:hearing_impaired=0\nDISPOSITION:visual_impaired=0\nDISPOSITION:clean_effects=0\nDISPOSITION:attached_pic=0\nDISPOSITION:timed_thumbnails=0\nDISPOSITION:non_diegetic=0\nDISPOSITION:captions=0\nDISPOSITION:descriptions=0\nDISPOSITION:metadata=0\nDISPOSITION:dependent=0\nDISPOSITION:still_image=0\nDISPOSITION:multilayer=0\nTAG:language=und\nTAG:handler_name=SoundHandler\nTAG:vendor_id=[0][0][0][0]\n[/STREAM]\n[FORMAT]\nfilename=out/final.mp4\nnb_streams=2\nnb_programs=0\nnb_stream_groups=0\nformat_name=mov,mp4,m4a,3gp,3g2,mj2\nformat_long_name=unknown\nstart_time=0.000000\nduration=20.011000\nsize=1216816\nbit_rate=486458\nprobe_score=100\nTAG:major_brand=isom\nTAG:minor_version=512\nTAG:compatible_brands=isomiso2avc1mp41\nTAG:encoder=Lavf61.7.100\nTAG:comment=Made with Remotion 4.0.538\n[/FORMAT]\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "selected-json",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "stream=codec_name,codec_type,width,height,duration:format=duration",
+      "format": "json",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_name,codec_type,width,height,duration:format=duration",
+        "-of",
+        "json"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\n    \"programs\": [\n\n    ],\n    \"stream_groups\": [\n\n    ],\n    \"streams\": [\n        {\n            \"codec_name\": \"h264\",\n            \"codec_type\": \"video\",\n            \"width\": 1920,\n            \"height\": 1080,\n            \"duration\": \"20.000000\"\n        },\n        {\n            \"codec_name\": \"aac\",\n            \"codec_type\": \"audio\",\n            \"duration\": \"20.011000\"\n        }\n    ],\n    \"format\": {\n        \"duration\": \"20.011000\"\n    }\n}\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "stem-json",
+      "files": [
+        "out/voice-only.wav",
+        "out/music-only.wav"
+      ],
+      "entries": "stream=codec_type,duration",
+      "format": "json",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_type,duration",
+        "-of",
+        "json"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\n    \"programs\": [\n\n    ],\n    \"stream_groups\": [\n\n    ],\n    \"streams\": [\n        {\n            \"codec_type\": \"audio\",\n            \"duration\": \"20.000000\"\n        }\n    ]\n}\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "selected-default=nw=1",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "stream=codec_name,codec_type,width,height,duration:format=duration",
+      "format": "default=nw=1",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_name,codec_type,width,height,duration:format=duration",
+        "-of",
+        "default=nw=1"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "codec_name=h264\ncodec_type=video\nwidth=1920\nheight=1080\nduration=20.000000\ncodec_name=aac\ncodec_type=audio\nduration=20.011000\nduration=20.011000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "stem-default=nw=1",
+      "files": [
+        "out/voice-only.wav",
+        "out/music-only.wav"
+      ],
+      "entries": "stream=codec_type,duration",
+      "format": "default=nw=1",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_type,duration",
+        "-of",
+        "default=nw=1"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "codec_type=audio\nduration=20.000000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "selected-stream",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "stream=codec_name,codec_type,width,height,duration",
+      "format": "default=nw=1",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_name,codec_type,width,height,duration",
+        "-of",
+        "default=nw=1"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "codec_name=h264\ncodec_type=video\nwidth=1920\nheight=1080\nduration=20.000000\ncodec_name=aac\ncodec_type=audio\nduration=20.011000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "voiceover-json",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "stream=codec_type,duration:format=duration",
+      "format": "json",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_type,duration:format=duration",
+        "-of",
+        "json"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\n    \"programs\": [\n\n    ],\n    \"stream_groups\": [\n\n    ],\n    \"streams\": [\n        {\n            \"codec_type\": \"video\",\n            \"duration\": \"20.000000\"\n        },\n        {\n            \"codec_type\": \"audio\",\n            \"duration\": \"20.011000\"\n        }\n    ],\n    \"format\": {\n        \"duration\": \"20.011000\"\n    }\n}\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "duration-default=nw=1",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "format=duration",
+      "format": "default=nw=1",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=nw=1"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "duration=20.011000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "duration-csv=p=0",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "format=duration",
+      "format": "csv=p=0",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "csv=p=0"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "20.011000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "duration-json",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "format=duration",
+      "format": "json",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "json"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\n    \"format\": {\n        \"duration\": \"20.011000\"\n    }\n}\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "audio",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "stream=codec_name,duration",
+      "format": "default=nw=1",
+      "select": "a:0",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=codec_name,duration",
+        "-of",
+        "default=nw=1"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "codec_name=aac\nduration=20.011000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "video",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "stream=codec_name,width,height,duration",
+      "format": "default=nw=1",
+      "select": "v:0",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=codec_name,width,height,duration",
+        "-of",
+        "default=nw=1"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "codec_name=h264\nwidth=1920\nheight=1080\nduration=20.000000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "stem-codec",
+      "files": [
+        "out/voice-only.wav",
+        "out/music-only.wav"
+      ],
+      "entries": "stream=codec_name,codec_type,duration",
+      "format": "default=nw=1",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_name,codec_type,duration",
+        "-of",
+        "default=nw=1"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "codec_name=pcm_s16le\ncodec_type=audio\nduration=20.000000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "stem-duration",
+      "files": [
+        "out/voice-only.wav",
+        "out/music-only.wav"
+      ],
+      "entries": "format=duration",
+      "format": "csv=p=0",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "csv=p=0"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "20.000000\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "dimensions",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "stream=width,height",
+      "format": "csv=p=0",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=width,height",
+        "-of",
+        "csv=p=0"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "1920,1080\n\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "types",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": "stream=codec_type",
+      "format": "csv=p=0",
+      "full": false,
+      "quiet": true,
+      "args": [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_type",
+        "-of",
+        "csv=p=0"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "video\naudio\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "id": "human",
+      "files": [
+        "out/final.mp4"
+      ],
+      "entries": null,
+      "format": null,
+      "select": null,
+      "full": false,
+      "quiet": false,
+      "args": [
+        "ffprobe"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "ffprobe version n7.1 Copyright (c) 2007-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\nInput #0, mov,mp4,m4a,3gp,3g2,mj2, from 'out/final.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    encoder         : Lavf61.7.100\n    comment         : Made with Remotion 4.0.538\n  Duration: 00:00:20.01, start: 0.000000, bitrate: 486 kb/s\n  Stream #0:0[0x1](und): Video: h264 (avc1 / 0x31637661), yuv420p(tv, unknown/bt709/iec61966-2-1, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 159 kb/s, 30 fps, 30 tbr, 90k tbn (default)\n      Metadata:\n        handler_name    : VideoHandler\n        vendor_id       : [0][0][0][0]\n  Stream #0:1[0x2](und): Audio: aac (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 317 kb/s (default)\n      Metadata:\n        handler_name    : SoundHandler\n        vendor_id       : [0][0][0][0]\n",
+        "truncated": false
+      }
+    }
+  ],
+  "levels": [
+    {
+      "file": "out/voice-only.wav",
+      "scope": "full",
+      "args": [
+        "ffmpeg",
+        "-i",
+        "out/voice-only.wav",
+        "-vn",
+        "-af",
+        "loudnorm=print_format=json",
+        "-f",
+        "null",
+        "-"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "ffmpeg version n7.1 Copyright (c) 2000-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\n[aist#0:0/pcm_s16le @ 0x55af2f7dec00] Guessed Channel Layout: stereo\nInput #0, wav, from 'out/voice-only.wav':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Duration: 00:00:20.00, bitrate: 1536 kb/s\n  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s\nStream mapping:\n  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))\nPress [q] to stop, [?] for help\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Stream #0:0: Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s\n      Metadata:\n        encoder         : Lavc61.19.100 pcm_s16le\n[Parsed_loudnorm_0 @ 0x7fbb94002980] \n{\n\t\"input_i\" : \"-16.08\",\n\t\"input_tp\" : \"-2.40\",\n\t\"input_lra\" : \"8.30\",\n\t\"input_thresh\" : \"-26.92\",\n\t\"output_i\" : \"-24.68\",\n\t\"output_tp\" : \"-11.07\",\n\t\"output_lra\" : \"5.20\",\n\t\"output_thresh\" : \"-35.33\",\n\t\"normalization_type\" : \"dynamic\",\n\t\"target_offset\" : \"0.68\"\n}\n[out#0/null @ 0x55af2f7dedc0] video:0KiB audio:15000KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nsize=N/A time=00:00:20.00 bitrate=N/A speed=  43x    \n",
+        "truncated": false
+      },
+      "measurement": {
+        "input_i": "-16.08",
+        "input_tp": "-2.40",
+        "input_lra": "8.30",
+        "input_thresh": "-26.92",
+        "output_i": "-24.68",
+        "output_tp": "-11.07",
+        "output_lra": "5.20",
+        "output_thresh": "-35.33",
+        "normalization_type": "dynamic",
+        "target_offset": "0.68"
+      }
+    },
+    {
+      "file": "out/voice-only.wav",
+      "scope": "input",
+      "args": [
+        "ffmpeg",
+        "-ss",
+        "1",
+        "-t",
+        "2",
+        "-i",
+        "out/voice-only.wav",
+        "-vn",
+        "-af",
+        "loudnorm=print_format=json",
+        "-f",
+        "null",
+        "-"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "ffmpeg version n7.1 Copyright (c) 2000-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\n[aist#0:0/pcm_s16le @ 0x56329b7d5240] Guessed Channel Layout: stereo\nInput #0, wav, from 'out/voice-only.wav':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Duration: 00:00:20.00, bitrate: 1536 kb/s\n  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s\nStream mapping:\n  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))\nPress [q] to stop, [?] for help\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Stream #0:0: Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s\n      Metadata:\n        encoder         : Lavc61.19.100 pcm_s16le\n[Parsed_loudnorm_0 @ 0x7f85f8002980] \n{\n\t\"input_i\" : \"-15.20\",\n\t\"input_tp\" : \"-3.48\",\n\t\"input_lra\" : \"0.00\",\n\t\"input_thresh\" : \"-25.20\",\n\t\"output_i\" : \"-24.00\",\n\t\"output_tp\" : \"-12.28\",\n\t\"output_lra\" : \"0.00\",\n\t\"output_thresh\" : \"-34.00\",\n\t\"normalization_type\" : \"linear\",\n\t\"target_offset\" : \"0.00\"\n}\n[out#0/null @ 0x56329b785780] video:0KiB audio:1500KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nsize=N/A time=00:00:02.00 bitrate=N/A speed=72.5x    \n",
+        "truncated": false
+      },
+      "measurement": {
+        "input_i": "-15.20",
+        "input_tp": "-3.48",
+        "input_lra": "0.00",
+        "input_thresh": "-25.20",
+        "output_i": "-24.00",
+        "output_tp": "-12.28",
+        "output_lra": "0.00",
+        "output_thresh": "-34.00",
+        "normalization_type": "linear",
+        "target_offset": "0.00"
+      }
+    },
+    {
+      "file": "out/voice-only.wav",
+      "scope": "output",
+      "args": [
+        "ffmpeg",
+        "-i",
+        "out/voice-only.wav",
+        "-ss",
+        "1",
+        "-t",
+        "2",
+        "-vn",
+        "-af",
+        "loudnorm=print_format=json",
+        "-f",
+        "null",
+        "-"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "ffmpeg version n7.1 Copyright (c) 2000-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\n[aist#0:0/pcm_s16le @ 0x555f4353dc00] Guessed Channel Layout: stereo\nInput #0, wav, from 'out/voice-only.wav':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Duration: 00:00:20.00, bitrate: 1536 kb/s\n  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s\nStream mapping:\n  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))\nPress [q] to stop, [?] for help\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Stream #0:0: Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s\n      Metadata:\n        encoder         : Lavc61.19.100 pcm_s16le\n[Parsed_loudnorm_0 @ 0x7fa67c002980] \n{\n\t\"input_i\" : \"-14.87\",\n\t\"input_tp\" : \"-2.75\",\n\t\"input_lra\" : \"9.10\",\n\t\"input_thresh\" : \"-25.82\",\n\t\"output_i\" : \"-23.47\",\n\t\"output_tp\" : \"-12.19\",\n\t\"output_lra\" : \"0.00\",\n\t\"output_thresh\" : \"-33.63\",\n\t\"normalization_type\" : \"dynamic\",\n\t\"target_offset\" : \"-0.53\"\n}\n[out#0/null @ 0x555f4353ddc0] video:0KiB audio:1500KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nsize=N/A time=00:00:02.00 bitrate=N/A speed=18.6x    \n",
+        "truncated": false
+      },
+      "measurement": {
+        "input_i": "-14.87",
+        "input_tp": "-2.75",
+        "input_lra": "9.10",
+        "input_thresh": "-25.82",
+        "output_i": "-23.47",
+        "output_tp": "-12.19",
+        "output_lra": "0.00",
+        "output_thresh": "-33.63",
+        "normalization_type": "dynamic",
+        "target_offset": "-0.53"
+      }
+    },
+    {
+      "file": "out/music-only.wav",
+      "scope": "full",
+      "args": [
+        "ffmpeg",
+        "-i",
+        "out/music-only.wav",
+        "-vn",
+        "-af",
+        "loudnorm=print_format=json",
+        "-f",
+        "null",
+        "-"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "ffmpeg version n7.1 Copyright (c) 2000-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\n[aist#0:0/pcm_s16le @ 0x55e29f32ac00] Guessed Channel Layout: stereo\nInput #0, wav, from 'out/music-only.wav':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Duration: 00:00:20.00, bitrate: 1536 kb/s\n  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s\nStream mapping:\n  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))\nPress [q] to stop, [?] for help\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Stream #0:0: Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s\n      Metadata:\n        encoder         : Lavc61.19.100 pcm_s16le\n[Parsed_loudnorm_0 @ 0x7f96cc002980] \n{\n\t\"input_i\" : \"-24.38\",\n\t\"input_tp\" : \"-7.80\",\n\t\"input_lra\" : \"3.80\",\n\t\"input_thresh\" : \"-34.50\",\n\t\"output_i\" : \"-23.73\",\n\t\"output_tp\" : \"-7.87\",\n\t\"output_lra\" : \"2.80\",\n\t\"output_thresh\" : \"-33.84\",\n\t\"normalization_type\" : \"dynamic\",\n\t\"target_offset\" : \"-0.27\"\n}\n[out#0/null @ 0x55e29f32adc0] video:0KiB audio:15000KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nsize=N/A time=00:00:20.00 bitrate=N/A speed=45.7x    \n",
+        "truncated": false
+      },
+      "measurement": {
+        "input_i": "-24.38",
+        "input_tp": "-7.80",
+        "input_lra": "3.80",
+        "input_thresh": "-34.50",
+        "output_i": "-23.73",
+        "output_tp": "-7.87",
+        "output_lra": "2.80",
+        "output_thresh": "-33.84",
+        "normalization_type": "dynamic",
+        "target_offset": "-0.27"
+      }
+    },
+    {
+      "file": "out/music-only.wav",
+      "scope": "input",
+      "args": [
+        "ffmpeg",
+        "-ss",
+        "1",
+        "-t",
+        "2",
+        "-i",
+        "out/music-only.wav",
+        "-vn",
+        "-af",
+        "loudnorm=print_format=json",
+        "-f",
+        "null",
+        "-"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "ffmpeg version n7.1 Copyright (c) 2000-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\n[aist#0:0/pcm_s16le @ 0x560b765c3240] Guessed Channel Layout: stereo\nInput #0, wav, from 'out/music-only.wav':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Duration: 00:00:20.00, bitrate: 1536 kb/s\n  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s\nStream mapping:\n  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))\nPress [q] to stop, [?] for help\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Stream #0:0: Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s\n      Metadata:\n        encoder         : Lavc61.19.100 pcm_s16le\n[Parsed_loudnorm_0 @ 0x7f1ecc002980] \n{\n\t\"input_i\" : \"-24.82\",\n\t\"input_tp\" : \"-18.14\",\n\t\"input_lra\" : \"0.00\",\n\t\"input_thresh\" : \"-34.82\",\n\t\"output_i\" : \"-24.01\",\n\t\"output_tp\" : \"-17.32\",\n\t\"output_lra\" : \"0.00\",\n\t\"output_thresh\" : \"-34.01\",\n\t\"normalization_type\" : \"linear\",\n\t\"target_offset\" : \"0.01\"\n}\n[out#0/null @ 0x560b76573780] video:0KiB audio:1500KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nsize=N/A time=00:00:02.00 bitrate=N/A speed=63.9x    \n",
+        "truncated": false
+      },
+      "measurement": {
+        "input_i": "-24.82",
+        "input_tp": "-18.14",
+        "input_lra": "0.00",
+        "input_thresh": "-34.82",
+        "output_i": "-24.01",
+        "output_tp": "-17.32",
+        "output_lra": "0.00",
+        "output_thresh": "-34.01",
+        "normalization_type": "linear",
+        "target_offset": "0.01"
+      }
+    },
+    {
+      "file": "out/music-only.wav",
+      "scope": "output",
+      "args": [
+        "ffmpeg",
+        "-i",
+        "out/music-only.wav",
+        "-ss",
+        "1",
+        "-t",
+        "2",
+        "-vn",
+        "-af",
+        "loudnorm=print_format=json",
+        "-f",
+        "null",
+        "-"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "",
+        "stderr": "ffmpeg version n7.1 Copyright (c) 2000-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\n[aist#0:0/pcm_s16le @ 0x5616f7044c00] Guessed Channel Layout: stereo\nInput #0, wav, from 'out/music-only.wav':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Duration: 00:00:20.00, bitrate: 1536 kb/s\n  Stream #0:0: Audio: pcm_s16le ([1][0][0][0] / 0x0001), 48000 Hz, stereo, s16, 1536 kb/s\nStream mapping:\n  Stream #0:0 -> #0:0 (pcm_s16le (native) -> pcm_s16le (native))\nPress [q] to stop, [?] for help\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf61.7.100\n  Stream #0:0: Audio: pcm_s16le, 192000 Hz, stereo, s16, 6144 kb/s\n      Metadata:\n        encoder         : Lavc61.19.100 pcm_s16le\n[Parsed_loudnorm_0 @ 0x7f26f8002980] \n{\n\t\"input_i\" : \"-24.57\",\n\t\"input_tp\" : \"-11.32\",\n\t\"input_lra\" : \"2.20\",\n\t\"input_thresh\" : \"-35.05\",\n\t\"output_i\" : \"-23.32\",\n\t\"output_tp\" : \"-14.43\",\n\t\"output_lra\" : \"0.00\",\n\t\"output_thresh\" : \"-34.17\",\n\t\"normalization_type\" : \"dynamic\",\n\t\"target_offset\" : \"-0.68\"\n}\n[out#0/null @ 0x5616f7044dc0] video:0KiB audio:1500KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nsize=N/A time=00:00:02.00 bitrate=N/A speed=20.5x    \n",
+        "truncated": false
+      },
+      "measurement": {
+        "input_i": "-24.57",
+        "input_tp": "-11.32",
+        "input_lra": "2.20",
+        "input_thresh": "-35.05",
+        "output_i": "-23.32",
+        "output_tp": "-14.43",
+        "output_lra": "0.00",
+        "output_thresh": "-34.17",
+        "normalization_type": "dynamic",
+        "target_offset": "-0.68"
+      }
+    }
+  ],
+  "pixels": {
+    "relative": {
+      "status": "completed",
+      "exitCode": 0,
+      "stdout": "{\"path\": \"out/frames-1/element-000.jpeg\", \"extrema\": [[9, 255], [28, 255], [33, 255]], \"suspect\": null}\n{\"path\": \"out/frames-1/element-100.jpeg\", \"extrema\": [[0, 255], [1, 255], [0, 255]], \"suspect\": null}\n{\"path\": \"out/frames-1/element-150.jpeg\", \"extrema\": [[6, 255], [27, 255], [31, 255]], \"suspect\": null}\n{\"path\": \"out/frames-1/element-300.jpeg\", \"extrema\": [[8, 255], [26, 255], [33, 255]], \"suspect\": null}\n{\"path\": \"out/frames-1/element-450.jpeg\", \"extrema\": [[8, 255], [28, 255], [33, 255]], \"suspect\": null}\n{\"path\": \"out/frames-1/element-599.jpeg\", \"extrema\": [[8, 255], [28, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+      "stderr": "",
+      "truncated": false
+    },
+    "absolute": {
+      "status": "completed",
+      "exitCode": 0,
+      "stdout": "{\"path\": \"/workspace/calm-bed/out/frames-1/element-000.jpeg\", \"extrema\": [[9, 255], [28, 255], [33, 255]], \"suspect\": null}\n{\"path\": \"/workspace/calm-bed/out/frames-1/element-100.jpeg\", \"extrema\": [[0, 255], [1, 255], [0, 255]], \"suspect\": null}\n{\"path\": \"/workspace/calm-bed/out/frames-1/element-150.jpeg\", \"extrema\": [[6, 255], [27, 255], [31, 255]], \"suspect\": null}\n{\"path\": \"/workspace/calm-bed/out/frames-1/element-300.jpeg\", \"extrema\": [[8, 255], [26, 255], [33, 255]], \"suspect\": null}\n{\"path\": \"/workspace/calm-bed/out/frames-1/element-450.jpeg\", \"extrema\": [[8, 255], [28, 255], [33, 255]], \"suspect\": null}\n{\"path\": \"/workspace/calm-bed/out/frames-1/element-599.jpeg\", \"extrema\": [[8, 255], [28, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+      "stderr": "",
+      "truncated": false
+    }
+  },
+  "diagnostics": [
+    {
+      "args": [
+        "ls",
+        "-la"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "total 16\ndrwx------  5 root root  180 Nov 12 03:08 .\ndrwxr-xr-x 16 root root  460 Nov 12 03:08 ..\n-rw-r--r--  1 root root 5431 Nov 12 03:08 SPEC.md\nlrwxrwxrwx  1 root root   49 Nov 12 03:08 node_modules -> /tmp/opencode/pr64-music-eval-frames/node_modules\ndrwxr-xr-x  3 root root  120 Nov 12 03:08 out\n-rw-r--r--  1 root root  176 Nov 12 03:08 package.json\ndrwxr-xr-x  4 root root   80 Nov 12 03:08 public\ndrwxr-xr-x  2 root root  140 Nov 12 03:08 src\n-rw-r--r--  1 root root  256 Nov 12 03:08 tsconfig.json\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "args": [
+        "ls",
+        "-la",
+        "src"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "total 20\ndrwxr-xr-x 2 root root  140 Nov 12 03:08 .\ndrwx------ 5 root root  180 Nov 12 03:08 ..\n-rw-r--r-- 1 root root  873 Nov 12 03:08 BackgroundMusic.tsx\n-rw-r--r-- 1 root root 2876 Nov 12 03:08 Root.tsx\n-rw-r--r-- 1 root root 1668 Nov 12 03:08 SceneCaptions.tsx\n-rw-r--r-- 1 root root 1839 Nov 12 03:08 ducking.ts\n-rw-r--r-- 1 root root  108 Nov 12 03:08 index.ts\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "args": [
+        "ls",
+        "-la",
+        "/workspace/calm-bed/public/music/bg.wav"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "-rw-r--r-- 1 root root 3528078 Nov 12 03:08 /workspace/calm-bed/public/music/bg.wav\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "args": [
+        "ls",
+        "-lh",
+        "out/music-only.wav"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "-rw-r--r-- 1 root root 3.7M Nov 12 03:08 out/music-only.wav\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "args": [
+        "stat",
+        "out/music-only.wav"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "  File: out/music-only.wav\n  Size: 3840078   \tBlocks: 7504       IO Block: 4096   regular file\nDevice: 0,39\tInode: 419398      Links: 1\nAccess: (0644/-rw-r--r--)  Uid: (    0/    root)   Gid: (    0/    root)\nAccess: 2026-11-12 01:45:31.267882499 +0500\nModify: 2026-11-12 03:08:28.105051303 +0500\nChange: 2026-11-12 03:08:28.105051303 +0500\n Birth: 2026-11-12 03:08:28.103934999 +0500\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "args": [
+        "rg",
+        "--files",
+        "src"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "src/Root.tsx\nsrc/SceneCaptions.tsx\nsrc/BackgroundMusic.tsx\nsrc/ducking.ts\nsrc/index.ts\n",
+        "stderr": "",
+        "truncated": false
+      }
+    },
+    {
+      "args": [
+        "ls",
+        "-l",
+        "public/voice",
+        "public/music"
+      ],
+      "output": {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "public/music:\ntotal 3448\n-rw-r--r-- 1 root root 3528078 Nov 12 03:08 bg.wav\n\npublic/voice:\ntotal 224\n-rw-r--r-- 1 root root 51020 Nov 12 03:08 scene-01.mp3\n-rw-r--r-- 1 root root  1008 Nov 12 03:08 scene-01.words.json\n-rw-r--r-- 1 root root 51020 Nov 12 03:08 scene-02.mp3\n-rw-r--r-- 1 root root  1012 Nov 12 03:08 scene-02.words.json\n-rw-r--r-- 1 root root 51020 Nov 12 03:08 scene-03.mp3\n-rw-r--r-- 1 root root  1026 Nov 12 03:08 scene-03.words.json\n-rw-r--r-- 1 root root 51020 Nov 12 03:08 scene-04.mp3\n-rw-r--r-- 1 root root   978 Nov 12 03:08 scene-04.words.json\n",
+        "stderr": "",
+        "truncated": false
+      }
+    }
+  ],
+  "decodeFailure": {
+    "status": "completed",
+    "exitCode": 8,
+    "stdout": "",
+    "stderr": "ffmpeg version n7.1 Copyright (c) 2000-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\nInput #0, mov,mp4,m4a,3gp,3g2,mj2, from 'out/final.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    encoder         : Lavf61.7.100\n    comment         : Made with Remotion 4.0.538\n  Duration: 00:00:20.01, start: 0.000000, bitrate: 486 kb/s\n  Stream #0:0[0x1](und): Video: h264 (avc1 / 0x31637661), yuv420p(tv, unknown/bt709/iec61966-2-1, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 159 kb/s, 30 fps, 30 tbr, 90k tbn (default)\n      Metadata:\n        handler_name    : VideoHandler\n        vendor_id       : [0][0][0][0]\n  Stream #0:1[0x2](und): Audio: aac (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 317 kb/s (default)\n      Metadata:\n        handler_name    : SoundHandler\n        vendor_id       : [0][0][0][0]\n[vost#0:0 @ 0x561cd352bbc0] Automatic encoder selection failed Default encoder for format null (codec wrapped_avframe) is probably disabled. Please choose an encoder manually.\n[vost#0:0 @ 0x561cd352bbc0] Error selecting an encoder\nError opening output file -.\nError opening output files: Encoder not found\n",
+    "truncated": false
+  }
+}

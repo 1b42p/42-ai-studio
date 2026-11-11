@@ -2,31 +2,30 @@ import { readFileSync } from "node:fs";
 import type { EveEvalContext, ToolStub } from "eve/evals";
 import { blockedRead, emptySearch, page, webSession } from "../web/fixtures";
 import audit from "../fixtures/music/integration.json";
+import recordings from "../fixtures/music/contract-records.json";
 import { MUSIC_PROJECT as P, MUSIC_FRAMES, MUSIC_LEVEL_COMMANDS, MUSIC_PATH, MUSIC_SCENES, SPEC, VOICE, frameName, musicWordsFile, project, sceneName } from "./data";
 import { musicFrameOutputs } from "./media-fixture";
+import { atomic, esc, quote, pathArg, probePattern, levelPattern } from "./operation-patterns";
 
-const esc = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const quote = (pattern: string) => {
-  const grouped = `(?:${pattern})`;
-  return `(?:${grouped}|"${grouped}"|'${grouped}')`;
-};
-const pathArg = (path: string) => quote(`(?:${esc(P)}/)?${esc(path)}`);
-const cwd = `(?:cd\\s+${quote(esc(P))}\\s*&&\\s*)?`;
-const atomic = (body: string) => `^\\s*${cwd}${body}\\s*$`;
 const response = (stdout: string, exitCode = 0, stderr = "") => ({ status: "completed", exitCode, stdout, stderr, truncated: false });
 const bash = (id: string, pattern: string, stdout: string, exitCode = 0, stderr = ""): ToolStub => ({ id, tool: "bash", match: { command: { pattern } }, outcome: { response: response(stdout, exitCode, stderr) } });
 const reject = (id: string, tool: string, match: ToolStub["match"], message: string): ToolStub => ({ id, tool, match, outcome: { throw: { message } } });
 const readResponse = (path: string, content: string) => ({ path, content, totalLines: content.split("\n").length, truncated: false });
 const pathForms = (path: string) => [`${P}/${path}`, `calm-bed/${path}`];
+const copyTemplate = (source: string, target: string) => `cp\\s+${quote(`(?:\\$HOME|/root)/\\.agents/skills/music-synthesis/templates/${esc(source)}`)}\\s+${pathArg(`src/${target}`)}`;
+const cpDuck = copyTemplate("ducking.ts", "ducking.ts");
+const cpBackground = copyTemplate("BackgroundMusic.tsx.template", "BackgroundMusic.tsx");
+const identicalCopy = `(?:${cpDuck}|${cpBackground}|${cpDuck}\\s*&&\\s*${cpBackground})`;
+const jsonProps = (audioMode: string) => {
+  const json = JSON.stringify({ audioMode });
+  return `(?:${[`'${json}'`, `"${json.replaceAll('"', '\\"')}"`].map(esc).join("|")})`;
+};
 
 const references = [
-  "music-synthesis/references/mixing.md", "music-synthesis/references/benchmarks.md",
+  "music-synthesis/references/mixing.md",
   "music-synthesis/templates/ducking.ts", "music-synthesis/templates/BackgroundMusic.tsx.template",
-  "frame-review/references/notes-template.md", "frame-review/scripts/check-frames.py",
-  "voiceover/references/remotion.md", "remotion-interactivity/timeline-structure.md",
-  "remotion-captions/display-captions.md", "remotion-markup/voiceover.md",
-  "remotion-markup/calculate-metadata.md", "remotion-multimedia/get-audio-duration.md",
-  "remotion-create/video-layout.md", "remotion-markup/compositions.md", "remotion-markup/sequencing.md",
+  "frame-review/references/notes-template.md",
+  "voiceover/references/remotion.md",
 ];
 
 function literalCommand(command: string) {
@@ -72,33 +71,33 @@ function inspectionStubs(): ToolStub[] {
   const directories = ["", "src", "public", "public/voice", "public/music", "out", "out/frames-1"];
   for (const [path, content] of Object.entries(files)) {
     stubs.push({ id: `file-${path}`, tool: "read_file", match: { filePath: { enum: pathForms(path) } }, outcome: { response: readResponse(`${P}/${path}`, content) } });
-    if (["src/Root.tsx", "SPEC.md"].includes(path)) stubs.push(bash(`cat-${path}`, atomic(`cat\\s+${pathArg(path)}`), content));
   }
   for (const dir of directories) {
     const prefix = dir ? `${dir}/` : "";
     const children = [...new Set([...Object.keys(files), ...Object.keys(cachedSizes)].filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length).split("/")[0]))].sort();
     const listing = children.join("\n") + "\n";
-    stubs.push({ id: `directory-${dir || "root"}`, tool: "read_file", match: { filePath: { enum: [`${P}${dir ? `/${dir}` : ""}`, `${P}${dir ? `/${dir}` : ""}/`, `calm-bed${dir ? `/${dir}` : ""}`] } }, outcome: { response: readResponse(`${P}/${dir}`, listing) } });
-    stubs.push(bash(`ls-${dir || "root"}`, atomic(`ls${dir ? `\\s+${pathArg(dir)}` : `(?:\\s+${quote(`${esc(P)}|\\.`)})?`}`), listing));
+    if (dir === "public") stubs.push({ id: `directory-${dir}`, tool: "read_file", match: { filePath: { enum: [`${P}/${dir}`, `${P}/${dir}/`, `calm-bed/${dir}`] } }, outcome: { response: readResponse(`${P}/${dir}`, listing) } });
+    if (["src", "out/frames-1"].includes(dir)) stubs.push(bash(`ls-${dir}`, atomic(`ls\\s+${pathArg(dir)}`), listing));
   }
   stubs.push(bash("pwd", atomic("pwd"), `${P}\n`));
   // A fixed manifest is not a progress counter. Extra formatting, pipelines and composites are rejected.
-  stubs.push(bash("find-project", atomic(`(?:find\\s+${quote(esc(P))}(?:\\s+-maxdepth\\s+[3-9])?\\s+-type\\s+f|rg\\s+--files\\s+${quote(esc(P))})`), [...Object.keys(files), ...Object.keys(cachedSizes)].map(path => `${P}/${path}`).join("\n") + "\n"));
   const staticNonempty = Object.keys(files).map(esc).join("|");
-  stubs.push(bash("test-source", atomic(`test\\s+-s\\s+${quote(`(?:${esc(P)}/)?(?:${staticNonempty})`)}`), ""));
-  stubs.push(bash("test-node-modules", atomic(`test\\s+-d\\s+${pathArg("node_modules")}`), ""));
+  stubs.push(bash("test-source", atomic(`(?:test\\s+-s\\s+${quote(`(?:${esc(P)}/)?(?:${staticNonempty}|out/final\\.mp4)`)}|test\\s+-d\\s+${pathArg("node_modules")}|mkdir\\s+-p\\s+${pathArg("out")}|${identicalCopy})`), ""));
   const size = audit.files["out/final.mp4"].size;
-  stubs.push(bash("size-test", atomic(`test\\s+-s\\s+${pathArg("out/final.mp4")}`), ""));
   stubs.push(bash("size-stat", atomic(`stat\\s+-c\\s+${quote("%s")}\\s+${pathArg("out/final.mp4")}`), `${size}\n`));
   stubs.push(bash("size-stat-name", atomic(`stat\\s+-c\\s+'%n %s bytes'\\s+out/final\\.mp4`), `out/final.mp4 ${size} bytes\n`));
   return stubs;
 }
 
 export function musicStubs(): ToolStub[] {
+  if (recordings.sourceSha256 !== project.sourceSha256 ||
+    Object.entries(audit.files).some(([file, metadata]) => (recordings.artifacts as Record<string, string>)[file] !== metadata.sha256)) {
+    throw new Error("Записанные операции music-bed относятся к другой версии исходников или аудиоартефактов.");
+  }
   const stubs: ToolStub[] = [];
   // One document per response; all alias forms retain the real, installed contents.
-  for (const [index, path] of references.entries()) stubs.push({
-    id: `reference-${index}`, tool: "read_file", match: { filePath: { pattern: `^(?:\\$HOME|/root)/\\.agents/skills/${esc(path)}$` } },
+  for (const path of references) stubs.push({
+    id: `reference-${path}`, tool: "read_file", match: { filePath: { pattern: `^(?:\\$HOME|/root)/\\.agents/skills/${esc(path)}$` } },
     outcome: { response: readResponse(`/root/.agents/skills/${path}`, readFileSync(`agent/skills/${path}`, "utf8")) },
   });
   stubs.push(...musicFrameOutputs.map((output, index): ToolStub => ({ id: `frame-${MUSIC_FRAMES[index]}`, tool: "read_file", match: { filePath: { enum: [output.path, output.path.replace("/workspace/", "")] } }, outcome: { response: output } })));
@@ -107,11 +106,6 @@ export function musicStubs(): ToolStub[] {
   stubs.push(reject("journal-replace-unsupported", "edit_file", { filePath: { enum: pathForms("NOTES.md") }, oldString: { minLength: 1 } }, "Write-only журнал не поддерживает поиск и замену старого текста. Передайте полный актуальный снимок NOTES.md в newString без oldString, с overwrite: true."));
   stubs.push({ id: "journal-write", tool: "edit_file", match: { filePath: { enum: pathForms("NOTES.md") } }, outcome: { response: { path: `${P}/NOTES.md`, created: true, replacements: 0, linesAdded: 1, linesRemoved: 0 } } });
   stubs.push(reject("unsupported-edit", "edit_file", undefined, "Файл вне записанного контракта. Успех правки не подтверждён."));
-
-  const copy = (source: string, target: string) => `cp\\s+${quote(`(?:\\$HOME|/root)/\\.agents/skills/music-synthesis/templates/${esc(source)}`)}\\s+${pathArg(`src/${target}`)}`;
-  const cpDuck = copy("ducking.ts", "ducking.ts");
-  const cpBackground = copy("BackgroundMusic.tsx.template", "BackgroundMusic.tsx");
-  stubs.push(bash("same-template-copy", atomic(`(?:${cpDuck}|${cpBackground}|${cpDuck}\\s*&&\\s*${cpBackground})`), ""));
 
   const script = `python3?\\s+${quote("(?:\\$HOME|/root)/\\.agents/skills/music-synthesis/scripts/make_music\\.py")}`;
   const musicArgs = `(?:\\s+(?:--mood\\s+calm|--seconds\\s+20(?:\\.0+)?|--seed\\s+1|--lufs\\s+-18(?:\\.0+)?|--bpm\\s+80(?:\\.0+)?|--out\\s+${pathArg("public/music/bg")}))`;
@@ -123,30 +117,32 @@ export function musicStubs(): ToolStub[] {
   const render = "(?:npx\\s+)?remotion\\s+render\\s+";
   const composition = `${pathArg("src/index.ts")}\\s+Main\\s+`;
   stubs.push(bash("frames-render", atomic(`${render}${composition}${pathArg("out/frames-1")}\\s+--frames=0,100,150,300,450,599(?:\\s+--image-format=jpeg)?(?:\\s+--jpeg-quality=90)?`), MUSIC_FRAMES.map(n => `Rendered out/frames-1/${frameName(n)}`).join("\n")));
-  stubs.push(bash("pixels", atomic(`python3?\\s+${quote("(?:\\$HOME|/root)/\\.agents/skills/frame-review/scripts/check-frames\\.py")}\\s+${pathArg("out/frames-1")}\\/\\*\\.jpeg`), MUSIC_FRAMES.map(n => `${frameName(n)} 1920x1080 ok`).join("\n")));
-  MUSIC_LEVEL_COMMANDS.forEach((command, index) => {
-    const key = ["voiceFull", "voiceSpeech", "musicSpeech", "musicOutside"][index - 2] as keyof typeof audit.measurements;
-    stubs.push(bash(`level-${index}`, literalCommand(command), index < 2 ? `Rendered out/${index === 0 ? "voice-only" : "music-only"}.wav\n` : "", 0, index < 2 ? "" : JSON.stringify(audit.measurements[key])));
+  for (const [form, output] of Object.entries(recordings.pixels)) stubs.push({
+    id: `pixels-${form}`, tool: "bash", match: { command: { pattern: atomic(`python3?\\s+${quote("(?:\\$HOME|/root)/\\.agents/skills/frame-review/scripts/check-frames\\.py")}\\s+${quote(`${form === "absolute" ? `${esc(P)}/` : ""}out/frames-1`)}\\/\\*\\.jpeg`) } }, outcome: { response: output },
   });
-  const mixJson = JSON.stringify({ audioMode: "mix" });
-  const mixProps = [`'${mixJson}'`, `"${mixJson.replaceAll('"', '\\"')}"`].map(esc).join("|");
-  stubs.push(bash("final-render", atomic(`${render}${composition}${pathArg("out/final.mp4")}(?:\\s+--props=(?:${mixProps}))?`), "Rendered out/final.mp4\n"));
-  stubs.push(bash("mix-peak", literalCommand("npx remotion ffmpeg -i out/final.mp4 -vn -af loudnorm=print_format=json -f null -"), "", 0, JSON.stringify(audit.measurements.mix)));
-  stubs.push(bash("compositions", atomic(`(?:npx\\s+)?remotion\\s+compositions\\s+${pathArg("src/index.ts")}`), "Main 1920x1080 30fps 600 frames\n"));
+  MUSIC_LEVEL_COMMANDS.forEach((command, index) => {
+    if (index < 2) {
+      const mode = index === 0 ? "voice-only" : "music-only";
+      stubs.push(bash(`level-${index}`, atomic(`${render}${composition}${pathArg(`out/${mode}.wav`)}\\s+--props=${jsonProps(mode)}`), `Rendered out/${mode}.wav\n`));
+    }
+  });
+  for (const level of recordings.levels) stubs.push(bash(`measure-${level.file}-${level.scope}`, levelPattern(level.file, level.scope), level.output.stdout, 0, JSON.stringify(level.measurement)));
+  const outsideFilter = '[0:a]atrim=start=4.91:end=5.12,asetpts=PTS-STARTPTS[a];[0:a]atrim=start=9.91:end=10.12,asetpts=PTS-STARTPTS[b];[0:a]atrim=start=14.91:end=15.12,asetpts=PTS-STARTPTS[c];[a][b][c]concat=n=3:v=0:a=1,loudnorm=print_format=json';
+  stubs.push(bash("measure-outside", levelPattern("out/music-only.wav", "full", outsideFilter), "", 0, JSON.stringify(audit.measurements.musicOutside)));
+  stubs.push(bash("final-render", atomic(`${render}${composition}${pathArg("out/final.mp4")}(?:\\s+--props=${jsonProps("mix")})?`), "Rendered out/final.mp4\n"));
+  stubs.push(bash("mix-peak", levelPattern("out/final.mp4", "full"), "", 0, JSON.stringify(audit.measurements.mix)));
   // Formats are explicit; unsupported selectors/composites never receive fabricated success.
-  const probeOptions = "(?:\\s+-v\\s+error)?\\s+-show_streams\\s+-show_format";
-  for (const format of ["json", "default"] as const) {
-    const probe = audit.files["out/final.mp4"].probe;
-    const section = (name: string, values: Record<string, unknown>) => [
-      `[${name}]`, ...Object.entries(values).filter(([, value]) => typeof value !== "object").map(([key, value]) => `${key}=${value}`), `[/${name}]`,
-    ].join("\n");
-    const output = format === "json" ? JSON.stringify(probe) : probe.streams.map(stream => section("STREAM", stream)).concat(section("FORMAT", probe.format)).join("\n") + "\n";
-    stubs.push(bash(`probe-${format === "json" ? "json" : "default"}`, atomic(`(?:npx\\s+)?remotion\\s+ffprobe${probeOptions}\\s+-(?:of|print_format)(?:=|\\s+)${quote(format)}\\s+${pathArg("out/final.mp4")}`), output));
+  for (const profile of recordings.probes) stubs.push({ id: `probe-${profile.id}`, tool: "bash", match: { command: { pattern: probePattern(profile) } }, outcome: { response: profile.output } });
+  stubs.push({ id: "decode-without-codec", tool: "bash", match: { command: { pattern: literalCommand("npx remotion ffmpeg -i out/final.mp4 -f null -") } }, outcome: { response: recordings.decodeFailure } });
+  for (const [index, diagnostic] of recordings.diagnostics.entries()) {
+    const [tool, ...args] = diagnostic.args;
+    const body = index === 0 ? `ls\\s+-la(?:\\s+${quote(`${esc(P)}|\\.`)})?` : args.map(arg => arg.startsWith("-") ? esc(arg) : index === 1 ? pathArg(arg) : quote(esc(arg))).join("\\s+");
+    stubs.push({ id: `diagnostic-${index}`, tool: "bash", match: { command: { pattern: atomic(index === 0 ? body : `${tool}\\s+${body}`) } }, outcome: { response: diagnostic.output } });
   }
   stubs.push(...inspectionStubs(), ...speechStubs());
   stubs.push({ id: "voices", tool: "list_voices", outcome: { response: { voices: [{ name: VOICE, locale: "ru-RU", gender: "Female", displayName: "Светлана", multilingual: false }] } } });
   stubs.push({ id: "caption-doc", tool: "read_page", match: { url: { pattern: "^https://www\\.remotion\\.dev/elements/captions/basic-captions(?:\\.md)?$" } }, outcome: { response: page("https://www.remotion.dev/elements/captions/basic-captions.md", "Basic Captions", readFileSync("evals/fixtures/voiceover/basic-captions.md", "utf8")) } });
-  stubs.push(reject("unknown-read", "read_file", undefined, "Путь отсутствует в неизменяемом манифесте. Не подменяйте его другим файлом; SPEC.md описывает весь видеоряд."));
+  stubs.push(reject("unknown-read", "read_file", undefined, "Чтение этого пути не записано в контракте; это не доказывает отсутствие файла. SPEC.md описывает подготовленный проект, его исходники читаются по точным путям внутри src/. Не подменяйте запрошенный файл другим."));
   stubs.push(reject("unsupported-command", "bash", undefined, "Полный результат этой команды не записан. Успех НЕ подтверждён. Разделите составные команды на отдельные операции из SPEC.md; неподдержанные параметры не меняют состояние проекта."));
   stubs.push(blockedRead, emptySearch);
   return stubs;

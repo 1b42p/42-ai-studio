@@ -39,6 +39,19 @@ const historicalRules = [
     "file-src/index.ts", "file-src/ducking.ts", "unsupported-command", "isolate-question",
   ],
 ];
+// Retired optional diagnostics fail explicitly to leave room for field-specific
+// recorded media operations under eve's 100-rule limit. No file substitution.
+const ruleNames: Record<string, string> = {
+  "reference-7": "unknown-read", "reference-8": "unknown-read",
+  "reference-2": "reference-music-synthesis/templates/ducking.ts",
+  "reference-3": "reference-music-synthesis/templates/BackgroundMusic.tsx.template",
+  "reference-4": "reference-frame-review/references/notes-template.md",
+  "reference-6": "reference-voiceover/references/remotion.md",
+  compositions: "unsupported-command", "same-template-copy": "test-source",
+  "ls-root": "diagnostic-0", "find-project": "unsupported-command",
+};
+historicalRules[0][53] = "probe-selected-default=nw=1";
+historicalRules[2][9] = "diagnostic-0";
 
 test("все 136 исторических действий проверены native matcher; незаписанная команда не исполняется", async () => {
   let checked = 0;
@@ -54,7 +67,8 @@ test("все 136 исторических действий проверены na
       const result = playback.call({ callId: `history-${scenario.index}-${action.position}`, tool: action.name, input: action.input });
       expect(result.kind, `case ${scenario.index}, action ${action.position}: ${action.name}`).toBe("stub");
       if (result.kind !== "stub") continue;
-      expect(result.ruleId, `case ${scenario.index}, action ${action.position}`).toBe(historicalRules[scenario.index][action.position]);
+      const previous = historicalRules[scenario.index][action.position];
+      expect(result.ruleId, `case ${scenario.index}, action ${action.position}`).toBe(ruleNames[previous] ?? previous);
       if (["unsupported-command", "source-edit", "journal-read", "journal-replace-unsupported"].includes(result.ruleId)) {
         expect(result.outcome).toHaveProperty("throw");
       }
@@ -104,7 +118,7 @@ test("чтения исходников неизменны до/после ге�
 
 test("документы $HOME возвращают собственный установленный текст, неизвестные — ошибку", async () => {
   const playback = new StubPlayback(await allMusicStubs());
-  for (const [index, path] of ["music-synthesis/references/mixing.md", "remotion-interactivity/timeline-structure.md", "remotion-captions/display-captions.md"].entries()) {
+  for (const [index, path] of ["music-synthesis/references/mixing.md", "voiceover/references/remotion.md", "music-synthesis/templates/ducking.ts"].entries()) {
     const result = playback.call({ callId: `doc-${index}`, tool: "read_file", input: { filePath: `$HOME/.agents/skills/${path}` } });
     if (result.kind !== "stub") throw new Error("Unstubbed document");
     expect(result.outcome).toMatchObject({ response: { content: readFileSync(`agent/skills/${path}`, "utf8") } });
@@ -137,7 +151,6 @@ test.each([
   "npx remotion render src/index.ts Main out/frames-1 --frames=0,37,150,300,450,599",
   "npx remotion ffprobe -show_entries format=duration -of json out/final.mp4",
   "npx remotion ffprobe -select_streams a:0 -show_streams -show_format -of json out/final.mp4",
-  "ls -la /workspace/calm-bed",
   "find /workspace/calm-bed -maxdepth 1 -type f",
   "cp /tmp/changed.tsx /workspace/calm-bed/src/Root.tsx",
   "echo changed > /workspace/calm-bed/src/Root.tsx",
@@ -151,7 +164,7 @@ test("канонические раздельные рендеры/замеры 
   MUSIC_LEVEL_COMMANDS.forEach((command, index) => {
     const result = playback.call({ callId: `canonical-${index}`, tool: "bash", input: { command } });
     if (result.kind !== "stub") throw new Error("Unstubbed command");
-    expect(result.ruleId).toBe(`level-${index}`);
+    expect(result.ruleId).toBe(["level-0", "level-1", "measure-out/voice-only.wav-full", "measure-out/voice-only.wav-input", "measure-out/music-only.wav-input", "measure-outside"][index]);
     expect(result.outcome).toMatchObject({ response: { exitCode: 0 } });
   });
   expect(project.files["src/Root.tsx"]).toContain("SceneCaptions");
