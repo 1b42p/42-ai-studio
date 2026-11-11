@@ -88,3 +88,21 @@ test("начатый запрос Daytona остаётся восстанови�
   expect(reserved.launchStartedAt).not.toBeNull();
   await expect(assertSandboxWait(wait)).rejects.toMatchObject({ code: "sandbox_wait_cancelled" });
 });
+
+test("поздняя копия использует уже пробуждённую машину без новой квоты", async () => {
+  const apiKey = "dtn_late_copy";
+  const key = await createDaytonaKey({ apiKey });
+  const row = await session();
+  const wait = await captureSandboxWait(row, "shared-turn");
+  await db().insert(sandboxes).values({
+    appSessionId: row.id, daytonaKeyId: key.id, daytonaSandboxId: "already-started",
+    state: "started", waitGeneration: wait.generation, slotRequestId: randomUUID(),
+  });
+  await fakeSandbox.setQuota(apiKey, { cpu: 0, memoryGb: 0, diskGb: 0 });
+  await expect(awaitSlot(row, "wake", key.id, { wait, maxWaitSeconds: 0 })).resolves.toMatchObject({ id: key.id });
+  expect(await db().select().from(queueEntries)).toHaveLength(0);
+  const [machine] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, row.id));
+  expect(machine.state).toBe("started");
+  await removeSandboxQueueEntry(row.eveSessionId, row.userId);
+  await expect(awaitSlot(row, "wake", key.id, { wait })).rejects.toMatchObject({ code: "sandbox_wait_cancelled" });
+});

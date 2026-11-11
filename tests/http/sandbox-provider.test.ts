@@ -96,12 +96,13 @@ test("два одновременных start одной сессии созда
       expect(text).toBe("Одна песочница для обоих клиентов");
     }
     await opened[0].connection.stop();
+    const startsBeforeResume = (await fakeSandbox.counters()).started;
     const resumed = await Promise.all([
       first.resume(ctx, artifact, opened[0].state),
       second.resume(ctx, artifact, opened[1].state),
     ]);
     try {
-      expect((await fakeSandbox.counters()).started).toBe(1);
+      expect((await fakeSandbox.counters()).started).toBe(startsBeforeResume + 1);
       for (const connection of resumed) {
         expect(await connection.readFile({ path: "/workspace/shared.txt" })).not.toBeNull();
       }

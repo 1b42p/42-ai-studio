@@ -344,6 +344,14 @@ export async function awaitSlot(
       await assertSandboxWait(wait);
       const [row] = await db.select().from(queueEntries).where(eq(queueEntries.id, entry.id));
       const [sandbox] = await db.select().from(sandboxes).where(eq(sandboxes.appSessionId, session.id));
+      // Соседняя копия могла закончить пробуждение ещё до регистрации этой заявки.
+      if (need !== "create" && sandbox?.state === "started" &&
+          sandbox.daytonaKeyId === keyId && sandbox.waitGeneration === wait.generation) {
+        const [key] = await db.select().from(daytonaKeys).where(eq(daytonaKeys.id, sandbox.daytonaKeyId));
+        if (!key || key.deletedAt !== null) throw new SandboxSessionGoneError("Ключ песочницы удалён.");
+        await assertSandboxWait(wait);
+        return key;
+      }
       if (row === undefined) {
         if (sandbox?.slotRequestId === entry.id && sandbox.state !== "gone") {
           const [key] = await db.select().from(daytonaKeys).where(eq(daytonaKeys.id, sandbox.daytonaKeyId));
