@@ -26,6 +26,7 @@
     "daytona:cleanup": "tsx scripts/daytona-cleanup.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.87",
     "@ai-sdk/openai-compatible": "^3.0.82",
     "@ai-sdk/provider-utils": "5.0.67",
     "@andresaya/edge-tts": "1.9.1",

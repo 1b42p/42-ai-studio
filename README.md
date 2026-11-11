@@ -73,6 +73,8 @@ curl -i http://localhost:3000/api/health
 OpenAI-совместимого провайдера задайте `AGENT_MODEL_BASE_URL`,
 `AGENT_MODEL_API_KEY` и `AGENT_MODEL_CONTEXT_TOKENS`; для AI Gateway достаточно
 `AGENT_MODEL` и ключа `AI_GATEWAY_API_KEY`, который читает сам AI SDK.
+`AGENT_MODEL_API=anthropic` вызывает Messages API того же адреса (`<url>/messages`),
+если модель не принимает Chat Completions.
 
 По умолчанию используется поток провайдера. Если OpenAI-совместимый API
 корректно возвращает вызовы инструментов только в обычном ответе, задайте

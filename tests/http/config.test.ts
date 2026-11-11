@@ -51,6 +51,9 @@ describe("parseConfig", () => {
     expect(config.appUrl).toBe("http://localhost:3100");
     expect(config.appTestMode).toBe(true);
     expect(config.agentModelStreaming).toBe(true);
+    expect(config.agentModelApi).toBe("openai");
+    expect(parseConfig({ ...validEnv(), AGENT_MODEL_API: "anthropic" }).agentModelApi).toBe("anthropic");
+    expect(issuesOf({ ...validEnv(), AGENT_MODEL_API: "chat" }).join()).toContain("AGENT_MODEL_API");
     expect(config.testAppPort).toBe(3100);
     expect(config.nextDistDir).toBe(".next-test-3100");
   });

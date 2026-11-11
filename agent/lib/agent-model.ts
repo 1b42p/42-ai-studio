@@ -4,6 +4,7 @@
  * принимает лишь строку, а обычная строка с `process.env` запеклась бы при
  * сборке. Поэтому выбор — чистая функция: её проверяет тест без сети.
  */
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { simulateStreamingMiddleware, wrapLanguageModel, type LanguageModel } from "ai";
 import { mockModel } from "eve/evals";
@@ -25,6 +26,8 @@ export interface AgentModelConfig {
   readonly agentModelApiKey: string | undefined;
   readonly agentModelContextTokens: number | undefined;
   readonly agentModelStreaming: boolean;
+  /** `openai` — Chat Completions; `anthropic` — Messages API того же базового URL. */
+  readonly agentModelApi: "openai" | "anthropic";
   readonly agentReasoning: AgentReasoning;
 }
 
@@ -66,7 +69,12 @@ export function selectAgentModel(config: AgentModelConfig): AgentModelSelection 
     throw new AgentModelConfigError(MISSING_MODEL_MESSAGE);
   }
 
-  if (config.agentModelBaseUrl !== undefined) {
+  if (config.agentModelBaseUrl !== undefined || config.agentModelApi === "anthropic") {
+    if (config.agentModelBaseUrl === undefined) {
+      throw new AgentModelConfigError(
+        "Не задана переменная окружения AGENT_MODEL_BASE_URL: она нужна для AGENT_MODEL_API=anthropic.",
+      );
+    }
     if (config.agentModelApiKey === undefined) {
       throw new AgentModelConfigError(
         "Не задана переменная окружения AGENT_MODEL_API_KEY: она нужна вместе с AGENT_MODEL_BASE_URL.",
@@ -79,16 +87,21 @@ export function selectAgentModel(config: AgentModelConfig): AgentModelSelection 
       );
     }
 
-    const provider = createOpenAICompatible({
-      name: OPENAI_COMPATIBLE_PROVIDER,
-      baseURL: config.agentModelBaseUrl,
-      apiKey: config.agentModelApiKey,
-      includeUsage: true,
-    });
+    const model = config.agentModelApi === "anthropic"
+      ? createAnthropic({
+        baseURL: config.agentModelBaseUrl,
+        apiKey: config.agentModelApiKey,
+      })(config.agentModel)
+      : createOpenAICompatible({
+        name: OPENAI_COMPATIBLE_PROVIDER,
+        baseURL: config.agentModelBaseUrl,
+        apiKey: config.agentModelApiKey,
+        includeUsage: true,
+      })(config.agentModel);
 
     return {
-      model: config.agentModelStreaming ? provider(config.agentModel) : wrapLanguageModel({
-        model: provider(config.agentModel), middleware: simulateStreamingMiddleware(),
+      model: config.agentModelStreaming ? model : wrapLanguageModel({
+        model, middleware: simulateStreamingMiddleware(),
       }),
       reasoning: config.agentReasoning,
       modelContextWindowTokens: config.agentModelContextTokens,

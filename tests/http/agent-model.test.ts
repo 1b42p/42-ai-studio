@@ -18,6 +18,7 @@ function config(overrides: Partial<AgentModelConfig> = {}): AgentModelConfig {
     agentModelApiKey: undefined,
     agentModelContextTokens: undefined,
     agentModelStreaming: true,
+    agentModelApi: "openai",
     agentReasoning: "high",
     ...overrides,
   };
@@ -86,6 +87,28 @@ describe("selectAgentModel", () => {
       expect(requests[0].stream).not.toBe(true);
       expect((await result.usage).outputTokens).toBe(4);
     } finally { fetch.mockRestore(); }
+  });
+
+  test("AGENT_MODEL_API=anthropic выбирает Messages API того же адреса", () => {
+    const selection = selectAgentModel(
+      config({
+        agentModel: "claude-haiku-5-5",
+        agentModelBaseUrl: "https://api.example.com/v1",
+        agentModelApiKey: "ключ",
+        agentModelContextTokens: 200000,
+        agentModelApi: "anthropic",
+      }),
+    );
+    const model = selection.model as { provider: string; modelId: string };
+    expect(model.provider).toContain("anthropic");
+    expect(model.provider).not.toBe("openai");
+    expect(model.modelId).toBe("claude-haiku-5-5");
+  });
+
+  test("anthropic без базового адреса называет AGENT_MODEL_BASE_URL", () => {
+    expect(() =>
+      selectAgentModel(config({ agentModelApi: "anthropic", agentModel: "claude-haiku-5-5" })),
+    ).toThrow(/AGENT_MODEL_BASE_URL/);
   });
 
   test("без AGENT_MODEL ошибка на русском называет переменную", () => {

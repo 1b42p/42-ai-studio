@@ -96,6 +96,8 @@ export interface AppConfig {
   /** Размер контекстного окна модели в токенах. */
   readonly agentModelContextTokens: number | undefined;
   readonly agentModelStreaming: boolean;
+  /** Протокол провайдера модели: OpenAI-совместимый или Anthropic Messages. */
+  readonly agentModelApi: "openai" | "anthropic";
   /** Уровень рассуждения модели. */
   readonly agentReasoning: AgentReasoning;
   /** Необязательная модель судьи; используется процессом eve eval, не агентом. */
@@ -260,6 +262,10 @@ const envSchema = z.object({
   AGENT_MODEL_BASE_URL: envUrl.optional(),
   AGENT_MODEL_API_KEY: envString.optional(),
   AGENT_MODEL_STREAMING: envBoolean.optional().default(true),
+  AGENT_MODEL_API: z
+    .enum(["openai", "anthropic"], { error: "ожидается openai или anthropic" })
+    .optional()
+    .default("openai"),
   EVAL_JUDGE_MODEL: envString.trim().optional(),
   EVAL_CHECKPOINT_DIR: envString.optional(),
   AGENT_MODEL_CONTEXT_TOKENS: z.coerce
@@ -483,6 +489,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     agentModelApiKey: data.AGENT_MODEL_API_KEY,
     agentModelContextTokens: data.AGENT_MODEL_CONTEXT_TOKENS,
     agentModelStreaming: data.AGENT_MODEL_STREAMING,
+    agentModelApi: data.AGENT_MODEL_API,
     agentReasoning: data.AGENT_REASONING,
     evalJudgeModel: data.EVAL_JUDGE_MODEL,
     secretsEncryptionKey: data.SECRETS_ENCRYPTION_KEY,
@@ -589,7 +596,7 @@ export function readEvalCheckpointDirectory(): string | undefined {
 /** Non-secret identity: model, provider, reasoning, and sandbox mode, never credentials. */
 export function evalRuntimeFingerprint(config = loadConfig()): string {
   return createHash("sha256").update(JSON.stringify({
-    model: config.agentModel, baseUrl: config.agentModelBaseUrl,
+    model: config.agentModel, baseUrl: config.agentModelBaseUrl, api: config.agentModelApi,
     context: config.agentModelContextTokens, reasoning: config.agentReasoning, streaming: config.agentModelStreaming,
     fixture: config.appTestMode, videoSandbox: config.appVideoEvalSandbox,
     cpu: config.sandboxCpu, memory: config.sandboxMemoryGb, disk: config.sandboxDiskGb,
