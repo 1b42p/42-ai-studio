@@ -58,7 +58,21 @@ Python-библиотеку со своими потоками (ONNX Runtime у 
 
 ## Remotion
 
-Новый проект создавай копированием шаблона. `mkdir -p /workspace/<имя>`, скопируй из `/opt/remotion` файлы `package.json`, `tsconfig.json`, `remotion.config.ts` и каталог `src`, затем сделай ссылку `ln -s /opt/remotion/node_modules /workspace/<имя>/node_modules`. Chrome Headless Shell лежит в `/opt/remotion/node_modules/.remotion` и в новый проект не скачивается. `npx create-video` не запускай. Studio не открывай. Результат проверяй кадрами `npx remotion still` и `npx remotion render … --frames=…`, затем полным рендером.
+Новый проект создавай целиком из шаблона, затем меняй композиции через `edit_file`:
+
+```sh
+project=/workspace/<имя>
+mkdir "$project" &&
+cp /opt/remotion/package.json /opt/remotion/tsconfig.json /opt/remotion/remotion.config.ts "$project/" &&
+cp -r /opt/remotion/src "$project/src" &&
+ln -s /opt/remotion/node_modules "$project/node_modules"
+```
+
+Перед первым вызовом Remotion в новом или существующем проекте проверь `pwd`, `ls -la src`, `test -s src/index.ts`, `test -s src/Root.tsx`, `test -s package.json` и `test -d node_modules` из каталога проекта. Продолжай, когда все проверки успешны. Существующий проект сохраняй: восстанавливай только отсутствующие файлы.
+
+При `No entry point specified`, `Cannot find module` или `ENOENT` сначала проверь существование названного файла и прочитай его импорты. Отсутствующий `src/index.ts` восстанови из `/opt/remotion/src/index.ts`, сверив импорт и экспорт `RemotionRoot` в существующем `Root.tsx`. Затем повтори исходную команду. Изменение относительного пути на абсолютный или флагов CLI не восстанавливает файл; повтор допустим после устранения установленной причины. Лимит попыток — в разделе «Неудача» основных инструкций.
+
+Chrome Headless Shell лежит в `/opt/remotion/node_modules/.remotion` и в новый проект не скачивается. `npx create-video` не запускай. Studio не открывай. Результат проверяй кадрами `npx remotion still` и `npx remotion render … --frames=…`, затем полным рендером.
 
 Пакет, которого нет в шаблоне, ставь в шаблон: `cd /opt/remotion && npx remotion add <пакет>`. В каталоге `/workspace/<имя>` не запускай `npx remotion add`, `npm install` и `npm i <пакет>`: без lockfile установка падает, а `npm` заменяет ссылку `node_modules` каталогом без браузера, и следующий рендер пойдёт за браузером на `remotion.media`.
 

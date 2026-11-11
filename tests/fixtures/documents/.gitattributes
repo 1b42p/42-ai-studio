@@ -1,0 +1,7 @@
+# Preserve document bytes and the Windows-1251/CRLF Excel fixture.
+*.pdf binary
+*.pptx binary
+*.xlsx binary
+*.xls binary
+ru-excel.csv binary
+bom.csv -text
