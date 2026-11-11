@@ -43,9 +43,12 @@ python3 "$HOME/.agents/skills/music-synthesis/scripts/make_music.py" --mood calm
 60–80. Потоков — по `sandbox-vcpu`.
 
 Stdout — одна строка JSON: `audioPath`, `durationMs`, `bpm`, `mood`, `seed`,
-`peakDbfs`, `integratedLufs`. Путь бери из `audioPath`. Ненулевой код — музыки
-нет, скажи пользователю. Если `bash` вернул `status: "running"`, дочитай stdout
-из `outputDirectory`.
+`peakDbfs`, `integratedLufs`. Путь бери из `audioPath`. `--seconds` — длительность
+ролика из просьбы, округлённая вверх. Когда `durationMs` совпал с этим числом
+с точностью до секунды, это длина файла: повторный запуск с другим `--seconds`
+не нужен, сцены укладываются в этот отрезок. Следующее действие — `edit_file`
+для `src/ducking.ts`, `src/BackgroundMusic.tsx` и `src/Root.tsx`. Ненулевой код — музыки нет, скажи
+пользователю. Если `bash` вернул `status: "running"`, дочитай stdout из `outputDirectory`.
 
 В `NOTES.md` допиши строку `Музыка: calm, 80 bpm, seed 1, файл public/music/bg.wav`
 по шаблону `frame-review`. При правке ролика оставь seed из этой строки.
@@ -55,7 +58,9 @@ Stdout — одна строка JSON: `audioPath`, `durationMs`, `bpm`, `mood`,
 ## 3. Сведение
 
 Скопируй в проект `templates/ducking.ts` и `templates/BackgroundMusic.tsx.template`
-(второму дай расширение `.tsx`). Компонент стоит в корне композиции. `volume` —
+(второму дай расширение `.tsx`). Сцена остаётся в `src/Root.tsx`: эти три файла —
+весь код сведения. Ответ `edit_file` фиксирует запись каждого; следом кадр по
+`frame-review` и полный рендер. Компонент музыки стоит в корне композиции. `volume` —
 число с текущего кадра. `speech` — интервалы `sentences[]` из `.words.json`
 сцены, сдвинутые на начало звука `(from + 10) / fps * 1000`. Границы —
 `startMs` и `endMs`, реплика — аргумент `speak`. Пустой список,
@@ -83,4 +88,6 @@ Stdout — одна строка JSON: `audioPath`, `durationMs`, `bpm`, `mood`,
 смешанному mp4: допуск ±2 LU. `ebur128` в этой сборке ffmpeg нет.
 
 Готово, когда `input_tp` не выше −1 dBTP. В ответе пользователю назови
-настроение и скажи, что во время речи музыка звучит тише.
+настроение и скажи, что во время речи музыка звучит тише. Эти два факта
+входят в ответ, как только известны JSON музыки и правило сведения, в том
+числе если рендер ещё впереди.
