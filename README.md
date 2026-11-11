@@ -912,11 +912,19 @@ just-bash; никакие команды Remotion или Piper при оценк
 node --env-file=.env evals/support/two-of-three.mjs music --url http://localhost:3000
 ```
 
+Контракт синтезатора проверяется отдельно командой
+`uv run tests/music/test_make_music.py`. Для независимого измерения громкости
+нужен проект Remotion 4.0.538: по умолчанию `/opt/remotion`, другой каталог
+задаётся `MUSIC_REMOTION_PROJECT`. Он должен содержать пакеты `remotion`,
+`@remotion/cli` и `@remotion/renderer` той же версии. Системный FFmpeg
+вместо поставляемого Remotion бинарника не используется.
+
 Для сценария с внедрёнными инструкциями используется отдельная модель судьи.
 `EVAL_JUDGE_MODEL` необязательна: без неё действует умолчание eve
 `typesafe-ai/jev`. Ключи провайдера судьи нужны и в процессе оценок;
 при `AGENT_MODEL_BASE_URL` выбранный `EVAL_JUDGE_MODEL` использует этот
-OpenAI-совместимый адрес и `AGENT_MODEL_API_KEY`. Вызовы модели агента и судьи
+адрес и `AGENT_MODEL_API_KEY`, а `AGENT_MODEL_API` выбирает протокол
+Chat Completions или Anthropic Messages. Вызовы модели агента и судьи
 оплачиваются у их провайдеров. После оценок выключите `APP_EVAL_MODE`,
 `APP_VIDEO_EVAL_SANDBOX`, `APP_STUB_EVAL_SANDBOX` и
 перезапустите приложение.

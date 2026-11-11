@@ -573,6 +573,7 @@ export interface EvalJudgeConfig {
   readonly model: string | undefined;
   readonly baseUrl: string | undefined;
   readonly apiKey: string | undefined;
+  readonly api: AppConfig["agentModelApi"];
 }
 
 // Процесс оценок может обращаться к удалённому приложению: его судье не нужны
@@ -581,6 +582,7 @@ const evalJudgeSchema = envSchema.pick({
   EVAL_JUDGE_MODEL: true,
   AGENT_MODEL_BASE_URL: true,
   AGENT_MODEL_API_KEY: true,
+  AGENT_MODEL_API: true,
 });
 
 export function parseEvalJudgeConfig(env: EnvRecord): EvalJudgeConfig {
@@ -588,9 +590,13 @@ export function parseEvalJudgeConfig(env: EnvRecord): EvalJudgeConfig {
     EVAL_JUDGE_MODEL: env.EVAL_JUDGE_MODEL?.trim() || undefined,
     AGENT_MODEL_BASE_URL: env.AGENT_MODEL_BASE_URL?.trim() || undefined,
     AGENT_MODEL_API_KEY: env.AGENT_MODEL_API_KEY?.trim() || undefined,
+    AGENT_MODEL_API: env.AGENT_MODEL_API?.trim() || undefined,
   });
   if (!result.success) throw new ConfigError(formatIssues(result.error));
   const data = result.data;
+  if (data.EVAL_JUDGE_MODEL && data.AGENT_MODEL_API === "anthropic" && !data.AGENT_MODEL_BASE_URL) {
+    throw new ConfigError(["AGENT_MODEL_BASE_URL: нужна судье для AGENT_MODEL_API=anthropic"]);
+  }
   if (data.EVAL_JUDGE_MODEL && data.AGENT_MODEL_BASE_URL && !data.AGENT_MODEL_API_KEY) {
     throw new ConfigError(["AGENT_MODEL_API_KEY: нужна судье вместе с AGENT_MODEL_BASE_URL"]);
   }
@@ -598,6 +604,7 @@ export function parseEvalJudgeConfig(env: EnvRecord): EvalJudgeConfig {
     model: data.EVAL_JUDGE_MODEL,
     baseUrl: data.AGENT_MODEL_BASE_URL,
     apiKey: data.AGENT_MODEL_API_KEY,
+    api: data.AGENT_MODEL_API,
   };
 }
 

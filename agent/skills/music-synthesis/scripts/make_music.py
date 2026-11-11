@@ -11,7 +11,10 @@ import math
 import os
 import subprocess
 import sys
+import tempfile
 import warnings
+import wave
+from collections.abc import Iterator
 from pathlib import Path
 
 
@@ -55,6 +58,8 @@ SR = 44100
 PEAK_CEILING = 10 ** (-1.05 / 20)
 MIN_SECONDS = 1.0
 MAX_SECONDS = 180.0
+# RIFF's size field includes 36 bytes before PCM data, 4 bytes per stereo frame.
+MAX_WAV_FRAMES = (2**32 - 1 - 36) // 4
 MAJOR = (0, 2, 4, 5, 7, 9, 11)
 MINOR = (0, 2, 3, 5, 7, 8, 10)
 
@@ -212,7 +217,14 @@ def add_noise(
     place(buffer, start, burst * amp, pan)
 
 
-def schedule(style: str, bpm: int, seconds: float, root: int, scale: tuple[int, ...], progression: tuple[int, ...]) -> list[tuple]:
+def schedule(
+    style: str,
+    bpm: int,
+    seconds: float,
+    root: int,
+    scale: tuple[int, ...],
+    progression: tuple[int, ...],
+) -> list[tuple]:
     beat = 60.0 / bpm
     bar = beat * 4.0
     events: list[tuple] = []
@@ -226,18 +238,38 @@ def schedule(style: str, bpm: int, seconds: float, root: int, scale: tuple[int, 
             events.append(("bass", start, bar * 0.92, triad[0] - 12, 0.34))
             events.append(("kick", start, 0.0, 0, 0.55))
             if bar_index % 2 == 1:
-                events.append(("pluck", start + beat * 2, beat * 1.5, triad[2] - 12, 0.12))
+                events.append(
+                    ("pluck", start + beat * 2, beat * 1.5, triad[2] - 12, 0.12)
+                )
             events.append(("hat", start + beat * 2, 0.05, 0, 0.04))
         elif style == "upbeat":
             events.append(("pad", start, bar + beat * 0.5, triad, 0.11, False))
             for step in range(4):
                 when = start + beat * step
-                events.append(("bass", when, beat * 0.92, triad[0] - 12 + (12 if step == 2 else 0), 0.28))
-                events.append(("kick" if step % 2 == 0 else "snare", when, 0.0, 0, 0.62 if step % 2 == 0 else 0.18))
+                events.append(
+                    (
+                        "bass",
+                        when,
+                        beat * 0.92,
+                        triad[0] - 12 + (12 if step == 2 else 0),
+                        0.28,
+                    )
+                )
+                events.append(
+                    (
+                        "kick" if step % 2 == 0 else "snare",
+                        when,
+                        0.0,
+                        0,
+                        0.62 if step % 2 == 0 else 0.18,
+                    )
+                )
             for step in range(8):
                 when = start + beat * 0.5 * step
                 events.append(("pluck", when, beat * 0.45, triad[step % 3] + 12, 0.11))
-                events.append(("hat", when, 0.045, 0, 0.055 if step % 2 == 0 else 0.035))
+                events.append(
+                    ("hat", when, 0.045, 0, 0.055 if step % 2 == 0 else 0.035)
+                )
         else:
             events.append(("pad", start, bar + beat, triad, 0.18, False))
             events.append(("bass", start, beat * 3.2, triad[0] - 12, 0.26))
@@ -265,20 +297,72 @@ def render_events(events: list[tuple], n: int, noise: np.ndarray) -> np.ndarray:
             pans = (-0.35, 0.0, 0.35)
             for index, note in enumerate(triad):
                 freq = midi_hz(note + octave)
-                add_tone(buffer, start, duration, freq, amp, pans[index], ((1.0, 0.82), (1.004, 0.18), (2.0, 0.08)), 0.45, 0.7, 0.0)
-                add_tone(buffer, start, duration, freq * 0.997, amp * 0.45, pans[index] * 0.5, ((1.0, 1.0),), 0.5, 0.7, 0.0)
+                add_tone(
+                    buffer,
+                    start,
+                    duration,
+                    freq,
+                    amp,
+                    pans[index],
+                    ((1.0, 0.82), (1.004, 0.18), (2.0, 0.08)),
+                    0.45,
+                    0.7,
+                    0.0,
+                )
+                add_tone(
+                    buffer,
+                    start,
+                    duration,
+                    freq * 0.997,
+                    amp * 0.45,
+                    pans[index] * 0.5,
+                    ((1.0, 1.0),),
+                    0.5,
+                    0.7,
+                    0.0,
+                )
         elif kind == "bass":
             _kind, _start, duration, note, amp = event
-            add_tone(buffer, start, duration, midi_hz(note), amp, 0.0, ((1.0, 0.75), (0.5, 0.45), (2.0, 0.08)), 0.03, 0.12, 1.2)
+            add_tone(
+                buffer,
+                start,
+                duration,
+                midi_hz(note),
+                amp,
+                0.0,
+                ((1.0, 0.75), (0.5, 0.45), (2.0, 0.08)),
+                0.03,
+                0.12,
+                1.2,
+            )
         elif kind == "pluck":
             _kind, _start, duration, note, amp = event
-            add_tone(buffer, start, duration, midi_hz(note), amp, 0.15 if note % 2 == 0 else -0.15, ((1.0, 0.7), (2.0, 0.25), (3.0, 0.08)), 0.01, 0.08, 3.5)
+            add_tone(
+                buffer,
+                start,
+                duration,
+                midi_hz(note),
+                amp,
+                0.15 if note % 2 == 0 else -0.15,
+                ((1.0, 0.7), (2.0, 0.25), (3.0, 0.08)),
+                0.01,
+                0.08,
+                3.5,
+            )
         elif kind == "kick":
             add_kick(buffer, start, event[4])
         elif kind == "snare":
             add_noise(buffer, noise, start, 0.12, event[4], 0.05, False)
         elif kind == "hat":
-            add_noise(buffer, noise, start, event[2], event[4], 0.45 if int(start * 10) % 2 == 0 else -0.45, True)
+            add_noise(
+                buffer,
+                noise,
+                start,
+                event[2],
+                event[4],
+                0.45 if int(start * 10) % 2 == 0 else -0.45,
+                True,
+            )
     return buffer
 
 
@@ -290,7 +374,9 @@ def room(buffer: np.ndarray, left: np.ndarray, right: np.ndarray) -> np.ndarray:
         peak = np.max(np.abs(shaped_impulse))
         if peak > 0:
             shaped_impulse /= peak
-        wet[:, channel] = fftconvolve(buffer[:, channel], shaped_impulse * 0.25, mode="full")[: buffer.shape[0]]
+        wet[:, channel] = fftconvolve(
+            buffer[:, channel], shaped_impulse * 0.25, mode="full"
+        )[: buffer.shape[0]]
     mixed = buffer * 0.82 + wet * 0.22
     # Однополюсный DC-blocker: на выходе остаётся сигнал без постоянной составляющей.
     return lfilter([1.0, -1.0], [1.0, -0.995], mixed, axis=0)
@@ -336,7 +422,15 @@ def normalize(audio: np.ndarray, target: float) -> tuple[np.ndarray, float]:
     return gained, measured_lufs(gained)
 
 
-def synthesize(mood: str, seconds: float, bpm: int, seed: int, target_lufs: float) -> tuple[np.ndarray, float]:
+def synthesize(
+    mood: str,
+    seconds: float,
+    bpm: int,
+    seed: int,
+    target_lufs: float,
+    *,
+    fades: bool = True,
+) -> tuple[np.ndarray, float]:
     spec = MOODS[mood]
     rng = np.random.default_rng(seed)
     root = int(rng.choice(np.asarray(spec["roots"], dtype=np.int64)))
@@ -352,7 +446,8 @@ def synthesize(mood: str, seconds: float, bpm: int, seed: int, target_lufs: floa
     mixed = room(mixed, left, right)
     lowpass_b, lowpass_a = butter(2, 11000 / (SR / 2))
     mixed = lfilter(lowpass_b, lowpass_a, mixed, axis=0)
-    apply_fades(mixed)
+    if fades:
+        apply_fades(mixed)
     return normalize(mixed, target_lufs)
 
 
@@ -361,6 +456,126 @@ def write_wav(path: Path, audio: np.ndarray) -> np.ndarray:
     path.parent.mkdir(parents=True, exist_ok=True)
     wavfile.write(path, SR, pcm)
     return pcm
+
+
+def long_music_blocks(
+    mood: str,
+    frames: int,
+    bpm: int,
+    seed: int,
+    target: float,
+) -> Iterator[np.ndarray]:
+    """Join independently seeded 16-bar phrases with a one-bar linear overlap.
+
+    Each phrase uses the existing instruments, room and normalization. No local
+    fades: complementary crossfade weights sum to one and preserve the sample
+    peak bound. Only the very beginning/end receive the usual cubic fades.
+    There is no repeated audio loop and no whole-track array.
+    """
+    bar_frames = sample_count(240.0 / bpm)
+    phrase_frames = bar_frames * 16
+    overlap = bar_frames
+    step = phrase_frames - overlap
+    tail: np.ndarray | None = None
+    start = 0
+    index = 0
+    while start < frames:
+        length = min(phrase_frames, frames - start)
+        # A short remainder is already covered by the previous phrase's tail.
+        if index and length <= overlap:
+            raise MusicError("Не удалось рассчитать перекрытие музыкальных частей.")
+        part_seed = int(np.random.SeedSequence([seed, index]).generate_state(1)[0])
+        audio, _loudness = synthesize(
+            mood, length / SR, bpm, part_seed, target, fades=False
+        )
+        if tail is not None:
+            weight = np.linspace(0.0, 1.0, overlap, endpoint=True)[:, None]
+            audio[:overlap] = tail * (1.0 - weight) + audio[:overlap] * weight
+            tail = None
+        final = start + length == frames
+        count = length if final else step
+        # Copy only the small overlap; retaining a slice would retain a full
+        # previous phrase while synthesize() allocates its working arrays.
+        if not final:
+            tail = audio[-overlap:].copy()
+        if start == 0:
+            fade_n = SR
+            audio[:fade_n] *= (np.linspace(0.0, 1.0, fade_n, endpoint=False) ** 3)[
+                :, None
+            ]
+        if final:
+            fade_n = min(2 * SR, length)
+            audio[-fade_n:] *= (np.linspace(1.0, 0.0, fade_n, endpoint=True) ** 3)[
+                :, None
+            ]
+        # Yield bounded write/measurement blocks, not an additional phrase copy.
+        for offset in range(0, count, SR):
+            yield audio[offset : min(offset + SR, count)].copy()
+        del audio
+        if final:
+            break
+        start += step
+        index += 1
+
+
+def float_blocks(path: Path) -> Iterator[np.ndarray]:
+    with path.open("rb") as handle:
+        while raw := handle.read(SR * 2 * 8):
+            yield np.frombuffer(raw, dtype="<f8").reshape(-1, 2)
+
+
+def pcm_blocks(path: Path) -> Iterator[np.ndarray]:
+    with wave.open(str(path), "rb") as handle:
+        while raw := handle.readframes(SR):
+            yield (
+                np.frombuffer(raw, dtype="<i2").reshape(-1, 2).astype(np.float64)
+                / 32768.0
+            )
+
+
+def write_long_wav(
+    path: Path,
+    mood: str,
+    seconds: float,
+    bpm: int,
+    seed: int,
+    target: float,
+) -> tuple[int, int, float]:
+    """Spool floats, normalize globally, measure final PCM, publish atomically."""
+    from streaming_loudness import streaming_lufs
+
+    frames = sample_count(seconds)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Same filesystem as the destination, so os.replace never exposes a partial
+    # file. Temporary audio and energy records are removed on all error paths.
+    with tempfile.TemporaryDirectory(prefix=".music-", dir=path.parent) as directory:
+        temporary = Path(directory)
+        raw_path = temporary / "audio.f64"
+        final_path = temporary / "audio.wav"
+        peak = 0.0
+        written = 0
+        with raw_path.open("wb") as handle:
+            for audio in long_music_blocks(mood, frames, bpm, seed, target):
+                peak = max(peak, float(np.max(np.abs(audio))))
+                written += audio.shape[0]
+                handle.write(audio.astype("<f8", copy=False).tobytes())
+        if written != frames or peak <= 0 or not math.isfinite(peak):
+            raise MusicError("Не удалось синтезировать дорожку нужной длительности.")
+        loudness = streaming_lufs(float_blocks(raw_path), SR, directory=temporary)
+        gain = min(10.0 ** ((target - loudness) / 20.0), PEAK_CEILING / peak)
+        pcm_peak = 0
+        with wave.open(str(final_path), "wb") as handle:
+            handle.setparams((2, 2, SR, frames, "NONE", "not compressed"))
+            for audio in float_blocks(raw_path):
+                pcm = np.clip(np.round(audio * gain * 32767.0), -32768, 32767).astype(
+                    "<i2"
+                )
+                pcm_peak = max(pcm_peak, int(np.max(np.abs(pcm.astype(np.int32)))))
+                handle.writeframesraw(pcm.tobytes())
+        # Never report the average LUFS of parts, or the pre-quantization level.
+        loudness = streaming_lufs(pcm_blocks(final_path), SR, directory=temporary)
+        os.replace(final_path, path)
+    return frames, pcm_peak, loudness
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -379,8 +594,14 @@ def validate(args: argparse.Namespace) -> tuple[str, float, int, int, float, Pat
     if mood not in MOODS:
         names = ", ".join(MOODS)
         raise MusicError(f"Неизвестное настроение «{mood}». Доступны: {names}.")
-    if not math.isfinite(args.seconds) or args.seconds < MIN_SECONDS or args.seconds > MAX_SECONDS:
-        raise MusicError(f"Длительность должна быть от {MIN_SECONDS:g} до {MAX_SECONDS:g} секунд.")
+    if not math.isfinite(args.seconds) or args.seconds < MIN_SECONDS:
+        raise MusicError(
+            f"Длительность должна быть конечным числом от {MIN_SECONDS:g} секунды."
+        )
+    if args.seconds > MAX_WAV_FRAMES / SR:
+        raise MusicError(
+            "Дорожка превышает предел WAV RIFF (4 ГиБ, примерно 6 ч 45 мин)."
+        )
     if args.bpm is not None and not math.isfinite(args.bpm):
         raise MusicError("Темп --bpm должен быть числом.")
     if not math.isfinite(args.lufs) or args.lufs < -40 or args.lufs > -8:
@@ -390,29 +611,47 @@ def validate(args: argparse.Namespace) -> tuple[str, float, int, int, float, Pat
     out = Path(args.out)
     if out.suffix:
         raise MusicError("Путь --out указывают без расширения: файл будет <путь>.wav.")
-    return mood, float(args.seconds), clamp_bpm(mood, args.bpm), int(args.seed), float(args.lufs), Path(os.path.abspath(f"{args.out}.wav"))
+    return (
+        mood,
+        float(args.seconds),
+        clamp_bpm(mood, args.bpm),
+        int(args.seed),
+        float(args.lufs),
+        Path(os.path.abspath(f"{args.out}.wav")),
+    )
 
 
 def main(argv: list[str]) -> int:
     try:
         args = build_parser().parse_args(argv)
         mood, seconds, bpm, seed, target, path = validate(args)
-        audio, loudness = synthesize(mood, seconds, bpm, seed, target)
-        pcm = write_wav(path, audio)
-        peak = int(np.max(np.abs(pcm))) if pcm.size else 0
+        if seconds <= MAX_SECONDS:
+            audio, loudness = synthesize(mood, seconds, bpm, seed, target)
+            pcm = write_wav(path, audio)
+            frames = pcm.shape[0]
+            peak = int(np.max(np.abs(pcm))) if pcm.size else 0
+        else:
+            frames, peak, loudness = write_long_wav(
+                path, mood, seconds, bpm, seed, target
+            )
         payload = {
             "audioPath": str(path),
-            "durationMs": round(pcm.shape[0] / SR * 1000),
+            "durationMs": round(frames / SR * 1000),
             "bpm": bpm,
             "mood": mood,
             "seed": seed,
-            "peakDbfs": round(-math.inf if peak == 0 else 20.0 * math.log10(peak / 32768.0), 2),
+            "peakDbfs": round(
+                -math.inf if peak == 0 else 20.0 * math.log10(peak / 32768.0), 2
+            ),
             "integratedLufs": round(loudness, 2),
         }
         sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
         return 0
     except MusicError as error:
         sys.stderr.write(f"{error}\n")
+        return 1
+    except (OSError, ValueError, MemoryError) as error:
+        sys.stderr.write(f"Не удалось создать музыкальную дорожку: {error}\n")
         return 1
 
 

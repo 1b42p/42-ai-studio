@@ -209,7 +209,7 @@ describe("parseConfig", () => {
 describe("конфигурация судьи eve eval", () => {
   test("не требует конфигурации приложения и оставляет выбор модели eve", () => {
     expect(parseEvalJudgeConfig({})).toEqual({
-      model: undefined, baseUrl: undefined, apiKey: undefined,
+      model: undefined, baseUrl: undefined, apiKey: undefined, api: "openai",
     });
     expect(parseEvalJudgeConfig({
       EVAL_JUDGE_MODEL: "   ", DATABASE_URL: "not-a-url", SESSION_SECRET: "short",
@@ -222,7 +222,7 @@ describe("конфигурация судьи eve eval", () => {
       AGENT_MODEL_BASE_URL: "  https://api.example.com/v1  ",
       AGENT_MODEL_API_KEY: "judge-test-key",
     })).toEqual({
-      model: "judge/model", baseUrl: "https://api.example.com/v1", apiKey: "judge-test-key",
+      model: "judge/model", baseUrl: "https://api.example.com/v1", apiKey: "judge-test-key", api: "openai",
     });
     expect(parseEvalJudgeConfig({ EVAL_JUDGE_MODEL: "typesafe-ai/jev" }).model).toBe("typesafe-ai/jev");
     expect(parseConfig({ ...validEnv(), EVAL_JUDGE_MODEL: "judge/model" }).evalJudgeModel).toBe("judge/model");
