@@ -229,6 +229,47 @@ class MakeMusicTests(unittest.TestCase):
             self.assertIn("настроен", completed.stderr.casefold())
             self.assertEqual(completed.stdout, "")
 
+    def test_three_minute_cap_is_gone_and_an_hour_explains_parts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory) / "long"
+            completed = run_script(
+                "--mood",
+                "calm",
+                "--seconds",
+                "181",
+                "--seed",
+                "1",
+                "--lufs",
+                "-18",
+                "--out",
+                str(out),
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(completed.stdout)
+            self.assertEqual(payload["durationMs"], 181000)
+            self.assertAlmostEqual(payload["integratedLufs"], -18, delta=1)
+            frames, _samples = read_wav(out.with_suffix(".wav"))
+            self.assertAlmostEqual(frames / 44100, 181, delta=0.02)
+            refused = run_script("--mood", "calm", "--seconds", "3601", "--out", str(Path(directory) / "over"))
+            self.assertNotEqual(refused.returncode, 0)
+            self.assertIn("част", refused.stderr.casefold())
+
+    def test_offset_parts_rebuild_one_track(self) -> None:
+        import importlib.util
+
+        import numpy as np
+
+        spec = importlib.util.spec_from_file_location("make_music_parts", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        whole = module.premix_chunked("upbeat", 20, 112, 3, 0, 20)
+        left = module.premix_chunked("upbeat", 10, 112, 3, 0, 20)
+        right = module.premix_chunked("upbeat", 10, 112, 3, 10, 20)
+        joined = np.concatenate((left, right))
+        self.assertEqual(joined.shape, whole.shape)
+        self.assertLess(float(np.max(np.abs(whole - joined))), 1e-8)
+
 
 if __name__ == "__main__":
     unittest.main()

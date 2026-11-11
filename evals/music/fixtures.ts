@@ -31,10 +31,10 @@ const LOUDNORM = [
 ].join("\n");
 
 const SCENES = [
-  { durationMs: 2000, wordCount: 2 },
-  { durationMs: 4000, wordCount: 4 },
-  { durationMs: 2500, wordCount: 3 },
-  { durationMs: 2000, wordCount: 2 },
+  { durationMs: 2000, text: "Тихое утро" },
+  { durationMs: 4000, text: "Свет над чашкой кофе дома" },
+  { durationMs: 2500, text: "Тёплый пар над чаем" },
+  { durationMs: 2000, text: "Спокойный день" },
 ] as const;
 
 function bashResult(stdout: string, stderr = "") {
@@ -109,18 +109,24 @@ const INDEX_SRC = [
 
 function wordsFile(index: number): string {
   const scene = SCENES[index];
-  const weights = Array.from({ length: scene.wordCount }, (_, word) => 0.55 + ((word * 37 + index * 13) % 10) / 10);
+  const pieces = scene.text.split(" ");
+  const weights = pieces.map((_, word) => 0.55 + ((word * 37 + index * 13) % 10) / 10);
   const weightSum = weights.reduce((total, weight) => total + weight, 0);
   let cursor = 0;
-  const words = weights.map((weight) => {
+  const words = pieces.map((text, word) => {
     const startMs = Math.round(cursor);
-    cursor += (scene.durationMs * weight) / weightSum;
-    return { startMs, endMs: Math.min(scene.durationMs, Math.round(cursor)) };
+    cursor += (scene.durationMs * weights[word]) / weightSum;
+    return { text, startMs, endMs: Math.min(scene.durationMs, Math.round(cursor)) };
   });
   if (words.length > 0) words[words.length - 1] = { ...words[words.length - 1], endMs: scene.durationMs };
   return JSON.stringify({
     version: 1,
-    sentences: [{ startMs: 0, endMs: scene.durationMs }],
+    voice: "ru-RU-SvetlanaNeural",
+    language: "ru-RU",
+    format: "mp3",
+    durationMs: scene.durationMs,
+    text: scene.text,
+    sentences: [{ text: scene.text, startMs: 0, endMs: scene.durationMs }],
     words,
   }, null, 2);
 }
@@ -153,8 +159,8 @@ function speakScene(index: number): ToolStub {
         language: "ru-RU",
         format: "mp3",
         durationMs: scene.durationMs,
-        wordCount: scene.wordCount,
-        text: "",
+        wordCount: scene.text.split(" ").length,
+        text: scene.text,
         media: { audioId: `00000000-0000-4000-8000-00000000000${index + 1}` },
       },
     },

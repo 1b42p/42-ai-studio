@@ -1,7 +1,7 @@
 import { defineEval } from "eve/evals";
 import { MUSIC_TIMEOUT_MS, musicSession } from "./fixtures";
 
-const REQUEST = "ролик на 20 секунд с озвучкой и спокойной фоновой музыкой";
+const REQUEST = "ролик на 20 секунд про утренний кофе, с озвучкой и спокойной фоновой музыкой";
 
 export default Array.from({ length: 3 }, () =>
   defineEval({
