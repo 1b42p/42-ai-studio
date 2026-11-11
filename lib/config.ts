@@ -452,6 +452,14 @@ export function parseConfig(env: EnvRecord): AppConfig {
       if (data.AGENT_MODEL_CONTEXT_TOKENS === undefined) {
         addIssue("AGENT_MODEL_CONTEXT_TOKENS", "нужна вместе с AGENT_MODEL_BASE_URL");
       }
+    } else if (!data.APP_TEST_MODE && data.AGENT_MODEL_API === "anthropic") {
+      addIssue("AGENT_MODEL_BASE_URL", "нужна для AGENT_MODEL_API=anthropic");
+      if (data.AGENT_MODEL_API_KEY === undefined) {
+        addIssue("AGENT_MODEL_API_KEY", "нужна для AGENT_MODEL_API=anthropic");
+      }
+      if (data.AGENT_MODEL_CONTEXT_TOKENS === undefined) {
+        addIssue("AGENT_MODEL_CONTEXT_TOKENS", "нужна для AGENT_MODEL_API=anthropic");
+      }
     }
     if (!data.AGENT_MODEL_STREAMING && !data.AGENT_MODEL_BASE_URL && !data.APP_TEST_MODE) {
       addIssue("AGENT_MODEL_STREAMING", "false поддерживается только с AGENT_MODEL_BASE_URL");

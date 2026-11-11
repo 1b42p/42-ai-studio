@@ -341,6 +341,21 @@ describe("parseConfig: модель агента", () => {
     expect(issues[0]).toContain("AGENT_MODEL");
   });
 
+  test("AGENT_MODEL_API=anthropic без адреса, ключа и окна не стартует", () => {
+    const issues = issuesOf({ ...productionEnv(), AGENT_MODEL_API: "anthropic" });
+
+    expect(issues.join("\n")).toContain("AGENT_MODEL_BASE_URL");
+    expect(issues.join("\n")).toContain("AGENT_MODEL_API_KEY");
+    expect(issues.join("\n")).toContain("AGENT_MODEL_CONTEXT_TOKENS");
+    expect(parseConfig({
+      ...productionEnv(),
+      AGENT_MODEL_API: "anthropic",
+      AGENT_MODEL_BASE_URL: "https://api.example.com/v1",
+      AGENT_MODEL_API_KEY: "ключ",
+      AGENT_MODEL_CONTEXT_TOKENS: "128000",
+    }).agentModelApi).toBe("anthropic");
+  });
+
   test("AGENT_MODEL_BASE_URL требует ключ и окно контекста", () => {
     const issues = issuesOf({
       ...productionEnv(),

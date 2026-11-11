@@ -292,8 +292,8 @@ def room(buffer: np.ndarray, left: np.ndarray, right: np.ndarray) -> np.ndarray:
             shaped_impulse /= peak
         wet[:, channel] = fftconvolve(buffer[:, channel], shaped_impulse * 0.25, mode="full")[: buffer.shape[0]]
     mixed = buffer * 0.82 + wet * 0.22
-    mixed -= lfilter([1.0, -1.0], [1.0, -0.995], mixed, axis=0)
-    return mixed
+    # Однополюсный DC-blocker: на выходе остаётся сигнал без постоянной составляющей.
+    return lfilter([1.0, -1.0], [1.0, -0.995], mixed, axis=0)
 
 
 def apply_fades(buffer: np.ndarray) -> None:

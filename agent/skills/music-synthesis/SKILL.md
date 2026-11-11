@@ -44,10 +44,11 @@ python3 "$HOME/.agents/skills/music-synthesis/scripts/make_music.py" --mood calm
 60–80. Потоков — по `sandbox-vcpu`.
 
 Stdout — одна строка JSON: `audioPath`, `durationMs`, `bpm`, `mood`, `seed`,
-`peakDbfs`, `integratedLufs`. Путь бери из `audioPath`. `--seconds` — длительность
-ролика из просьбы, округлённая вверх. Когда `durationMs` совпал с этим числом
-с точностью до секунды, это длина файла: повторный запуск с другим `--seconds`
-не нужен, сцены укладываются в этот отрезок. Следующее действие — `edit_file`
+`peakDbfs`, `integratedLufs`. Путь бери из `audioPath`. `--seconds` — кадры
+`calculateMetadata`, делённые на fps, с округлением вверх. Пока этой длины нет,
+бери секунды из просьбы. Если файл короче композиции, запусти скрипт ещё раз
+с тем же seed и новой длиной. Если `durationMs` уже покрывает композицию,
+второй запуск не нужен. Следующее действие — `edit_file`
 для `src/ducking.ts`, `src/BackgroundMusic.tsx` и `src/Root.tsx`. Ненулевой код — музыки нет, скажи
 пользователю. Если `bash` вернул `status: "running"`, дочитай stdout из `outputDirectory`.
 
