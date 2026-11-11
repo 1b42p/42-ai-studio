@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import type { SandboxConnection } from "eve/sandbox/provider";
+import { loadConfig } from "@/lib/config";
 
 import {
   FakeStore,
@@ -22,8 +23,15 @@ export interface FakeMachine {
   readonly id: string;
   readonly state: string;
   readonly recoverable?: boolean;
+  readonly labels: Readonly<Record<string, string>>;
+  readonly lastActivityAt: Date | undefined;
+  readonly stoppedAt: Date | undefined;
   ready(): Promise<void>;
   start(): Promise<void>;
+  stop(): Promise<void>;
+  archive(): Promise<void>;
+  refreshActivity(): Promise<void>;
+  configureLifecycle(): Promise<void>;
   recover(): Promise<void>;
   delete(): Promise<void>;
   connect(callbacks: ConnectionCallbacks): SandboxConnection;
@@ -46,16 +54,52 @@ class FakeMachineHandle implements FakeMachine {
     return this.store.snapshot(this.id).recoverable;
   }
 
+  get labels(): Readonly<Record<string, string>> {
+    return { ...this.store.snapshot(this.id).labels };
+  }
+
+  get lastActivityAt(): Date | undefined {
+    const value = this.store.snapshot(this.id).lastActivityAt;
+    return value === undefined ? undefined : new Date(value);
+  }
+
+  get stoppedAt(): Date | undefined {
+    const machine = this.store.snapshot(this.id);
+    return machine.state !== "stopped" || machine.stoppedAt === undefined
+      ? undefined : new Date(machine.stoppedAt);
+  }
+
   async ready(): Promise<void> {
     // Fake lifecycle transitions are synchronous under the shared store lock.
   }
 
   async start(): Promise<void> {
+    if (await this.store.consumeStartQuotaFailure()) {
+      throw Object.assign(new Error("Total CPU limit exceeded."), { status: 400 });
+    }
     await this.store.setState(this.id, "started");
+    await this.configureLifecycle();
+  }
+
+  async stop(): Promise<void> {
+    await this.store.setState(this.id, "stopped");
+  }
+
+  async archive(): Promise<void> {
+    await this.store.setState(this.id, "archived");
+  }
+
+  async refreshActivity(): Promise<void> {
+    await this.store.refreshActivity(this.id);
+  }
+
+  async configureLifecycle(): Promise<void> {
+    await this.store.configureLifecycle(this.id, lifecycleIntervals());
   }
 
   async recover(): Promise<void> {
-    await this.start();
+    await this.store.setState(this.id, "started");
+    await this.configureLifecycle();
   }
 
   async delete(): Promise<void> {
@@ -167,11 +211,8 @@ class FakeMachineHandle implements FakeMachine {
         await this.store.transaction((data) => {
           const machine = this.store.find(data, this.id);
           machine.calls.push({ op: "stop", at: Date.now() });
-          if (machine.state !== "stopped") {
-            data.counters.stopped++;
-            machine.state = "stopped";
-          }
         });
+        await this.stop();
         await callbacks.onStop();
       },
       close: async () => {},
@@ -238,9 +279,20 @@ function fakeProcess(rule: Pick<StoredRule, "stdout" | "stderr" | "exitCode" | "
   };
 }
 
+function lifecycleIntervals() {
+  const config = loadConfig();
+  return {
+    autoStopInterval: config.sandboxIdleStopMinutes,
+    autoArchiveInterval: config.sandboxArchiveAfterDays * 24 * 60,
+  };
+}
+
 export function getFakeBackend(directory: string, apiKey: string, resources: FakeResources) {
   const store = new FakeStore(directory);
   return {
+    async *list(): AsyncIterable<FakeMachine> {
+      for (const record of await store.listMachines(apiKey)) yield new FakeMachineHandle(store, record);
+    },
     get: async (idOrName: string): Promise<FakeMachine> => {
       const failure = await store.consumeGetFailure();
       if (failure !== undefined) {
@@ -248,11 +300,14 @@ export function getFakeBackend(directory: string, apiKey: string, resources: Fak
           status: failure === "unauthorized" ? 401 : 503,
         });
       }
-      const record = await store.transaction((data) => store.find(data, idOrName));
+      const record = (await store.listMachines(apiKey)).find((machine) =>
+        machine.id === idOrName || machine.name === idOrName,
+      );
+      if (record === undefined) throw Object.assign(new Error("Fake Daytona: not found"), { status: 404 });
       return new FakeMachineHandle(store, record);
     },
     create: async ({ name, appSessionId }: { name: string; appSessionId: string }): Promise<FakeMachine> => {
-      const { machine, failure } = await store.create(name, appSessionId, apiKey, resources);
+      const { machine, failure } = await store.create(name, appSessionId, apiKey, resources, lifecycleIntervals());
       if (failure === "quota") {
         // Та же форма, по которой провайдер узнаёт исчерпанную квоту Daytona.
         throw Object.assign(new Error("Total CPU/memory/disk limit exceeded"), { status: 400 });

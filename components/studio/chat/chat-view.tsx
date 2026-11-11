@@ -19,6 +19,7 @@ import {
 import { InputPrompt } from "@/components/studio/chat/input-prompt";
 import { inlineQuestionIds } from "@/components/studio/chat/input-routing";
 import { MessageRow } from "@/components/studio/chat/message-row";
+import { SandboxStatusBanner } from "@/components/studio/chat/sandbox-status-banner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +40,7 @@ import {
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
+import type { SandboxStatus } from "@/lib/sandbox/status";
 
 /** Готовое состояние беседы: компонент не вызывает хук сам. */
 export interface ChatViewAgent {
@@ -66,6 +68,8 @@ export interface ChatViewProps {
   ended?: boolean;
   /** Сессия приложения: карточки команд опрашивают задания из неё. */
   appSessionId?: string | null;
+  /** Состояние песочницы приходит от обёртки, без сети внутри представления. */
+  sandboxStatus?: SandboxStatus | null;
   /** Файлы из ответов агента; без них ссылки показывают «Файл недоступен». */
   messageFiles?: MessageFilesState;
   /** Загрузчик вложений поля ввода; без него скрепка неактивна. */
@@ -190,6 +194,7 @@ export function ChatView({
   inputDisabled = false,
   ended = false,
   appSessionId = null,
+  sandboxStatus,
   messageFiles,
   attachments,
   onSend,
@@ -415,6 +420,7 @@ export function ChatView({
           {pinnedInputs.map((input) => (
             <InputPrompt disabled={disabled} input={input} key={input.request.requestId} onRespond={onRespond} />
           ))}
+          <SandboxStatusBanner status={sandboxStatus} />
           {finished || expired ? (
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm text-muted-foreground">

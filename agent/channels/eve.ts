@@ -15,6 +15,7 @@ import { authenticateEval } from "../lib/eval-auth";
 import { getUserFromRequest } from "@/lib/auth/request";
 import { loadConfig, readUploadMaxBytes } from "@/lib/config";
 import type { User } from "@/lib/db/schema";
+import { removeSandboxQueueEntry } from "@/lib/sandbox/queue-state";
 import { findAgentSessionByEveId } from "@/lib/sessions/agent-sessions";
 import { findAppSessionByEveId } from "@/lib/sessions/service";
 import {
@@ -115,6 +116,9 @@ export function studioAuth(): AuthFn<Request> {
     } else if (route.kind === "session") {
       try {
         await assertEveSessionAccess(user, route.sessionId, route.action);
+        if (request.method === "POST" && /\/session\/[^/]+\/cancel\/?$/.test(new URL(request.url).pathname)) {
+          await removeSandboxQueueEntry(route.sessionId, user.id);
+        }
       } catch (error) {
         forbidden(error);
       }

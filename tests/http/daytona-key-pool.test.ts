@@ -14,11 +14,13 @@ import {
   deleteKey,
   disableKey,
   enableKey,
+  exhaustPool,
   pickKey,
   refreshUsage,
 } from "../../agent/lib/daytona-key-pool";
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
 import { loadConfig } from "../../lib/config";
+import { getSqlClient } from "../../lib/db/client";
 import {
   appSessions,
   daytonaKeys,
@@ -28,7 +30,6 @@ import {
   type User,
 } from "../../lib/db/schema";
 import { DAYTONA_KEY_PURPOSE, decryptSecret } from "../../lib/secrets";
-import { StudioSandboxError } from "../../lib/sandbox/errors";
 import { getFakeBackend } from "../../lib/sandbox/fake";
 import { appOutput } from "./support/app";
 import { loginAs } from "./support/auth";
@@ -77,7 +78,10 @@ async function waitForReservation(appSessionId: string): Promise<void> {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
     const [row] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, appSessionId));
-    if (row?.state === "starting" && row.daytonaSandboxId === "") return;
+    const creating = await getSqlClient()`select 1 from pg_locks
+      where locktype = 'advisory' and classid = 1 and granted
+      and objid::bigint = (hashtext(${appSessionId})::bigint & 4294967295)`;
+    if (row?.state === "starting" && row.daytonaSandboxId === "" && creating.length) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("Резерв не появился");
@@ -124,7 +128,7 @@ const ARTIFACT = {
 };
 
 describe("выбор ключа по свободной квоте", () => {
-  test("две сессии расходятся по ключам, третья получает capacity_exhausted", async () => {
+  test("две сессии расходятся по ключам, для третьей пул возвращает no_capacity", async () => {
     const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });
     const b = await createDaytonaKey({ label: "B", apiKey: KEY_B });
     await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
@@ -136,23 +140,26 @@ describe("выбор ключа по свободной квоте", () => {
     expectRead(await sendAndWait(user, first.id, READ_FILE), "Первый ключ");
     expect((await sandboxRow(first.id)).daytonaKeyId).toBe(a.id);
 
-    const second = await createSessionAs(user);
+    const secondUser = await createUser();
+    const second = await createSessionAs(secondUser);
     await fakeSandbox.seed(second.id, { "/workspace/notes.txt": "Второй ключ\n" });
-    expectRead(await sendAndWait(user, second.id, READ_FILE), "Второй ключ");
+    const secondEvents = await sendAndWait(secondUser, second.id, READ_FILE);
+    expectRead(secondEvents, "Второй ключ");
     expect((await sandboxRow(second.id)).daytonaKeyId).toBe(b.id);
 
     const third = await createSessionAs(user);
-    const events = await sendAndWait(user, third.id, READ_FILE);
-    const result = toolResult(events);
-    expect(result.status).toBe("failed");
-    expect(JSON.stringify(result)).toContain(
-      "capacity_exhausted: Сейчас все песочницы заняты. Попробуйте позже.",
-    );
+    await refreshUsage(a.id, { force: true });
+    await refreshUsage(b.id, { force: true });
+    expect(await pickKey(ONE_SLOT, { appSessionId: third.id })).toEqual({ kind: "no_capacity" });
+    expect((await sandboxRow(first.id)).state).toBe("started");
+    expect((await sandboxRow(second.id)).state).toBe("started");
+    expect(await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, third.id)))
+      .toHaveLength(0);
 
     expect((await fakeSandbox.counters()).created).toBe(2);
-    // Ключ A не трогали повторно: попытки — A (первый ход), A+B (второй), B (третий).
-    expect((await fakeSandbox.counters()).createAttempts).toBe(4);
-    await expectNoSecret(user, third.id, events);
+    // Сверка очереди видит занятые квоты до создания: по одной попытке на ключ.
+    expect((await fakeSandbox.counters()).createAttempts).toBe(2);
+    await expectNoSecret(secondUser, second.id, secondEvents);
   }, 60_000);
 
   test("остановка песочницы не освобождает диск, архивация освобождает", async () => {
@@ -174,9 +181,9 @@ describe("выбор ключа по свободной квоте", () => {
     });
 
     const second = await createSessionAs(user);
-    const refused = await sendAndWait(user, second.id, READ_FILE);
-    expect(JSON.stringify(toolResult(refused))).toContain("capacity_exhausted");
+    expect(await pickKey(ONE_SLOT, { appSessionId: second.id })).toEqual({ kind: "no_capacity" });
     expect((await fakeSandbox.counters()).created).toBe(1);
+    expect((await fakeSandbox.counters()).createAttempts).toBe(1);
 
     await fakeSandbox.archive(first.id);
     const archived = await refreshUsage(a.id, { force: true });
@@ -186,6 +193,7 @@ describe("выбор ключа по свободной квоте", () => {
     expectRead(await sendAndWait(user, second.id, READ_FILE), "После архивации");
     expect((await sandboxRow(second.id)).daytonaKeyId).toBe(a.id);
     expect((await fakeSandbox.counters()).created).toBe(2);
+    expect((await fakeSandbox.counters()).createAttempts).toBe(2);
   }, 60_000);
 
   test("использование кэшируется на 30 секунд, force обходит кэш, forbidden сохраняет числа", async () => {
@@ -270,9 +278,16 @@ describe("выбор ключа по свободной квоте", () => {
     await fakeSandbox.seed(first.id, { "/workspace/notes.txt": "A\n" });
     expectRead(await sendAndWait(user, first.id, READ_FILE), "A");
 
-    const second = await createSessionAs(user);
+    // Очередь принудительно обновляет usage. Сохраняем заведомо устаревшие
+    // числа при отказе usage: A выглядит свободным, но Daytona уже заполнена.
+    await fakeSandbox.setQuota(KEY_A, { cpu: 4, memoryGb: 8, diskGb: 16 });
+    await refreshUsage(a.id, { force: true });
+    await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+    await fakeSandbox.failUsage(KEY_A, "forbidden");
+    const secondUser = await createUser();
+    const second = await createSessionAs(secondUser);
     await fakeSandbox.seed(second.id, { "/workspace/notes.txt": "B\n" });
-    expectRead(await sendAndWait(user, second.id, READ_FILE), "B");
+    expectRead(await sendAndWait(secondUser, second.id, READ_FILE), "B");
     expect((await sandboxRow(second.id)).daytonaKeyId).toBe(b.id);
 
     const exhausted = await keyRow(a.id);
@@ -280,10 +295,10 @@ describe("выбор ключа по свободной квоте", () => {
     expect(exhausted.exhaustedUntil!.getTime()).toBeGreaterThan(Date.now() + 50_000);
 
     const third = await createSessionAs(user);
-    expect(JSON.stringify(toolResult(await sendAndWait(user, third.id, READ_FILE))))
-      .toContain("capacity_exhausted");
-    // B — последняя попытка; исчерпанный A заново не выбирался.
-    expect((await fakeSandbox.counters()).createAttempts).toBe(4);
+    await refreshUsage(b.id, { force: true });
+    expect(await pickKey(ONE_SLOT, { appSessionId: third.id })).toEqual({ kind: "no_capacity" });
+    // Успех A, отказ устаревшего A и успех B; исчерпанный A больше не трогали.
+    expect((await fakeSandbox.counters()).createAttempts).toBe(3);
   }, 60_000);
 });
 
@@ -308,10 +323,12 @@ describe("отключение и удаление", () => {
     expectRead(await sendAndWait(user, first.id, READ_FILE), "Файл на A");
     expect((await sandboxRow(first.id)).daytonaSandboxId).toBe(original.daytonaSandboxId);
 
-    const second = await createSessionAs(user);
+    const secondUser = await createUser();
+    const second = await createSessionAs(secondUser);
     await fakeSandbox.seed(second.id, { "/workspace/notes.txt": "Новая на B\n" });
-    expectRead(await sendAndWait(user, second.id, READ_FILE), "Новая на B");
+    expectRead(await sendAndWait(secondUser, second.id, READ_FILE), "Новая на B");
     expect((await sandboxRow(second.id)).daytonaKeyId).toBe(b.id);
+    expect((await sandboxRow(first.id)).state).toBe("started");
 
     await enableKey(a.id);
     expect((await keyRow(a.id)).enabled).toBe(true);
@@ -483,15 +500,22 @@ describe("организации и отказы", () => {
     expect((await sandboxRow(one.id)).daytonaKeyId).toBe(first.id);
 
     const two = await createSessionAs(user);
-    expect(JSON.stringify(toolResult(await sendAndWait(user, two.id, READ_FILE))))
-      .toContain("capacity_exhausted");
+    await refreshUsage(first.id, { force: true });
+    expect(await pickKey(ONE_SLOT, { appSessionId: two.id })).toEqual({ kind: "no_capacity" });
     expect((await fakeSandbox.counters()).created).toBe(1);
-    // Первый ход создал A (1 попытка), второй упёрся в квоту A (2-я) и не
-    // пробовал B: иначе была бы третья попытка и вторая песочница.
-    expect((await fakeSandbox.counters()).createAttempts).toBe(2);
-    // Представитель пула исчерпан — второй ключ той же организации пропущен.
+    // Полный представитель исключает B без лишней попытки создания.
+    expect((await fakeSandbox.counters()).createAttempts).toBe(1);
+    await exhaustPool(first.id);
+    // Отметка распространяется на оба ключа, даже если квота освободилась.
     expect((await keyRow(first.id)).exhaustedUntil).not.toBeNull();
     expect((await keyRow(second.id)).exhaustedUntil).not.toBeNull();
+    expect((await keyRow(second.id)).exhaustedUntil)
+      .toEqual((await keyRow(first.id)).exhaustedUntil);
+    await fakeSandbox.archive(one.id);
+    await refreshUsage(first.id, { force: true });
+    await refreshUsage(second.id, { force: true });
+    expect(await pickKey(ONE_SLOT, { appSessionId: two.id })).toEqual({ kind: "no_capacity" });
+    expect((await fakeSandbox.counters()).createAttempts).toBe(1);
   }, 60_000);
 
   test("unauthorized у первого ключа пропускает его", async () => {
@@ -674,63 +698,70 @@ test("сбой очистки после создания оставляет в�
   }
 }, 60_000);
 
-test("десять одновременных стартов не занимают весь пул соединений", async () => {
+test("десять одновременных резервов не занимают весь пул соединений", async () => {
   await createDaytonaKey({ apiKey: KEY_A });
   await fakeSandbox.setQuota(KEY_A, { cpu: 10, memoryGb: 10, diskGb: 30 });
-  const user = await createUser();
-  const eveSessions = Array.from({ length: 10 }, () => randomUUID());
+  const users = await Promise.all(Array.from({ length: 10 }, () => createUser()));
   const rows = await db().insert(appSessions).values(
-    eveSessions.map((eveSessionId) => ({ userId: user.id, eveSessionId })),
+    users.map((user) => ({ userId: user.id, eveSessionId: randomUUID() })),
   ).returning();
+  const picked = await Promise.all(rows.map((row) => pickKey(ONE_SLOT, { appSessionId: row.id })));
+  expect(picked.filter((result) => result.kind === "key")).toHaveLength(2);
+  expect(picked.filter((result) => result.kind === "no_capacity")).toHaveLength(8);
+  expect((await fakeSandbox.counters()).createAttempts).toBe(0);
   const lifecycle = createDaytonaLifecycle();
   const settled = await Promise.allSettled(
-    rows.map((row) => lifecycle.start(sessionContext(row.eveSessionId!), undefined, ARTIFACT)),
+    rows.filter((_, index) => picked[index].kind === "key")
+      .map((row) => lifecycle.start(sessionContext(row.eveSessionId!), undefined, ARTIFACT)),
   );
   const opened = settled.filter((result) => result.status === "fulfilled");
-  const refused = settled.filter((result) => result.status === "rejected");
-  expect(opened).toHaveLength(2);
-  expect(refused).toHaveLength(8);
-  for (const result of refused) {
-    if (result.status !== "rejected") continue;
-    expect((result.reason as StudioSandboxError).code).toBe("capacity_exhausted");
-  }
-  expect((await fakeSandbox.counters()).created).toBe(2);
-  for (const result of opened) {
-    if (result.status === "fulfilled") await result.value.connection.close?.();
+  try {
+    expect(settled.filter((result) => result.status === "rejected")).toEqual([]);
+    expect(opened).toHaveLength(2);
+    expect((await fakeSandbox.counters()).created).toBe(2);
+    expect((await fakeSandbox.counters()).createAttempts).toBe(2);
+    const machines = await db().select().from(sandboxes);
+    expect(machines).toHaveLength(2);
+    expect(machines.every((row) => row.state === "started")).toBe(true);
+  } finally {
+    for (const result of opened) {
+      if (result.status === "fulfilled") await result.value.connection.close?.();
+    }
   }
 }, 60_000);
 
-test("пять одновременных стартов при двух ключах дают ровно две песочницы", async () => {
+test("пять одновременных резервов при двух ключах дают ровно две песочницы", async () => {
   const a = await createDaytonaKey({ label: "A", apiKey: KEY_A });
   const b = await createDaytonaKey({ label: "B", apiKey: KEY_B });
   await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
   await fakeSandbox.setQuota(KEY_B, ONE_SLOT);
-  const user = await createUser();
-  const eveSessions = Array.from({ length: 5 }, () => randomUUID());
+  const users = await Promise.all(Array.from({ length: 5 }, () => createUser()));
   const rows = await db().insert(appSessions).values(
-    eveSessions.map((eveSessionId) => ({ userId: user.id, eveSessionId })),
+    users.map((user) => ({ userId: user.id, eveSessionId: randomUUID() })),
   ).returning();
 
+  const picked = await Promise.all(rows.map((row) => pickKey(ONE_SLOT, { appSessionId: row.id })));
+  expect(picked.filter((result) => result.kind === "key")).toHaveLength(2);
+  expect(picked.filter((result) => result.kind === "no_capacity")).toHaveLength(3);
+  expect((await fakeSandbox.counters()).createAttempts).toBe(0);
   const lifecycle = createDaytonaLifecycle();
   const settled = await Promise.allSettled(
-    rows.map((row) => lifecycle.start(sessionContext(row.eveSessionId!), undefined, ARTIFACT)),
+    rows.filter((_, index) => picked[index].kind === "key")
+      .map((row) => lifecycle.start(sessionContext(row.eveSessionId!), undefined, ARTIFACT)),
   );
   const opened = settled.filter((result) => result.status === "fulfilled");
-  const refused = settled.filter((result) => result.status === "rejected");
-  expect(opened).toHaveLength(2);
-  expect(refused).toHaveLength(3);
-  for (const result of refused) {
-    expect(result.status).toBe("rejected");
-    if (result.status !== "rejected") continue;
-    expect(result.reason).toBeInstanceOf(StudioSandboxError);
-    expect((result.reason as StudioSandboxError).code).toBe("capacity_exhausted");
-  }
-
-  expect((await fakeSandbox.counters()).created).toBe(2);
-  const keys = await db().select().from(sandboxes);
-  expect(new Set(keys.map((row) => row.daytonaKeyId))).toEqual(new Set([a.id, b.id]));
-
-  for (const result of opened) {
-    if (result.status === "fulfilled") await result.value.connection.close?.();
+  try {
+    expect(settled.filter((result) => result.status === "rejected")).toEqual([]);
+    expect(opened).toHaveLength(2);
+    expect((await fakeSandbox.counters()).created).toBe(2);
+    expect((await fakeSandbox.counters()).createAttempts).toBe(2);
+    const keys = await db().select().from(sandboxes);
+    expect(keys).toHaveLength(2);
+    expect(keys.every((row) => row.state === "started")).toBe(true);
+    expect(new Set(keys.map((row) => row.daytonaKeyId))).toEqual(new Set([a.id, b.id]));
+  } finally {
+    for (const result of opened) {
+      if (result.status === "fulfilled") await result.value.connection.close?.();
+    }
   }
 }, 60_000);

@@ -148,13 +148,19 @@ function fits(usage: KeyUsage | null, reserved: KeyNeed, need: KeyNeed): boolean
  */
 export async function pickKey(
   need: KeyNeed,
-  options: { appSessionId?: string } = {},
+  options: {
+    appSessionId?: string; keyId?: string; launch?: SandboxLaunch;
+    queueEntryId?: string;
+  } = {},
 ): Promise<PickKeyResult> {
   const db = getDb();
   const candidates = await db
     .select({ id: daytonaKeys.id })
     .from(daytonaKeys)
-    .where(and(eq(daytonaKeys.enabled, true), isNull(daytonaKeys.deletedAt)))
+    .where(and(
+      options.keyId ? eq(daytonaKeys.id, options.keyId) : eq(daytonaKeys.enabled, true),
+      isNull(daytonaKeys.deletedAt),
+    ))
     .orderBy(asc(daytonaKeys.createdAt), asc(daytonaKeys.id));
   if (candidates.length === 0) return { kind: "no_key" };
 
@@ -181,6 +187,19 @@ export async function pickKey(
 
   const sql = getSqlClient();
   const picked = await sql.begin(async (tx) => {
+    if (options.queueEntryId !== undefined) {
+      await tx`select pg_advisory_xact_lock(20261110, 24)`;
+      const entries = await tx`
+        select q.id from queue_entries q
+        where q.id = ${options.queueEntryId} and q.heartbeat_at > now() - interval '60 seconds'
+        and not exists (
+          select 1 from sandboxes s join app_sessions a on a.id = s.app_session_id
+          where a.user_id = q.user_id and a.id <> q.app_session_id
+          and s.state in ('starting', 'started')
+        ) and not exists (select 1 from sandboxes s where s.app_session_id = q.app_session_id
+          and s.maintenance_until > now()) for update`;
+      if (entries.length === 0) return { kind: "no_capacity" } as const;
+    }
     for (const pool of candidatePools) {
       await tx`select pg_advisory_xact_lock(${POOL_LOCK}::int, hashtext(${pool}))`;
     }
@@ -188,9 +207,24 @@ export async function pickKey(
     const rows = (await tx`
       select id, usage, exhausted_until as "exhaustedUntil"
       from daytona_keys
-      where enabled = true and deleted_at is null
+       where (${options.keyId ?? null}::uuid is not null and id = ${options.keyId ?? null}::uuid
+         or ${options.keyId ?? null}::uuid is null and enabled = true)
+         and deleted_at is null
       order by created_at, id`) as CandidateRow[];
     if (rows.length === 0) return { kind: "no_key" } as const;
+
+    const earlier = options.queueEntryId === undefined ? [] : (await tx`
+      select q.need, q.daytona_key_id as "keyId" from queue_entries q
+      where q.heartbeat_at > now() - interval '60 seconds'
+      and (q.enqueued_at, q.id) < (
+        select enqueued_at, id from queue_entries where id = ${options.queueEntryId}
+      ) and not exists (
+        select 1 from sandboxes s join app_sessions a on a.id = s.app_session_id
+        where a.user_id = q.user_id and a.id <> q.app_session_id
+          and s.state in ('starting', 'started')
+      ) and not exists (select 1 from sandboxes s where s.app_session_id = q.app_session_id
+        and s.maintenance_until > now())
+    `) as Array<{ need: SandboxLaunch; keyId: string | null }>;
 
     const starting = (await tx`
       select app_session_id as "appSessionId", daytona_key_id as "daytonaKeyId",
@@ -232,19 +266,40 @@ export async function pickKey(
       // Отозванный или истёкший ключ не выбирается, даже если числа прежние.
       if (usage?.error === "unauthorized") continue;
       if (!fits(pool.usage, pool.reserved, need)) continue;
+      const olderCanUsePool = earlier.some((entry) => {
+        if (entry.keyId === null) {
+          if (entry.need !== "create" || !keys.some((key) => key.enabled && key.deletedAt === null &&
+              storedUsage(key.usage)?.error !== "unauthorized" && organizationByKey.get(key.id) === poolId)) {
+            return false;
+          }
+        } else {
+          const key = keys.find((key) => key.id === entry.keyId);
+          if (!key || key.deletedAt !== null || storedUsage(key.usage)?.error === "unauthorized" ||
+              organizationByKey.get(entry.keyId) !== poolId) return false;
+        }
+        return fits(pool.usage, pool.reserved, {
+          ...sandboxSize, diskGb: entry.need === "wake" ? 0 : sandboxSize.diskGb,
+        });
+      });
+      if (olderCanUsePool) continue;
 
       if (options.appSessionId !== undefined) {
         await tx`
           insert into sandboxes
             (app_session_id, daytona_key_id, daytona_sandbox_id, state, starting_since, starting_kind, last_active_at)
-          values (${options.appSessionId}, ${row.id}, '', 'starting', now(), 'create', now())
+          values (${options.appSessionId}, ${row.id}, '', 'starting', now(), ${options.launch ?? "create"}, now())
           on conflict (app_session_id) do update set
             daytona_key_id = excluded.daytona_key_id,
-            daytona_sandbox_id = '',
+            daytona_sandbox_id = case when ${options.launch ?? "create"} = 'create' then '' else sandboxes.daytona_sandbox_id end,
             state = 'starting',
             starting_since = excluded.starting_since,
             starting_kind = excluded.starting_kind,
-            last_active_at = excluded.last_active_at`;
+             last_active_at = excluded.last_active_at`;
+        if (options.queueEntryId !== undefined) {
+          await tx`update sandboxes set slot_request_id = ${options.queueEntryId}
+            where app_session_id = ${options.appSessionId}`;
+          await tx`delete from queue_entries where id = ${options.queueEntryId}`;
+        }
       }
       return { kind: "key", keyId: row.id, usage } as const;
     }
@@ -255,7 +310,7 @@ export async function pickKey(
   // Дата из raw-запроса может быть строкой, поэтому итоговая строка читается
   // обычным клиентом Drizzle — он приводит типы колонок.
   const [key] = await db.select().from(daytonaKeys).where(eq(daytonaKeys.id, picked.keyId));
-  if (key === undefined || !key.enabled || key.deletedAt !== null) {
+  if (key === undefined || (options.keyId === undefined && !key.enabled) || key.deletedAt !== null) {
     return { kind: "no_capacity" };
   }
   return { kind: "key", key, usage: picked.usage };
