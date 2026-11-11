@@ -56,6 +56,33 @@ function run(executable, args) {
   return { status: "completed", exitCode: result.status, stdout: result.stdout.replaceAll(root, virtual),
     stderr: result.stderr.replaceAll(root, virtual), truncated: false };
 }
+function recordPixels() {
+  const pixels = {};
+  const singlePixels = {};
+  const bootstrap = run("uv", ["run", "--no-project", "--with", "pillow==12.0.0", "python", "-c", "pass"]);
+  if (bootstrap.exitCode !== 0) throw new Error(bootstrap.stderr);
+  const checker = path.join(repo, "agent/skills/frame-review/scripts/check-frames.py");
+  const check = inputs => {
+    const output = run("uv", ["run", "--no-project", "--with", "pillow==12.0.0", checker, ...inputs]);
+    if (output.exitCode !== 0) throw new Error(`Pixel checker failed: ${output.stderr}`);
+    return output;
+  };
+  for (const absolute of [false, true]) {
+    const style = absolute ? "absolute" : "relative";
+    const inputs = frames.frames.map(frame => `${absolute ? `${virtual}/` : ""}out/frames-1/${path.basename(frame.path)}`);
+    pixels[style] = check(inputs);
+    singlePixels[style] = inputs.map(input => check([input]));
+  }
+  return { pixels, singlePixels, checkerSha256: hash(fs.readFileSync(checker)) };
+}
+// Reuse the immutable JPEGs; never rerender or recapture unrelated audio/probes.
+if (process.argv.includes("--pixels-only")) {
+  const file = path.join(__dirname, "contract-records.json");
+  const records = JSON.parse(fs.readFileSync(file, "utf8"));
+  fs.writeFileSync(file, JSON.stringify({ ...records, ...recordPixels() }, null, 2) + "\n");
+  console.log(JSON.stringify({ pixelSets: 2, individualPixels: 12, sourceSha256: project.sourceSha256 }));
+  process.exit(0);
+}
 const probes = [];
 function probe(id, files, entries, format, select, full = false, quiet = true) {
   const args = ["ffprobe", ...(quiet ? ["-v", "error"] : []), ...(select ? ["-select_streams", select] : []),
@@ -98,15 +125,7 @@ for (const file of stems) {
     levels.push({ file, scope, args, output, measurement });
   }
 }
-const pixels = {};
-const bootstrap = run("uv", ["run", "--no-project", "--with", "pillow==12.0.0", "python", "-c", "pass"]);
-if (bootstrap.exitCode !== 0) throw new Error(bootstrap.stderr);
-for (const absolute of [false, true]) {
-  const inputs = frames.frames.map(frame => `${absolute ? `${virtual}/` : ""}out/frames-1/${path.basename(frame.path)}`);
-  const output = run("uv", ["run", "--no-project", "--with", "pillow==12.0.0", path.join(repo, "agent/skills/frame-review/scripts/check-frames.py"), ...inputs]);
-  if (output.exitCode !== 0) throw new Error(`Pixel checker failed: ${output.stderr}`);
-  pixels[absolute ? "absolute" : "relative"] = output;
-}
+const pixelRecords = recordPixels();
 const diagnostics = [];
 for (const args of [
   ["ls", "-la"], ["ls", "-la", "src"], ["ls", "-la", `${virtual}/public/music/bg.wav`],
@@ -115,7 +134,6 @@ for (const args of [
 ]) diagnostics.push({ args, output: run(args[0], args.slice(1)) });
 const decodeFailure = run(cli, ["ffmpeg", "-i", "out/final.mp4", "-f", "null", "-"]);
 const records = { sourceSha256: project.sourceSha256, mediaInputs, artifacts: Object.fromEntries(Object.entries(audit.files).map(([file, metadata]) => [file, metadata.sha256])),
-  checkerSha256: hash(fs.readFileSync(path.join(repo, "agent/skills/frame-review/scripts/check-frames.py"))),
-  probes, levels, pixels, diagnostics, decodeFailure };
+  ...pixelRecords, probes, levels, diagnostics, decodeFailure };
 fs.writeFileSync(path.join(__dirname, "contract-records.json"), JSON.stringify(records, null, 2) + "\n");
 console.log(JSON.stringify({ probes: probes.length, levels: levels.length, diagnostics: diagnostics.length, sourceSha256: project.sourceSha256 }));

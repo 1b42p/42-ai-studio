@@ -269,24 +269,42 @@ function levelProof(levels: Level[]) {
 }
 export const musicLevelsCompleted = (events: readonly EveEvalStreamEvent[]) => !!levelProof(musicLevelEvidence(events).levels);
 
-function pixelsChecked(call: CompletedCall): boolean {
-  if (call.name !== "bash" || !String(call.input.command).includes("check-frames.py") || typeof call.output.stdout !== "string") return false;
+function checkedPixels(call: CompletedCall): string[] | undefined {
+  if (call.name !== "bash" || call.output.truncated === true || typeof call.output.stdout !== "string") return undefined;
+  const commands = shellWords(call.input.command);
+  const words = commands?.at(-1);
+  if (!commands || commands.length > 2 || (commands.length === 2 && commands[0].join(" ") !== `cd ${P}`) ||
+    !words || !/^python3?$/u.test(words[0]) ||
+    words[1]?.replace(/^\$HOME/u, "/root") !== "/root/.agents/skills/frame-review/scripts/check-frames.py") return undefined;
+  const inputs = words.slice(2).flatMap(path => path === "out/frames-1/*.jpeg" || path === `${P}/out/frames-1/*.jpeg`
+    ? MUSIC_FRAMES.map(frame => `${path.slice(0, -6)}${frameName(frame)}`) : [path]);
+  if (!inputs.length || inputs.length > MUSIC_FRAMES.length || new Set(inputs.map(projectPath)).size !== inputs.length) return undefined;
   const rows: Record<string, unknown>[] = [];
   try {
     for (const line of call.output.stdout.split("\n")) if (line.startsWith("{")) {
       const row: unknown = JSON.parse(line);
-      if (!record(row)) return false;
+      if (!record(row)) return undefined;
       rows.push(row);
     }
-  } catch { return false; }
-  return rows.length === MUSIC_FRAMES.length && MUSIC_FRAMES.every(frame => {
-    const matching = rows.filter(row => typeof row.path === "string" && projectPath(row.path) === `${P}/out/frames-1/${frameName(frame)}`);
-    if (matching.length !== 1) return false;
-    const row = matching[0];
+  } catch { return undefined; }
+  if (rows.length !== inputs.length) return undefined;
+  const valid = rows.every((row, index) => {
+    if (row.path !== inputs[index] || !MUSIC_FRAMES.some(frame => projectPath(inputs[index]) === `${P}/out/frames-1/${frameName(frame)}`)) return false;
     if (row.suspect !== null || row.error !== undefined || !Array.isArray(row.extrema) || row.extrema.length !== 3) return false;
     return row.extrema.every(pair => Array.isArray(pair) && pair.length === 2 && pair.every(value => Number.isInteger(value) && value >= 0 && value <= 255) && pair[1] >= pair[0]) &&
       row.extrema.some(pair => pair[1] - pair[0] > 2) && row.extrema.some(pair => pair[1] > 8);
   });
+  return valid ? inputs.map(projectPath) : undefined;
+}
+
+function pixelBarrier(calls: CompletedCall[], rendered: CompletedCall): number | undefined {
+  const checked = new Map<string, number>();
+  for (const call of calls) {
+    if (call.requested <= rendered.completed) continue;
+    for (const path of checkedPixels(call) ?? []) if (!checked.has(path)) checked.set(path, call.completed);
+  }
+  return MUSIC_FRAMES.every(frame => checked.has(`${P}/out/frames-1/${frameName(frame)}`))
+    ? Math.max(...checked.values()) : undefined;
 }
 
 export function musicWorkflowGates(events: readonly EveEvalStreamEvent[]) {
@@ -312,8 +330,8 @@ export function musicWorkflowGates(events: readonly EveEvalStreamEvent[]) {
   const frameRender = frameWrite && renderInfo(frameWrite);
   const rendered = frameWrite && frameRender?.frames === MUSIC_FRAMES.join(",") &&
     frameRender.path === `${P}/out/frames-1` && frameWrite.requested > Math.max(ready, skillAt) ? frameWrite : undefined;
-  const pixels = rendered && calls.find(call => call.requested > rendered.completed && pixelsChecked(call));
-  const viewed = pixels ? MUSIC_FRAMES.map(frame => calls.find(call => call.name === "read_file" && toolPath(call.input.filePath) === `${P}/out/frames-1/${frameName(frame)}` && isMusicFrameOutput(call.output) && call.requested > pixels.completed)) : [];
+  const pixelsReady = rendered ? pixelBarrier(calls, rendered) : undefined;
+  const viewed = pixelsReady !== undefined ? MUSIC_FRAMES.map(frame => calls.find(call => call.name === "read_file" && toolPath(call.input.filePath) === `${P}/out/frames-1/${frameName(frame)}` && isMusicFrameOutput(call.output) && call.requested > pixelsReady)) : [];
   const frames = skillAt >= 0 && viewed.length === 6 && viewed.every(Boolean);
   const frameReady = frames ? Math.max(...viewed.map(call => call!.completed)) : Infinity;
   const evidence = musicLevelEvidence(events, frameReady);

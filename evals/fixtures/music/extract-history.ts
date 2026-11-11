@@ -37,7 +37,7 @@ const cases = report.results.map((item: { result: { events: { type: string; data
   });
   return { index, calls, events };
 });
-writeFileSync("evals/fixtures/music/history-v2.json", JSON.stringify({ cases }, null, 2) + "\n");
+writeFileSync(process.argv[3] ?? "evals/fixtures/music/history-v2.json", JSON.stringify({ cases }, null, 2) + "\n");
 console.log(cases.map((scenario: { calls: unknown[] }) => scenario.calls.length));
 }
 void main();

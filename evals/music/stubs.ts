@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import type { EveEvalContext, ToolStub } from "eve/evals";
-import { blockedRead, emptySearch, page, webSession } from "../web/fixtures";
+import { blockedRead, emptySearch, webSession } from "../web/fixtures";
 import audit from "../fixtures/music/integration.json";
 import recordings from "../fixtures/music/contract-records.json";
 import { MUSIC_PROJECT as P, MUSIC_FRAMES, MUSIC_LEVEL_COMMANDS, MUSIC_PATH, MUSIC_SCENES, SPEC, VOICE, frameName, musicWordsFile, project, sceneName } from "./data";
 import { musicFrameOutputs } from "./media-fixture";
-import { atomic, esc, quote, pathArg, probePattern, levelPattern } from "./operation-patterns";
+import { atomic, esc, quote, pathArg, probePattern, levelPattern, pixelPattern } from "./operation-patterns";
 
 const response = (stdout: string, exitCode = 0, stderr = "") => ({ status: "completed", exitCode, stdout, stderr, truncated: false });
 const bash = (id: string, pattern: string, stdout: string, exitCode = 0, stderr = ""): ToolStub => ({ id, tool: "bash", match: { command: { pattern } }, outcome: { response: response(stdout, exitCode, stderr) } });
@@ -76,7 +76,6 @@ function inspectionStubs(): ToolStub[] {
     const prefix = dir ? `${dir}/` : "";
     const children = [...new Set([...Object.keys(files), ...Object.keys(cachedSizes)].filter((path) => path.startsWith(prefix)).map((path) => path.slice(prefix.length).split("/")[0]))].sort();
     const listing = children.join("\n") + "\n";
-    if (dir === "public") stubs.push({ id: `directory-${dir}`, tool: "read_file", match: { filePath: { enum: [`${P}/${dir}`, `${P}/${dir}/`, `calm-bed/${dir}`] } }, outcome: { response: readResponse(`${P}/${dir}`, listing) } });
     if (["src", "out/frames-1"].includes(dir)) stubs.push(bash(`ls-${dir}`, atomic(`ls\\s+${pathArg(dir)}`), listing));
   }
   stubs.push(bash("pwd", atomic("pwd"), `${P}\n`));
@@ -101,25 +100,29 @@ export function musicStubs(): ToolStub[] {
     outcome: { response: readResponse(`/root/.agents/skills/${path}`, readFileSync(`agent/skills/${path}`, "utf8")) },
   });
   stubs.push(...musicFrameOutputs.map((output, index): ToolStub => ({ id: `frame-${MUSIC_FRAMES[index]}`, tool: "read_file", match: { filePath: { enum: [output.path, output.path.replace("/workspace/", "")] } }, outcome: { response: output } })));
-  stubs.push(reject("journal-read", "read_file", { filePath: { pattern: "(?:^|/)NOTES\\.md$" } }, "NOTES.md — write-only журнал этого задания, read-back не поддержан. Исходные условия и контрольные кадры находятся в неизменяемом SPEC.md. Не делайте вывод, что запись потеряна."));
-  stubs.push(reject("source-edit", "edit_file", { filePath: { pattern: "(?:^|/)(?:src/|SPEC\\.md$|package\\.json$|tsconfig\\.json$)" } }, "Исходники, субтитры и SPEC.md уже интегрированы и неизменяемы. Нужны повторный синтез, рендеры и проверки, не правка графики."));
   stubs.push(reject("journal-replace-unsupported", "edit_file", { filePath: { enum: pathForms("NOTES.md") }, oldString: { minLength: 1 } }, "Write-only журнал не поддерживает поиск и замену старого текста. Передайте полный актуальный снимок NOTES.md в newString без oldString, с overwrite: true."));
   stubs.push({ id: "journal-write", tool: "edit_file", match: { filePath: { enum: pathForms("NOTES.md") } }, outcome: { response: { path: `${P}/NOTES.md`, created: true, replacements: 0, linesAdded: 1, linesRemoved: 0 } } });
-  stubs.push(reject("unsupported-edit", "edit_file", undefined, "Файл вне записанного контракта. Успех правки не подтверждён."));
+  stubs.push(reject("unsupported-edit", "edit_file", undefined, "Правка не поддержана: исходники, субтитры и SPEC.md неизменяемы; разрешён только полный снимок NOTES.md. Файлы вне контракта также не изменяются. Успех правки не подтверждён."));
 
   const script = `python3?\\s+${quote("(?:\\$HOME|/root)/\\.agents/skills/music-synthesis/scripts/make_music\\.py")}`;
   const musicArgs = `(?:\\s+(?:--mood\\s+calm|--seconds\\s+20(?:\\.0+)?|--seed\\s+1|--lufs\\s+-18(?:\\.0+)?|--bpm\\s+80(?:\\.0+)?|--out\\s+${pathArg("public/music/bg")}))`;
   const musicPattern = atomic(`${script}(?=[^;&\\n]*--mood\\s+calm)(?=[^;&\\n]*--seconds\\s+20(?:\\s|$))(?=[^;&\\n]*--out\\s+${pathArg("public/music/bg")}(?:\\s|$))${musicArgs}+`);
   stubs.push(bash("make-music", musicPattern, JSON.stringify({ audioPath: MUSIC_PATH, durationMs: 20000, bpm: 80, mood: "calm", seed: 1, peakDbfs: -3, integratedLufs: -18 }) + "\n"));
-  stubs.push(bash("music-help", atomic(`${script}\\s+--help`), "--mood calm --seconds 20 --seed 1 --lufs -18 --out /workspace/calm-bed/public/music/bg (без расширения)\n"));
-  stubs.push(bash("music-invalid", atomic(`${script}(?:\\s+[^;&\\n]+)?`), "", 1, "Проверьте параметры: --out без расширения, calm, 20 секунд, seed 1, -18 LUFS. Другие параметры не покрыты записанным контрактом.\n"));
+  stubs.push(bash("music-invalid", atomic(`${script}(?![^\\r\\n]*--help)(?:\\s+[^;&\\n]+)?`), "", 1, "Проверьте параметры: --out без расширения, calm, 20 секунд, seed 1, -18 LUFS. Другие параметры не покрыты записанным контрактом.\n"));
 
   const render = "(?:npx\\s+)?remotion\\s+render\\s+";
   const composition = `${pathArg("src/index.ts")}\\s+Main\\s+`;
   stubs.push(bash("frames-render", atomic(`${render}${composition}${pathArg("out/frames-1")}\\s+--frames=0,100,150,300,450,599(?:\\s+--image-format=jpeg)?(?:\\s+--jpeg-quality=90)?`), MUSIC_FRAMES.map(n => `Rendered out/frames-1/${frameName(n)}`).join("\n")));
-  for (const [form, output] of Object.entries(recordings.pixels)) stubs.push({
-    id: `pixels-${form}`, tool: "bash", match: { command: { pattern: atomic(`python3?\\s+${quote("(?:\\$HOME|/root)/\\.agents/skills/frame-review/scripts/check-frames\\.py")}\\s+${quote(`${form === "absolute" ? `${esc(P)}/` : ""}out/frames-1`)}\\/\\*\\.jpeg`) } }, outcome: { response: output },
-  });
+  for (const [form, output] of Object.entries(recordings.pixels)) {
+    const directory = `${form === "absolute" ? `${P}/` : ""}out/frames-1`;
+    const paths = MUSIC_FRAMES.map(frame => `${directory}/${frameName(frame)}`);
+    stubs.push({ id: `pixels-${form}`, tool: "bash", match: { command: { pattern: pixelPattern(paths, directory) } }, outcome: { response: output } });
+    const singles = recordings.singlePixels[form as keyof typeof recordings.singlePixels];
+    paths.forEach((path, index) => stubs.push({
+      id: `pixels-${form}-${MUSIC_FRAMES[index]}`, tool: "bash",
+      match: { command: { pattern: pixelPattern([path]) } }, outcome: { response: singles[index] },
+    }));
+  }
   MUSIC_LEVEL_COMMANDS.forEach((command, index) => {
     if (index < 2) {
       const mode = index === 0 ? "voice-only" : "music-only";
@@ -134,17 +137,14 @@ export function musicStubs(): ToolStub[] {
   // Formats are explicit; unsupported selectors/composites never receive fabricated success.
   for (const profile of recordings.probes) stubs.push({ id: `probe-${profile.id}`, tool: "bash", match: { command: { pattern: probePattern(profile) } }, outcome: { response: profile.output } });
   stubs.push({ id: "decode-without-codec", tool: "bash", match: { command: { pattern: literalCommand("npx remotion ffmpeg -i out/final.mp4 -f null -") } }, outcome: { response: recordings.decodeFailure } });
-  for (const [index, diagnostic] of recordings.diagnostics.entries()) {
-    const [tool, ...args] = diagnostic.args;
-    const body = index === 0 ? `ls\\s+-la(?:\\s+${quote(`${esc(P)}|\\.`)})?` : args.map(arg => arg.startsWith("-") ? esc(arg) : index === 1 ? pathArg(arg) : quote(esc(arg))).join("\\s+");
-    stubs.push({ id: `diagnostic-${index}`, tool: "bash", match: { command: { pattern: atomic(index === 0 ? body : `${tool}\\s+${body}`) } }, outcome: { response: diagnostic.output } });
-  }
+  // Optional OS diagnostics remain in the audit, not in the bounded playback.
+  // Their slots fund exact per-frame responses, without weakening media probes.
   stubs.push(...inspectionStubs(), ...speechStubs());
   stubs.push({ id: "voices", tool: "list_voices", outcome: { response: { voices: [{ name: VOICE, locale: "ru-RU", gender: "Female", displayName: "Светлана", multilingual: false }] } } });
-  stubs.push({ id: "caption-doc", tool: "read_page", match: { url: { pattern: "^https://www\\.remotion\\.dev/elements/captions/basic-captions(?:\\.md)?$" } }, outcome: { response: page("https://www.remotion.dev/elements/captions/basic-captions.md", "Basic Captions", readFileSync("evals/fixtures/voiceover/basic-captions.md", "utf8")) } });
-  stubs.push(reject("unknown-read", "read_file", undefined, "Чтение этого пути не записано в контракте; это не доказывает отсутствие файла. SPEC.md описывает подготовленный проект, его исходники читаются по точным путям внутри src/. Не подменяйте запрошенный файл другим."));
-  stubs.push(reject("unsupported-command", "bash", undefined, "Полный результат этой команды не записан. Успех НЕ подтверждён. Разделите составные команды на отдельные операции из SPEC.md; неподдержанные параметры не меняют состояние проекта."));
-  stubs.push(blockedRead, emptySearch);
+  stubs.push(reject("unknown-read", "read_file", undefined, "Чтение этого пути не записано в контракте; это не доказывает отсутствие файла. NOTES.md — write-only журнал: read-back не поддержан, отказ не означает потерю записи. SPEC.md описывает подготовленный проект, его исходники читаются по точным путям внутри src/. Не подменяйте запрошенный файл другим."));
+  stubs.push(reject("unsupported-command", "bash", undefined, "Результат команды не записан в eval-контракте; это не системная ошибка и не отсутствие Python или файла. Успех НЕ подтверждён. check-frames.py поддержан для out/frames-1/*.jpeg, полного списка шести JPEG по возрастанию (все пути относительные либо все абсолютные) и каждого JPEG отдельно. Для другого порядка, подмножества или смешанных путей проверяйте нужные JPEG отдельными вызовами; каждый ответ относится только к переданному кадру. Дождитесь всех шести успешных проверок перед просмотром. Составные команды не поддержаны; неподдержанные параметры не меняют состояние проекта."));
+  stubs.push(reject(blockedRead.id, blockedRead.tool, blockedRead.match,
+    "Чтение этой страницы не записано в eval-контракте. Это не подтверждает отсутствие страницы; исходники и субтитры подготовленного проекта уже интегрированы и неизменяемы."), emptySearch);
   return stubs;
 }
 

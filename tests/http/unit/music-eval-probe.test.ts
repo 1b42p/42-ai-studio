@@ -48,10 +48,12 @@ const ruleNames: Record<string, string> = {
   "reference-4": "reference-frame-review/references/notes-template.md",
   "reference-6": "reference-voiceover/references/remotion.md",
   compositions: "unsupported-command", "same-template-copy": "test-source",
-  "ls-root": "diagnostic-0", "find-project": "unsupported-command",
+  "ls-root": "unsupported-command", "find-project": "unsupported-command",
+  "source-edit": "unsupported-edit", "journal-read": "unknown-read",
+  "directory-public": "unknown-read", "caption-doc": "isolate-other-pages",
 };
 historicalRules[0][53] = "probe-selected-default=nw=1";
-historicalRules[2][9] = "diagnostic-0";
+historicalRules[2][9] = "unsupported-command";
 
 test("все 136 исторических действий проверены native matcher; незаписанная команда не исполняется", async () => {
   let checked = 0;

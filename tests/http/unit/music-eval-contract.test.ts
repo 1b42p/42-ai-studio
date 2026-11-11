@@ -41,9 +41,16 @@ test("все 174 реальных вызова проходят настоящи
       const answer = playback.call({ callId: call.callId, tool: call.tool, input: call.input });
       expect(answer.kind).toBe("stub");
       if (answer.kind !== "stub") throw new Error("No stub");
-      expect(answer.ruleId).toBe(call.rule);
-      expect("throw" in answer.outcome).toBe(call.error);
-      if (call.exitCode !== undefined) expect(answer.outcome).toMatchObject({ response: { exitCode: call.exitCode } });
+      const retired: Record<string, string> = {
+        "source-edit": "unsupported-edit", "journal-read": "unknown-read", "directory-public": "unknown-read",
+        "caption-doc": "isolate-other-pages", "music-help": "unsupported-command",
+      };
+      const expected = call.rule.startsWith("diagnostic-") ? "unsupported-command" : retired[call.rule] ?? call.rule;
+      expect(answer.ruleId).toBe(expected);
+      if (expected === call.rule) {
+        expect("throw" in answer.outcome).toBe(call.error);
+        if (call.exitCode !== undefined) expect(answer.outcome).toMatchObject({ response: { exitCode: call.exitCode } });
+      } else if (expected !== "music-invalid") expect(answer.outcome).toHaveProperty("throw");
       count++;
     }
   }

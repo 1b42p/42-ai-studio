@@ -873,5 +873,95 @@
     "stdout": "",
     "stderr": "ffmpeg version n7.1 Copyright (c) 2000-2024 the FFmpeg developers\n  built with gcc 9 (Ubuntu 9.4.0-1ubuntu1~20.04.2)\n  configuration: --prefix=remotion --extra-cflags='-Iremotion/include -Iremotion/include/opus -Iremotion/include/lame -Iremotion/include/vpx' --extra-ldflags=-Lremotion/lib --enable-small --enable-shared --enable-libdav1d --enable-libaom --enable-libzimg --enable-libfdk-aac --disable-static --disable-ffplay --disable-postproc --disable-filters --disable-libxcb --enable-filter=aformat --enable-filter=atrim --enable-filter=acopy --enable-filter=adelay --enable-filter=anullsrc --enable-filter=atempo --enable-filter=apad --enable-filter=amerge --enable-filter=amix --enable-filter=asetrate --enable-filter=asetpts --enable-filter=aresample --enable-filter=concat --enable-filter=loudnorm --enable-filter=colorspace --enable-filter=tinterlace --enable-filter=fieldorder --enable-filter=pan --enable-filter=volume --enable-filter=scale --enable-filter=sine --enable-filter=split --enable-filter=nullsrc --enable-filter=silencedetect --enable-filter=palettegen --enable-filter=paletteuse --enable-filter=zscale --enable-filter=tonemap --enable-filter=copy --disable-doc --disable-debug --enable-gpl --disable-encoders --enable-encoder=opus --enable-encoder=aac --enable-encoder=libfdk_aac --enable-encoder=png --enable-encoder=mjpeg --enable-encoder=pcm_s16le --enable-encoder=pcm_s24le --enable-encoder=libx264 --enable-encoder=libx265 --enable-encoder=libaom_av1 --enable-libvpx --enable-encoder=libvpx_vp8 --enable-encoder=libvpx_vp9 --enable-encoder=gif --enable-encoder=libmp3lame --enable-encoder=libopus --enable-encoder=prores_ks --enable-encoder=rawvideo --enable-encoder=h264_nvenc --enable-encoder=hevc_nvenc --disable-muxers --enable-muxer='webm,opus,mp4,wav,mp3,mov,matroska,hevc,h264,gif,image2,image2pipe,adts,m4a,mpegts,null,avi' --enable-libx264 --enable-libx265 --enable-libmp3lame --enable-zlib --enable-libopus --disable-demuxers --disable-sdl2 --disable-xlib --enable-indev=remotionshm --enable-demuxer='aac,av1,avi,caf,concat,flac,flv,h264,hevc,image2,image2pipe,matroska,mov,mp3,ogg,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,wav,gif,hls,m4a,mpeg2_videotoolbox,mpeg4_videotoolbox' --disable-decoders --enable-decoder='aac,ac3,flac,h264,hevc,libvpx_vp8,libvpx_vp9,vp8,vp9,mp3,mpeg4,opus,pcm_u8,pcm_f16le,pcm_f24le,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be,pcm_s16be,pcm_s16le,pcm_s24be,pcm_s24le,pcm_s32be,pcm_s32le,pcm_s64be,pcm_s64le,pcm_u16be,pcm_u16le,pcm_u24le,pcm_u24be,pcm_u32be,pcm_u32le,prores,theora,vorbis,vp9,mjpeg,gif,png,libdav1d,hls,m4a,rawvideo,wrapped_avframe'\n  libavutil      59. 39.100 / 59. 39.100\n  libavcodec     61. 19.100 / 61. 19.100\n  libavformat    61.  7.100 / 61.  7.100\n  libavdevice    61.  3.100 / 61.  3.100\n  libavfilter    10.  4.100 / 10.  4.100\n  libswscale      8.  3.100 /  8.  3.100\n  libswresample   5.  3.100 /  5.  3.100\nInput #0, mov,mp4,m4a,3gp,3g2,mj2, from 'out/final.mp4':\n  Metadata:\n    major_brand     : isom\n    minor_version   : 512\n    compatible_brands: isomiso2avc1mp41\n    encoder         : Lavf61.7.100\n    comment         : Made with Remotion 4.0.538\n  Duration: 00:00:20.01, start: 0.000000, bitrate: 486 kb/s\n  Stream #0:0[0x1](und): Video: h264 (avc1 / 0x31637661), yuv420p(tv, unknown/bt709/iec61966-2-1, progressive), 1920x1080 [SAR 1:1 DAR 16:9], 159 kb/s, 30 fps, 30 tbr, 90k tbn (default)\n      Metadata:\n        handler_name    : VideoHandler\n        vendor_id       : [0][0][0][0]\n  Stream #0:1[0x2](und): Audio: aac (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 317 kb/s (default)\n      Metadata:\n        handler_name    : SoundHandler\n        vendor_id       : [0][0][0][0]\n[vost#0:0 @ 0x561cd352bbc0] Automatic encoder selection failed Default encoder for format null (codec wrapped_avframe) is probably disabled. Please choose an encoder manually.\n[vost#0:0 @ 0x561cd352bbc0] Error selecting an encoder\nError opening output file -.\nError opening output files: Encoder not found\n",
     "truncated": false
+  },
+  "singlePixels": {
+    "relative": [
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"out/frames-1/element-000.jpeg\", \"extrema\": [[9, 255], [28, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"out/frames-1/element-100.jpeg\", \"extrema\": [[0, 255], [1, 255], [0, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"out/frames-1/element-150.jpeg\", \"extrema\": [[6, 255], [27, 255], [31, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"out/frames-1/element-300.jpeg\", \"extrema\": [[8, 255], [26, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"out/frames-1/element-450.jpeg\", \"extrema\": [[8, 255], [28, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"out/frames-1/element-599.jpeg\", \"extrema\": [[8, 255], [28, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      }
+    ],
+    "absolute": [
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"/workspace/calm-bed/out/frames-1/element-000.jpeg\", \"extrema\": [[9, 255], [28, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"/workspace/calm-bed/out/frames-1/element-100.jpeg\", \"extrema\": [[0, 255], [1, 255], [0, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"/workspace/calm-bed/out/frames-1/element-150.jpeg\", \"extrema\": [[6, 255], [27, 255], [31, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"/workspace/calm-bed/out/frames-1/element-300.jpeg\", \"extrema\": [[8, 255], [26, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"/workspace/calm-bed/out/frames-1/element-450.jpeg\", \"extrema\": [[8, 255], [28, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      },
+      {
+        "status": "completed",
+        "exitCode": 0,
+        "stdout": "{\"path\": \"/workspace/calm-bed/out/frames-1/element-599.jpeg\", \"extrema\": [[8, 255], [28, 255], [33, 255]], \"suspect\": null}\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.\n",
+        "stderr": "",
+        "truncated": false
+      }
+    ]
   }
 }

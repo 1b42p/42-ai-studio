@@ -9,6 +9,16 @@ export const pathArg = (path: string) => quote(`(?:${esc(MUSIC_PROJECT)}/)?${esc
 export const atomic = (body: string) => `^(?![\\s\\S]*[\\r\\n])[ \\t]*(?:cd[ \\t]+${quote(esc(MUSIC_PROJECT))}[ \\t]*&&[ \\t]*)?${body}[ \\t]*$`;
 export const remotion = "(?:npx\\s+)?remotion\\s+";
 
+export const pixelInvocation = `python3?\\s+(?:${quote(esc("/root/.agents/skills/frame-review/scripts/check-frames.py"))}|${esc("$HOME/.agents/skills/frame-review/scripts/check-frames.py")}|"${esc("$HOME/.agents/skills/frame-review/scripts/check-frames.py")}")`;
+
+// Every branch has one fixed stdout: an exact ordered list, or the shell glob
+// expanding to that same list. No captures or runtime response interpolation.
+export function pixelPattern(paths: string[], globDirectory?: string): string {
+  const list = paths.map(path => quote(esc(path))).join("\\s+");
+  const inputs = globDirectory ? `(?:${list}|${quote(esc(globDirectory))}/\\*\\.jpeg)` : list;
+  return atomic(`${pixelInvocation}\\s+${inputs}`);
+}
+
 // Small fixed option groups, NOT arbitrary shell evaluation. Each option occurs
 // exactly once; input and output option groups are never shuffled together.
 export function optionOrders(options: string[]): string {
