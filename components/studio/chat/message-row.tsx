@@ -9,6 +9,8 @@ import type {
 import { BrainIcon } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
+import { InputPrompt, type RespondToInput } from "@/components/studio/chat/input-prompt";
+import { isQuestionCall, questionsFor } from "@/components/studio/chat/input-routing";
 import type { FileLookup } from "@/components/studio/chat/message-files";
 import { MessageAttachments } from "@/components/studio/chat/message-attachments";
 import { ToolCard } from "@/components/studio/chat/tool-card";
@@ -26,6 +28,7 @@ import {
 import { messageIdOf } from "@/lib/media/message-id";
 
 type AssistantGroup =
+  | { readonly kind: "question"; readonly id: string; readonly part: EveDynamicToolPart }
   | { readonly kind: "reasoning"; readonly id: string; readonly text: string; readonly running: boolean }
   | {
       readonly kind: "text";
@@ -84,6 +87,10 @@ function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[]
     }
 
     if (part.type === "dynamic-tool") {
+      if (isQuestionCall(part)) {
+        groups.push({ kind: "question", id: part.toolCallId, part });
+        continue;
+      }
       const last = groups.at(-1);
       if (last?.kind === "tools") {
         last.parts.push(part);
@@ -119,6 +126,8 @@ function AssistantContent({
   data,
   appSessionId,
   onCopyPanelChange,
+  onRespond,
+  inputDisabled,
 }: {
   parts: readonly EveMessagePart[];
   turnId: string | undefined;
@@ -126,12 +135,22 @@ function AssistantContent({
   data: ConversationState;
   appSessionId?: string | null;
   onCopyPanelChange?: (callId: string, open: boolean) => void;
+  onRespond?: RespondToInput;
+  inputDisabled?: boolean;
 }) {
   const groups = groupAssistantParts(parts);
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-3">
       {groups.map((group) => {
+        if (group.kind === "question") {
+          // Copies are answered through the parent's pinned prompt.
+          if (!onRespond) return null;
+          return questionsFor(data, group.part.toolCallId).map((input) => (
+            <InputPrompt key={input.request.requestId} input={input}
+              disabled={inputDisabled} onRespond={onRespond} />
+          ));
+        }
         if (group.kind === "reasoning") {
           return (
             <Trace key={group.id}>
@@ -179,6 +198,8 @@ export interface MessageRowProps {
   readonly appSessionId?: string | null;
   /** Панель копии открылась или закрылась. */
   readonly onCopyPanelChange?: (callId: string, open: boolean) => void;
+  readonly onRespond?: RespondToInput;
+  readonly inputDisabled?: boolean;
 }
 
 /**
@@ -186,7 +207,7 @@ export interface MessageRowProps {
  * агента: у копии те же карточки вызовов, только файлы песочницы выводятся
  * путём (`MessageFilesState.enabled: false`).
  */
-export function MessageRow({ message, data, files, appSessionId, onCopyPanelChange }: MessageRowProps) {
+export function MessageRow({ message, data, files, appSessionId, onCopyPanelChange, onRespond, inputDisabled }: MessageRowProps) {
   const align = message.role === "user" ? "end" : "start";
   const text = textOfUserMessage(message);
 
@@ -208,6 +229,8 @@ export function MessageRow({ message, data, files, appSessionId, onCopyPanelChan
             data={data}
             files={files}
             onCopyPanelChange={onCopyPanelChange}
+            onRespond={onRespond}
+            inputDisabled={inputDisabled}
             parts={message.parts}
             turnId={message.metadata?.turnId}
           />

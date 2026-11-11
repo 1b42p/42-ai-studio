@@ -74,7 +74,7 @@ export function ChatPanel({
       onSend={
         onSend ??
         (async (content) => {
-          await agent.send(content, busy ? { turnPolicy: "steer" } : undefined);
+          await agent.send(content, busy || Array.isArray(content) ? { turnPolicy: "steer" } : undefined);
         })
       }
       title={title}

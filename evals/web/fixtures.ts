@@ -40,6 +40,7 @@ export const isolateDownload: ToolStub = {
 };
 
 const isolationStubs: readonly ToolStub[] = [
+  { id: "isolate-question", tool: "ask_question", outcome: { response: { status: "unavailable" } } },
   {
     id: "isolate-bash", tool: "bash",
     outcome: { response: { status: "completed", exitCode: 0, stdout: "", stderr: "", truncated: false } },
