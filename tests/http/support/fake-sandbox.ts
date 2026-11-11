@@ -36,11 +36,17 @@ export const fakeSandbox = {
   failNextCreate: (kind: FakeCreateFailure) => store().failNextCreate(kind),
   failNextDelete: (kind: FakeDeleteFailure) => store().failNextDelete(kind),
   failNextGet: (kind: FakeGetFailure) => store().failNextGet(kind),
+  failNextStartForQuota: () => store().failNextStartForQuota(),
   setCreateDelay: (ms: number) => store().setCreateDelay(ms),
   setQuota: (apiKey: string, quota: FakeResources) => store().setQuota(apiKey, quota),
   setOrganization: (apiKey: string, organizationId: string) => store().setOrganization(apiKey, organizationId),
   failUsage: (apiKey: string, failure: FakeUsageFailure | null) => store().failUsage(apiKey, failure),
   usageCalls: (apiKey?: string) => store().usageCalls(apiKey),
   counters: () => store().counters(),
+  states: (appSessionId?: string) => store().states(appSessionId),
+  creationLog: (appSessionId?: string) => store().creationLog(appSessionId),
+  lifecycleLog: (appSessionId?: string) => store().lifecycleLog(appSessionId),
+  setTimes: (appSessionId: string, times: { lastActivityAt?: number; stoppedAt?: number }) =>
+    store().setTimes(appSessionId, times),
   reset: () => store().reset(),
 };

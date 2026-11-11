@@ -50,6 +50,11 @@ export interface FakeRecord {
   apiKey: string;
   resources: FakeResources;
   state: string;
+  labels: Record<string, string>;
+  lastActivityAt?: number;
+  stoppedAt?: number;
+  autoStopInterval?: number;
+  autoArchiveInterval?: number;
   recoverable?: boolean;
   calls: FakeCall[];
   /** Задания, остановленные `fakeSandbox.killProcess`. */
@@ -62,7 +67,29 @@ export interface FakeCounters {
   started: number;
   stopped: number;
   deleted: number;
+  archived: number;
+  restored: number;
+  refreshActivity: number;
 }
+export interface FakeLifecycleIntervals {
+  autoStopInterval: number;
+  autoArchiveInterval: number;
+}
+export interface FakeCreationLog extends FakeLifecycleIntervals {
+  id: string;
+  name: string;
+  appSessionId: string;
+  resources: FakeResources;
+  labels: Record<string, string>;
+  autoDeleteInterval: number;
+  at: number;
+}
+export interface FakeLifecycleLog extends FakeLifecycleIntervals {
+  id: string;
+  appSessionId: string;
+  at: number;
+}
+export type FakeMachineState = Omit<FakeRecord, "apiKey" | "calls" | "killedJobs">;
 interface StoreData {
   machines: FakeRecord[];
   rules: StoredRule[];
@@ -70,10 +97,13 @@ interface StoreData {
   failNextCreate?: FakeCreateFailure;
   failNextDelete?: FakeDeleteFailure;
   failNextGet?: FakeGetFailure;
+  failNextStartQuota?: boolean;
   /** Задержка создания, чтобы тест успел удалить ключ во время старта. */
   createDelayMs: number;
   keys: Record<string, FakeKeyConfig>;
   usageCalls: Record<string, number>;
+  creationLog: FakeCreationLog[];
+  lifecycleLog: FakeLifecycleLog[];
 }
 
 const DEFAULT_QUOTA: FakeResources = { cpu: 10, memoryGb: 10, diskGb: 30 };
@@ -83,10 +113,12 @@ function initialData(): StoreData {
   return {
     machines: [],
     rules: [],
-    counters: { created: 0, createAttempts: 0, started: 0, stopped: 0, deleted: 0 },
+    counters: { created: 0, createAttempts: 0, started: 0, stopped: 0, deleted: 0, archived: 0, restored: 0, refreshActivity: 0 },
     createDelayMs: 0,
     keys: {},
     usageCalls: {},
+    creationLog: [],
+    lifecycleLog: [],
   };
 }
 
@@ -177,6 +209,13 @@ export class FakeStore {
       } catch (error) {
         if (!hasCode(error, "ENOENT")) throw error;
         data = initialData();
+      }
+      // Existing fake processes may have published a pre-lifecycle snapshot.
+      data.counters = { ...initialData().counters, ...data.counters };
+      data.creationLog ??= [];
+      data.lifecycleLog ??= [];
+      for (const machine of data.machines) {
+        machine.labels ??= { studio_session: machine.appSessionId };
       }
       try {
         return await action(data);
@@ -315,8 +354,17 @@ export class FakeStore {
     return this.transaction(async (data) => {
       const machine = this.find(data, idOrName);
       if (machine.state !== state) {
-        if (state === "started") data.counters.started++;
-        if (state === "stopped") data.counters.stopped++;
+        if (state === "started") {
+          data.counters.started++;
+          if (machine.state === "archived") data.counters.restored++;
+          machine.lastActivityAt = Date.now();
+          delete machine.stoppedAt;
+        }
+        if (state === "stopped") {
+          data.counters.stopped++;
+          machine.stoppedAt = Date.now();
+        }
+        if (state === "archived") data.counters.archived++;
         if (state === "destroyed") {
           await fs.rm(path.dirname(this.machineRoot(machine.id)), { recursive: true, force: true });
           data.counters.deleted++;
@@ -452,14 +500,57 @@ export class FakeStore {
   }
 
   async stop(appSessionId: string): Promise<void> {
+    const id = await this.transaction((data) => this.current(data, appSessionId)?.id);
+    if (id === undefined) throw fakeNotFound();
+    await this.setState(id, "stopped");
+  }
+
+  async listMachines(apiKey: string): Promise<FakeRecord[]> {
+    return this.transaction((data) => data.machines.filter((machine) =>
+      machine.state !== "destroyed" && organizationOf(data, machine.apiKey) === organizationOf(data, apiKey),
+    ));
+  }
+
+  async states(appSessionId?: string): Promise<FakeMachineState[]> {
+    return this.transaction((data) => data.machines
+      .filter((machine) => appSessionId === undefined || machine.appSessionId === appSessionId)
+      .map(({ apiKey: _apiKey, calls: _calls, killedJobs: _killedJobs, ...machine }) => machine));
+  }
+
+  /** Test-only clock controls; milliseconds since epoch, without changing state. */
+  async setTimes(appSessionId: string, times: { lastActivityAt?: number; stoppedAt?: number }): Promise<void> {
     await this.transaction((data) => {
       const machine = this.current(data, appSessionId);
-      if (!machine) throw fakeNotFound();
-      if (machine.state !== "stopped") {
-        machine.state = "stopped";
-        data.counters.stopped++;
-      }
+      if (machine === undefined) throw fakeNotFound();
+      Object.assign(machine, times);
     });
+  }
+
+  async refreshActivity(id: string): Promise<void> {
+    await this.transaction((data) => {
+      this.find(data, id).lastActivityAt = Date.now();
+      data.counters.refreshActivity++;
+    });
+  }
+
+  async configureLifecycle(id: string, intervals: FakeLifecycleIntervals): Promise<void> {
+    await this.transaction((data) => {
+      const machine = this.find(data, id);
+      Object.assign(machine, intervals);
+      data.lifecycleLog.push({ id, appSessionId: machine.appSessionId, ...intervals, at: Date.now() });
+    });
+  }
+
+  async creationLog(appSessionId?: string): Promise<FakeCreationLog[]> {
+    return this.transaction((data) => data.creationLog.filter((entry) =>
+      appSessionId === undefined || entry.appSessionId === appSessionId,
+    ));
+  }
+
+  async lifecycleLog(appSessionId?: string): Promise<FakeLifecycleLog[]> {
+    return this.transaction((data) => data.lifecycleLog.filter((entry) =>
+      appSessionId === undefined || entry.appSessionId === appSessionId,
+    ));
   }
 
   async setRules(rules: readonly FakeRule[]): Promise<void> {
@@ -504,6 +595,18 @@ export class FakeStore {
     });
   }
 
+  async failNextStartForQuota(): Promise<void> {
+    await this.transaction((data) => { data.failNextStartQuota = true; });
+  }
+
+  async consumeStartQuotaFailure(): Promise<boolean> {
+    return this.transaction((data) => {
+      const failure = data.failNextStartQuota === true;
+      delete data.failNextStartQuota;
+      return failure;
+    });
+  }
+
   async counters(): Promise<FakeCounters> {
     return this.transaction((data) => ({ ...data.counters }));
   }
@@ -523,6 +626,7 @@ export class FakeStore {
       delete data.failNextCreate;
       delete data.failNextDelete;
       delete data.failNextGet;
+      delete data.failNextStartQuota;
     });
   }
 
@@ -632,11 +736,9 @@ export class FakeStore {
 
   /** Переводит остановленную песочницу в архив: диск больше не занят. */
   async archive(appSessionId: string): Promise<void> {
-    await this.transaction((data) => {
-      const machine = this.current(data, appSessionId);
-      if (!machine) throw fakeNotFound();
-      machine.state = "archived";
-    });
+    const id = await this.transaction((data) => this.current(data, appSessionId)?.id);
+    if (id === undefined) throw fakeNotFound();
+    await this.setState(id, "archived");
   }
 
   async create(
@@ -644,10 +746,12 @@ export class FakeStore {
     appSessionId: string,
     apiKey: string,
     resources: FakeResources,
+    intervals: FakeLifecycleIntervals,
   ): Promise<{ machine?: FakeRecord; failure?: FakeCreateFailure | "quota" }> {
     return this.transaction(async (data) => {
       data.counters.createAttempts++;
-      if (data.machines.some((machine) => machine.name === name && machine.state !== "destroyed")) {
+      if (data.machines.some((machine) => machine.name === name && machine.state !== "destroyed" &&
+          organizationOf(data, machine.apiKey) === organizationOf(data, apiKey))) {
         throw Object.assign(new Error("Fake Daytona: name exists (dtn_test_secret_value)"), { status: 409 });
       }
       if (data.createDelayMs > 0) await delay(data.createDelayMs);
@@ -670,6 +774,9 @@ export class FakeStore {
       const machine: FakeRecord = {
         id: randomUUID(), name, appSessionId, apiKey, resources,
         state: failure === "build_failed" ? "build_failed" : "started",
+        labels: { studio_session: appSessionId },
+        lastActivityAt: Date.now(),
+        ...intervals,
         calls: [],
       };
       const root = this.machineRoot(machine.id);
@@ -688,6 +795,10 @@ export class FakeStore {
         }
       }
       data.machines.push(machine);
+      data.creationLog.push({
+        id: machine.id, name, appSessionId, resources: { ...resources },
+        labels: { ...machine.labels }, ...intervals, autoDeleteInterval: -1, at: Date.now(),
+      });
       data.counters.created++;
       if (!failure) data.counters.started++;
       return { machine, failure };

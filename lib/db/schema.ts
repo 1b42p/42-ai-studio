@@ -84,6 +84,10 @@ export const appSessions = pgTable(
     streamCursor: integer("stream_cursor").notNull().default(0),
     /** Когда пользователь начал создание сессии eve; окно привязки — 60 секунд. */
     startRequestedAt: timestamp("start_requested_at", { withTimezone: true }),
+    sandboxWorkState: text("sandbox_work_state").$type<"active" | "input" | "idle">().notNull().default("idle"),
+    sandboxWorkTurnId: text("sandbox_work_turn_id"),
+    sandboxWorkEventId: text("sandbox_work_event_id"),
+    sandboxWaitGeneration: integer("sandbox_wait_generation").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
     /**
      * Миллисекундная точность: по этому столбцу #6 строит постраничную выдачу,
@@ -164,6 +168,45 @@ export const agentSessions = pgTable(
 
 export type AgentSession = typeof agentSessions.$inferSelect;
 
+/** Участники общей песочницы: ожидание одной копии не освобождает остальные. */
+export const sandboxWorkers = pgTable("sandbox_workers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appSessionId: uuid("app_session_id").notNull()
+    .references(() => appSessions.id, { onDelete: "cascade" }),
+  eveSessionId: text("eve_session_id").notNull().unique(),
+  turnId: text("turn_id"),
+  turnSequence: integer("turn_sequence").notNull().default(0),
+  state: text("state").$type<"active" | "input" | "idle">().notNull().default("idle"),
+  eventId: text("event_id"),
+}, (table) => [index("sandbox_workers_busy_idx").on(table.appSessionId, table.state)]);
+
+/** Неизменяемая привязка хода: повтор старого шага не получает новое поколение. */
+export const sandboxWaitTurns = pgTable("sandbox_wait_turns", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appSessionId: uuid("app_session_id").notNull()
+    .references(() => appSessions.id, { onDelete: "cascade" }),
+  turnId: text("turn_id").notNull(),
+  scopeId: text("scope_id").notNull().default("root"),
+  generation: integer("generation").notNull(),
+}, (table) => [uniqueIndex("sandbox_wait_turns_identity_idx").on(table.appSessionId, table.scopeId, table.turnId)]);
+
+/** Вызов возобновляемой задачи, а не неизменяемая lineage сессии копии. */
+export const sandboxTaskCalls = pgTable("sandbox_task_calls", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appSessionId: uuid("app_session_id").notNull()
+    .references(() => appSessions.id, { onDelete: "cascade" }),
+  taskId: text("task_id").notNull(),
+  callId: text("call_id").notNull(),
+  turnId: text("turn_id").notNull(),
+  generation: integer("generation").notNull(),
+  kind: text("kind").$type<"agent" | "tool">().notNull(),
+  state: text("state").$type<"active" | "settled">().notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("sandbox_task_calls_identity_idx").on(table.appSessionId, table.callId),
+  index("sandbox_task_calls_task_idx").on(table.appSessionId, table.taskId, table.createdAt),
+]);
+
 /** Ключи организации, не данные пользователя. Удаление ключа — мягкое. */
 export const daytonaKeys = pgTable("daytona_keys", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -200,6 +243,13 @@ export const sandboxes = pgTable("sandboxes", {
   startingSince: timestamp("starting_since", { withTimezone: true }),
   /** Что резервирует строка в квоте пула: создание, пробуждение или восстановление. */
   startingKind: sandboxLaunch("starting_kind"),
+  slotRequestId: uuid("slot_request_id"),
+  waitGeneration: integer("wait_generation").notNull().default(0),
+  launchStartedAt: timestamp("launch_started_at", { withTimezone: true }),
+  stoppedAt: timestamp("stopped_at", { withTimezone: true }),
+  daytonaActivityAt: timestamp("daytona_activity_at", { withTimezone: true }),
+  maintenanceToken: uuid("maintenance_token"),
+  maintenanceUntil: timestamp("maintenance_until", { withTimezone: true }),
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -210,6 +260,31 @@ export type Sandbox = typeof sandboxes.$inferSelect;
 export type NewSandbox = typeof sandboxes.$inferInsert;
 export type SandboxState = (typeof sandboxState.enumValues)[number];
 export type SandboxLaunch = (typeof sandboxLaunch.enumValues)[number];
+
+export const queueReason = pgEnum("queue_reason", ["capacity", "own_session_busy"]);
+
+export const queueEntries = pgTable("queue_entries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appSessionId: uuid("app_session_id").notNull().unique()
+    .references(() => appSessions.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
+  need: sandboxLaunch("need").notNull(),
+  daytonaKeyId: uuid("daytona_key_id").references(() => daytonaKeys.id),
+  reason: queueReason("reason").notNull().default("capacity"),
+  heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }).notNull().defaultNow(),
+  waitGeneration: integer("wait_generation").notNull().default(0),
+}, (table) => [index("queue_entries_order_idx").on(table.enqueuedAt, table.id)]);
+
+/** Короткая аренда прохода: сеть выполняется без открытой транзакции/соединения. */
+export const sandboxDispatchers = pgTable("sandbox_dispatchers", {
+  id: uuid("id").primaryKey(),
+  leaseToken: uuid("lease_token"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
+});
+
+export type QueueEntry = typeof queueEntries.$inferSelect;
 
 /**
  * Машина, которую не удалось удалить при удалении ключа. Идентификатор

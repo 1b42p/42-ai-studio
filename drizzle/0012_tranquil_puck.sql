@@ -1,0 +1,1 @@
+ALTER TABLE "sandboxes" ADD COLUMN "daytona_activity_at" timestamp with time zone;

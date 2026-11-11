@@ -7,6 +7,7 @@ import { beforeEach, expect, test } from "vitest";
 
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
 import { loadConfig } from "../../lib/config";
+import { getFakeBackend } from "../../lib/sandbox/fake";
 import { appSessions, daytonaKeys, sandboxes } from "../../lib/db/schema";
 import { assertEveSessionAccess } from "../../lib/sessions/access";
 import { createDaytonaKey, createUser, db, resetDatabase } from "./support/db";
@@ -48,6 +49,21 @@ test("первое вложение привязывает поток к вла�
   }
 });
 
+test("имена машин уникальны внутри организации, но не между организациями", async () => {
+  const directory = loadConfig().fakeSandboxDir!;
+  const resources = { cpu: 2, memoryGb: 4, diskGb: 8 };
+  const a = getFakeBackend(directory, "dtn_names_a", resources);
+  const b = getFakeBackend(directory, "dtn_names_b", resources);
+  const appSessionId = randomUUID();
+  const first = await a.create({ name: "same-name", appSessionId });
+  const second = await b.create({ name: "same-name", appSessionId });
+  expect(first.id).not.toBe(second.id);
+  expect((await a.get("same-name")).id).toBe(first.id);
+  expect((await b.get("same-name")).id).toBe(second.id);
+  await expect(a.create({ name: "same-name", appSessionId })).rejects.toMatchObject({ status: 409 });
+  await Promise.all([first.delete(), second.delete()]);
+});
+
 test("два одновременных start одной сессии создают одну песочницу и возвращают её обоим клиентам", async () => {
   const key = await createDaytonaKey();
   const user = await createUser();
@@ -78,6 +94,20 @@ test("два одновременных start одной сессии созда
         ? new TextDecoder().decode(bytes)
         : await new Response(bytes).text();
       expect(text).toBe("Одна песочница для обоих клиентов");
+    }
+    await opened[0].connection.stop();
+    const startsBeforeResume = (await fakeSandbox.counters()).started;
+    const resumed = await Promise.all([
+      first.resume(ctx, artifact, opened[0].state),
+      second.resume(ctx, artifact, opened[1].state),
+    ]);
+    try {
+      expect((await fakeSandbox.counters()).started).toBe(startsBeforeResume + 1);
+      for (const connection of resumed) {
+        expect(await connection.readFile({ path: "/workspace/shared.txt" })).not.toBeNull();
+      }
+    } finally {
+      await Promise.all(resumed.map((connection) => connection.close?.()));
     }
   } finally {
     await Promise.all(opened.map(({ connection }) => connection.close?.()));

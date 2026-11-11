@@ -38,6 +38,18 @@ function issuesOf(env: EnvRecord): readonly string[] {
 }
 
 describe("parseConfig", () => {
+  test("проверяет интервалы очереди и жизненного цикла песочниц", () => {
+    expect(parseConfig(validEnv())).toMatchObject({
+      sandboxIdleStopMinutes: 15, sandboxArchiveAfterDays: 7,
+      sandboxQueueMaxWaitSeconds: 1800, sandboxQueuePollMs: 2000,
+    });
+    for (const [name, value] of Object.entries({
+      SANDBOX_ARCHIVE_AFTER_DAYS: "31", SANDBOX_IDLE_STOP_MINUTES: "0",
+      SANDBOX_QUEUE_POLL_MS: "50", SANDBOX_QUEUE_MAX_WAIT_SECONDS: "4",
+    })) {
+      expect(issuesOf({ ...validEnv(), [name]: value }).join()).toContain(name);
+    }
+  });
   test("принимает полный набор переменных и разбирает их", () => {
     const config = parseConfig(validEnv());
 
