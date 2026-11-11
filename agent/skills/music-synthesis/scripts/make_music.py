@@ -369,7 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seconds", required=True, type=float)
     parser.add_argument("--bpm", type=float)
     parser.add_argument("--seed", type=int, default=1)
-    parser.add_argument("--lufs", type=float, default=-24.0)
+    parser.add_argument("--lufs", type=float, default=-18.0)
     parser.add_argument("--out", required=True)
     return parser
 

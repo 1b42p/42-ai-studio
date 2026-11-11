@@ -12,16 +12,16 @@ const MUSIC_JSON = JSON.stringify({
   mood: "calm",
   seed: 1,
   peakDbfs: -3,
-  integratedLufs: -24,
+  integratedLufs: -18,
 });
 
 const LOUDNORM = [
   "{",
-  "  \"input_i\" : \"-23.5\",",
+  "  \"input_i\" : \"-18.0\",",
   "  \"input_tp\" : \"-2.0\",",
   "  \"input_lra\" : \"4.0\",",
   "  \"input_thresh\" : \"-33.5\",",
-  "  \"output_i\" : \"-24.0\",",
+  "  \"output_i\" : \"-18.0\",",
   "  \"output_tp\" : \"-2.1\",",
   "  \"output_lra\" : \"4.0\",",
   "  \"output_thresh\" : \"-34.0\",",
