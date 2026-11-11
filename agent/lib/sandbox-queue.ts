@@ -10,6 +10,7 @@ import {
   type AppSession, type DaytonaKey, type QueueEntry, type Sandbox, type SandboxLaunch,
 } from "@/lib/db/schema";
 import { sessionIsBusy } from "@/lib/sandbox/busy";
+import { assertSandboxWait, type SandboxWait } from "@/lib/sandbox/wait-generation";
 import { sandboxState } from "@/lib/sandbox/daytona-state";
 import { errorStatus, isMissingSandbox, StudioSandboxError } from "@/lib/sandbox/errors";
 import { DAYTONA_KEY_PURPOSE, decryptSecret } from "@/lib/secrets";
@@ -163,7 +164,9 @@ async function stopMachine(row: Sandbox, machine: DaytonaMachine): Promise<boole
       where id = ${row.id} and state = 'started' and daytona_sandbox_id = ${machine.id}
       and (maintenance_until is null or maintenance_until < now())
       and exists (select 1 from app_sessions where id = ${row.appSessionId}
-        and sandbox_work_state <> 'active') returning id`;
+        and sandbox_work_state <> 'active')
+      and not exists (select 1 from sandbox_workers where app_session_id = ${row.appSessionId}
+        and state = 'active') returning id`;
   });
   if (!claimed.length) return false;
   try {
@@ -308,7 +311,7 @@ export async function awaitSlot(
   session: Pick<AppSession, "id" | "userId">,
   need: SandboxLaunch,
   keyId?: string,
-  options: { maxWaitSeconds?: number } = {},
+  options: { maxWaitSeconds?: number; wait?: SandboxWait } = {},
 ): Promise<DaytonaKey> {
   const config = loadConfig();
   const db = getDb();
@@ -317,13 +320,28 @@ export async function awaitSlot(
       .where(and(eq(daytonaKeys.enabled, true), isNull(daytonaKeys.deletedAt)));
     if (!keys.length) throw new StudioSandboxError("no_daytona_key");
   }
-  const [entry] = await db.insert(queueEntries).values({
-    appSessionId: session.id, userId: session.userId, need, daytonaKeyId: keyId,
-  }).onConflictDoUpdate({ target: queueEntries.appSessionId, set: { heartbeatAt: new Date() } }).returning();
+  const entry = await getSqlClient().begin(async (tx) => {
+    await tx`select pg_advisory_xact_lock(20261110, 24)`;
+    const [current] = await tx<{ generation: number }[]>`
+      select sandbox_wait_generation as generation from app_sessions where id = ${session.id}
+        and user_id = ${session.userId}`;
+    if (!current || (options.wait && current.generation !== options.wait.generation)) {
+      throw new StudioSandboxError("sandbox_wait_cancelled");
+    }
+    const [row] = await tx<{ id: string }[]>`
+      insert into queue_entries (app_session_id, user_id, need, daytona_key_id, wait_generation)
+      values (${session.id}, ${session.userId}, ${need}, ${keyId ?? null}, ${current.generation})
+      on conflict (app_session_id) do update set heartbeat_at = now()
+      where queue_entries.wait_generation = excluded.wait_generation returning id`;
+    if (!row) throw new StudioSandboxError("sandbox_wait_cancelled");
+    return { id: row.id, waitGeneration: current.generation };
+  });
+  const wait = options.wait ?? { appSessionId: session.id, generation: entry.waitGeneration };
   const maxWaitMs = (options.maxWaitSeconds ?? config.sandboxQueueMaxWaitSeconds) * 1000;
   const deadline = Date.now() + maxWaitMs;
   try {
     while (true) {
+      await assertSandboxWait(wait);
       const [row] = await db.select().from(queueEntries).where(eq(queueEntries.id, entry.id));
       const [sandbox] = await db.select().from(sandboxes).where(eq(sandboxes.appSessionId, session.id));
       if (row === undefined) {

@@ -192,6 +192,8 @@ export async function pickKey(
       const entries = await tx`
         select q.id from queue_entries q
         where q.id = ${options.queueEntryId} and q.heartbeat_at > now() - interval '60 seconds'
+        and exists (select 1 from app_sessions a where a.id = q.app_session_id
+          and a.sandbox_wait_generation = q.wait_generation)
         and not exists (
           select 1 from sandboxes s join app_sessions a on a.id = s.app_session_id
           where a.user_id = q.user_id and a.id <> q.app_session_id
@@ -286,15 +288,19 @@ export async function pickKey(
       if (options.appSessionId !== undefined) {
         await tx`
           insert into sandboxes
-            (app_session_id, daytona_key_id, daytona_sandbox_id, state, starting_since, starting_kind, last_active_at)
-          values (${options.appSessionId}, ${row.id}, '', 'starting', now(), ${options.launch ?? "create"}, now())
+             (app_session_id, daytona_key_id, daytona_sandbox_id, state, starting_since, starting_kind, last_active_at,
+              wait_generation, launch_started_at)
+          values (${options.appSessionId}, ${row.id}, '', 'starting', now(), ${options.launch ?? "create"}, now(),
+            (select sandbox_wait_generation from app_sessions where id = ${options.appSessionId}), null)
           on conflict (app_session_id) do update set
             daytona_key_id = excluded.daytona_key_id,
             daytona_sandbox_id = case when ${options.launch ?? "create"} = 'create' then '' else sandboxes.daytona_sandbox_id end,
             state = 'starting',
             starting_since = excluded.starting_since,
             starting_kind = excluded.starting_kind,
-             last_active_at = excluded.last_active_at`;
+             last_active_at = excluded.last_active_at,
+             wait_generation = excluded.wait_generation,
+             launch_started_at = null`;
         if (options.queueEntryId !== undefined) {
           await tx`update sandboxes set slot_request_id = ${options.queueEntryId}
             where app_session_id = ${options.appSessionId}`;

@@ -2,7 +2,7 @@ import { and, asc, eq, gte, sql } from "drizzle-orm";
 
 import type { DaytonaMachine } from "@/agent/lib/daytona-backend";
 import { getDb } from "@/lib/db/client";
-import { appSessions, bashJobs, sessionEvents } from "@/lib/db/schema";
+import { agentSessions, appSessions, bashJobs, sandboxTaskCalls, sandboxWorkers, sessionEvents } from "@/lib/db/schema";
 
 const FRESH_EVENT_MS = 2 * 60_000;
 const MAX_JOB_AGE_MS = 6 * 60 * 60_000;
@@ -19,7 +19,11 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 /** События идут в порядке seq; явное ожидание и завершение важнее свежести. */
-export function turnIsBusy(events: readonly BusyEvent[], now = Date.now()): boolean {
+export function turnIsBusy(
+  events: readonly BusyEvent[],
+  now = Date.now(),
+  options: { readonly allowWaitingTasks?: boolean } = {},
+): boolean {
   let state: "unknown" | "active" | "input" | "idle" = "unknown";
   let turnId: string | undefined;
   let latestAt = -Infinity;
@@ -52,10 +56,10 @@ export function turnIsBusy(events: readonly BusyEvent[], now = Date.now()): bool
       state = "idle";
     } else if (
       sameTurn && state !== "idle" &&
-      type === "turn.waiting" && data.on === "input"
+      type === "turn.waiting" && (data.on === "input" || data.on === "tasks")
     ) {
       turnId ??= eventTurnId;
-      state = "input";
+      state = data.on === "input" || options.allowWaitingTasks ? "input" : "active";
     } else if (
       sameTurn && state !== "idle" &&
       (type === "input.resolved" || type === "step.started")
@@ -76,8 +80,14 @@ export async function sessionIsBusy(
   machine: Pick<DaytonaMachine, "readJobDirectory"> & Partial<Pick<DaytonaMachine, "state">>,
   now = Date.now(),
 ): Promise<boolean> {
+  const [activeCopy] = await getDb().select({ id: sandboxWorkers.id }).from(sandboxWorkers)
+    .where(and(eq(sandboxWorkers.appSessionId, appSessionId), eq(sandboxWorkers.state, "active")))
+    .limit(1);
+  if (activeCopy) return true;
+
   const [session] = await getDb().select({
     state: appSessions.sandboxWorkState, eventId: appSessions.sandboxWorkEventId,
+    turnId: appSessions.sandboxWorkTurnId,
   }).from(appSessions)
     .where(eq(appSessions.id, appSessionId));
   const events = await getDb()
@@ -99,7 +109,29 @@ export async function sessionIsBusy(
     .orderBy(asc(sessionEvents.seq));
   if (session?.state === "active" &&
       (!session.eventId || !events.some((event) => event.eventId === session.eventId))) return true;
-  if (turnIsBusy(events, now)) return true;
+  // Только известные незавершённые вызовы агентов текущего хода,
+  // каждый из которых действительно припаркован на вводе. LEFT JOIN
+  // сохраняет неизвестную копию в результате, не принимая её за свободную.
+  const tasks = session?.turnId ? await getDb().select({
+    kind: sandboxTaskCalls.kind, workerState: sandboxWorkers.state,
+  }).from(sandboxTaskCalls)
+    .leftJoin(agentSessions, and(
+      eq(agentSessions.appSessionId, sandboxTaskCalls.appSessionId),
+      eq(agentSessions.taskId, sandboxTaskCalls.taskId),
+    ))
+    .leftJoin(sandboxWorkers, and(
+      eq(sandboxWorkers.appSessionId, sandboxTaskCalls.appSessionId),
+      eq(sandboxWorkers.eveSessionId, agentSessions.eveSessionId),
+    ))
+    .where(and(
+      eq(sandboxTaskCalls.appSessionId, appSessionId),
+      eq(sandboxTaskCalls.turnId, session.turnId),
+      eq(sandboxTaskCalls.state, "active"),
+    )) : [];
+  const allowWaitingTasks = tasks.length > 0 && tasks.every((task) =>
+    task.kind === "agent" && task.workerState === "input",
+  );
+  if (turnIsBusy(events, now, { allowWaitingTasks })) return true;
   if (session?.state === "active" && session.eventId) {
     const [released] = await getDb().update(appSessions).set({ sandboxWorkState: "idle" })
       .where(and(eq(appSessions.id, appSessionId), eq(appSessions.sandboxWorkState, "active"),
