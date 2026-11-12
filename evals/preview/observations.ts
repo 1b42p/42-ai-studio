@@ -1,7 +1,7 @@
 import { posix } from "node:path";
 import type { EveEvalStreamEvent } from "eve/evals";
-import { frameName, frameNumbers, framesPattern, matchesCommand, nonemptyPattern, probePattern, projectPath, sizePattern, videoPattern } from "./commands";
-import { knownImage, previewFrames } from "./media-fixture";
+import { frameName, frameNumbers, framesPattern, isPixelCommand, matchesCommand, nonemptyPattern, probePattern, projectPath, sizePattern, stillSelection, videoLinkPattern, videoPattern } from "./commands";
+import { currentReviewFrames, knownImage, previewFrames } from "./media-fixture";
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 export function workspaceJpeg(value: unknown): string | null {
@@ -15,30 +15,46 @@ export function reviewedBeforeVideo(events: readonly EveEvalStreamEvent[], secon
   const paths = frameNumbers(seconds).map(frame => `${projectPath(seconds)}/out/frames-1/${frameName(frame)}`);
   const checked = new Set<string>();
   const viewed = new Set<string>();
-  const requests = new Map<string, { name: string; input: Record<string, unknown>; rendered: boolean; ready: boolean }>();
-  let rendered = false;
+  const requests = new Map<string, { name: string; input: Record<string, unknown>; rendered: boolean; ready: boolean; generation: number; frames: boolean }>();
+  let rendered = currentReviewFrames(seconds).length === paths.length;
   let result = false;
+  let generation = 0;
+  let frameFailure = false;
+  const pendingFrames = new Set<string>();
   for (const event of events) {
-    if (event.type === "actions.requested") for (const action of event.data.actions) {
-      if (action.kind !== "tool-call") continue;
-      const path = typeof action.input.filePath === "string" ? posix.resolve("/workspace", action.input.filePath) : "";
-      requests.set(action.callId, { name: action.toolName, input: action.input, rendered,
-        ready: action.toolName === "read_file" ? checked.has(path) : paths.every(path => viewed.has(path)) });
-      if (action.toolName === "bash" && matchesCommand(framesPattern(seconds), action.input.command)) {
-        rendered = false; checked.clear(); viewed.clear(); result = false;
+    if (event.type === "actions.requested") {
+      const writers = event.data.actions.filter(action => action.kind === "tool-call" && action.toolName === "bash" && matchesCommand(framesPattern(seconds), action.input.command));
+      if (writers.length) {
+        generation++; rendered = false; result = false; frameFailure = false;
+        checked.clear(); viewed.clear(); pendingFrames.clear();
+        writers.forEach(action => pendingFrames.add(action.callId));
+      }
+      for (const action of event.data.actions) {
+        if (action.kind !== "tool-call") continue;
+        requests.set(action.callId, { name: action.toolName, input: action.input, rendered,
+          generation, frames: pendingFrames.has(action.callId),
+          ready: action.toolName === "read_file"
+            ? rendered && paths.every(path => checked.has(path))
+            : paths.every(path => viewed.has(path)) });
       }
     }
-    if (event.type !== "action.result" || event.data.status !== "completed" || event.data.result.kind !== "tool-result") continue;
+    if (event.type !== "action.result" || event.data.result.kind !== "tool-result") continue;
     const request = requests.get(event.data.result.callId);
     const output = event.data.result.output;
-    if (!request || !record(output)) continue;
+    if (!request || request.generation !== generation) continue;
+    if (request.frames) {
+      pendingFrames.delete(event.data.result.callId);
+      if (event.data.status !== "completed" || !record(output) || output.status !== "completed" || output.exitCode !== 0) frameFailure = true;
+      rendered = pendingFrames.size === 0 && !frameFailure;
+      continue;
+    }
+    if (event.data.status !== "completed" || !record(output)) continue;
     if (request.name === "read_file" && request.ready && typeof request.input.filePath === "string") {
       const path = posix.resolve("/workspace", request.input.filePath);
       if (paths.includes(path) && knownImage(output, path)) viewed.add(path);
     }
     if (request.name !== "bash" || output.status !== "completed" || output.exitCode !== 0) continue;
-    if (matchesCommand(framesPattern(seconds), request.input.command)) rendered = true;
-    if (request.rendered && typeof request.input.command === "string" && request.input.command.includes("check-frames.py") && typeof output.stdout === "string") {
+    if (request.rendered && isPixelCommand(request.input.command, seconds) && typeof output.stdout === "string") {
       for (const line of output.stdout.split("\n")) {
         try {
           const row: unknown = JSON.parse(line);
@@ -52,8 +68,7 @@ export function reviewedBeforeVideo(events: readonly EveEvalStreamEvent[], secon
   return result;
 }
 
-export function inspectedVideo(events: readonly EveEvalStreamEvent[], seconds: number): boolean {
-  const draft = seconds > 60;
+export function inspectedVideo(events: readonly EveEvalStreamEvent[], seconds: number, draft = seconds > 60): boolean {
   const requests = new Map<string, { name: string; input: Record<string, unknown>; at: number }>();
   let renderedAt = -1;
   let currentRender = -1;
@@ -97,6 +112,35 @@ export function inspectedVideo(events: readonly EveEvalStreamEvent[], seconds: n
   return size && probe;
 }
 
+function completedStillFor(events: readonly EveEvalStreamEvent[], seconds: number, path: string | null, finalCompleted: number, previewRequested: number) {
+  if (!path || finalCompleted < 0 || previewRequested <= finalCompleted) return false;
+  type Write = { at: number; completed: boolean; overlapped: boolean };
+  const writes = new Map<string, Write>();
+  const pending = new Set<string>();
+  let latest: Write | null = null;
+  for (let at = 0; at < previewRequested; at++) {
+    const event = events[at];
+    if (event.type === "actions.requested") for (const action of event.data.actions) {
+      if (action.kind === "tool-call" && action.toolName === "bash" && stillSelection(action.input.command, seconds)?.path === path) {
+        const overlapped = pending.size > 0;
+        for (const callId of pending) writes.get(callId)!.overlapped = true;
+        latest = { at, completed: false, overlapped };
+        writes.set(action.callId, latest);
+        pending.add(action.callId);
+      }
+    }
+    if (event.type !== "action.result" || event.data.result.kind !== "tool-result") continue;
+    const write = writes.get(event.data.result.callId);
+    if (!write) continue;
+    const output = event.data.result.output;
+    const running = event.data.status === "completed" && record(output) && output.status === "running";
+    if (!running) pending.delete(event.data.result.callId);
+    write.completed = event.data.status === "completed" && record(output) && output.status === "completed" && output.exitCode === 0;
+  }
+  return latest !== null && pending.size === 0 && !latest.overlapped && latest.at > finalCompleted && latest.completed &&
+    inspectedVideo(events.slice(0, latest.at), seconds, false);
+}
+
 /** Request positions preserve causality even when parallel calls finish out of order. */
 export function previewEvidence(events: readonly EveEvalStreamEvent[], seconds: number) {
   const requests = new Map<string, { name: string; input: Record<string, unknown>; at: number }>();
@@ -107,21 +151,31 @@ export function previewEvidence(events: readonly EveEvalStreamEvent[], seconds: 
   let previewCount = 0;
   let previewCompleted = false;
   let questionRequested = -1;
+  let previewPath: string | null = null;
+  let draftLinkAt = -1;
+  let questionHasPriorLink = false;
   for (let at = 0; at < events.length; at++) {
     const event = events[at];
     if (event.type === "actions.requested") {
       for (const action of event.data.actions) {
         if (action.kind !== "tool-call") continue;
         requests.set(action.callId, { name: action.toolName, input: action.input, at });
-        if (action.toolName === "set_session_preview") { previewCount++; previewRequested = at; }
-        if (action.toolName === "ask_question") questionRequested = at;
+        if (action.toolName === "set_session_preview") { previewCount++; previewRequested = at; previewPath = workspaceJpeg(action.input.path); }
+        if (action.toolName === "ask_question") {
+          questionRequested = at;
+          questionHasPriorLink = draftCompleted >= 0 && draftLinkAt > draftCompleted && draftLinkAt < at;
+        }
         if (action.toolName === "bash" && typeof action.input.command === "string" && /\bremotion\s+render\b/.test(action.input.command) && !/--frames(?:=|\s)/.test(action.input.command)) {
           lastRenderRequest = at;
           finalCompleted = -1;
           draftCompleted = -1;
+          draftLinkAt = -1;
+          questionHasPriorLink = false;
         }
       }
     }
+    if (event.type === "message.completed" && draftCompleted >= 0 && typeof event.data.message === "string" &&
+      videoLinkPattern(seconds, true).test(event.data.message) && inspectedVideo(events.slice(0, at), seconds, true)) draftLinkAt = at;
     if (event.type !== "action.result" || event.data.status !== "completed" || event.data.result.kind !== "tool-result") continue;
     const request = requests.get(event.data.result.callId);
     const output = event.data.result.output;
@@ -137,8 +191,10 @@ export function previewEvidence(events: readonly EveEvalStreamEvent[], seconds: 
   }
   return {
     publishedAfterFinal: previewCount === 1 && previewCompleted && finalCompleted >= 0 && previewRequested > finalCompleted,
+    stillAfterVerifiedFinal: previewCount === 1 && previewCompleted && completedStillFor(events, seconds, previewPath, finalCompleted, previewRequested),
     draftWithoutPreview: draftCompleted >= 0 && previewCount === 0 && finalCompleted === -1,
     questionAfterDraft: draftCompleted >= 0 && questionRequested > draftCompleted,
+    draftLinkBeforeQuestion: draftCompleted >= 0 && questionRequested > draftCompleted && questionHasPriorLink,
     finalCompleted,
     draftCompleted,
   };

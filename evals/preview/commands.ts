@@ -1,6 +1,7 @@
 import { entriesPattern, esc, optionOrders, quote } from "../music/operation-patterns";
 
 export const PROJECT = "/workspace/preview-coffee";
+export const skillRootPattern = "(?:\\$HOME/|/root/|/{1,2})\\.agents/skills";
 export const projectPath = (seconds: number) => `${PROJECT}-${seconds}`;
 export const frameNumbers = (seconds: number) => [0, seconds * 5, seconds * 10, seconds * 15, seconds * 20, seconds * 30 - 1];
 export const frameName = (frame: number) => `element-${String(frame).padStart(4, "0")}.jpeg`;
@@ -26,10 +27,28 @@ export function framesPattern(seconds: number) {
 export function stillPattern(seconds: number, frame: number, destination: string) {
   return atomic(`${cli}still\\s+${pathArg("src/index.tsx", seconds)}\\s+Main\\s+${pathArg(destination, seconds)}\\s+${options([props(seconds), `--frame(?:=|\\s+)${frame}`, "--image-format(?:=|\\s+)jpeg", "--jpeg-quality(?:=|\\s+)85", "--scale(?:=|\\s+)0\\.5"])}`, seconds);
 }
+export function canonicalStillPattern(seconds: number) {
+  return `(?:${frameNumbers(seconds).map(frame => stillPattern(seconds, frame, "out/preview.jpg")).join("|")})`;
+}
+export function stillSelection(command: unknown, seconds: number) {
+  for (const frame of frameNumbers(seconds)) {
+    for (const destination of ["out/preview.jpg", `out/key-${frame}.jpg`]) {
+      if (matchesCommand(stillPattern(seconds, frame, destination), command)) {
+        return { frame, path: `${projectPath(seconds)}/${destination}` };
+      }
+    }
+  }
+  return null;
+}
 export function pixelPattern(paths: string[], seconds: number, glob = false) {
-  const script = quote("(?:\\$HOME|/root)/\\.agents/skills/frame-review/scripts/check-frames\\.py");
+  const script = quote(`${skillRootPattern}/frame-review/scripts/check-frames\\.py`);
   const inputs = paths.map(path => pathArg(path, seconds)).join("\\s+");
   return atomic(`python3?\\s+${script}\\s+(?:${inputs}${glob ? `|${pathArg("out/frames-1", seconds)}\\/\\*\\.jpeg` : ""})`, seconds);
+}
+export function isPixelCommand(command: unknown, seconds: number): boolean {
+  const paths = frameNumbers(seconds).map(frame => `out/frames-1/${frameName(frame)}`);
+  return matchesCommand(pixelPattern(paths, seconds, true), command) ||
+    paths.some(path => matchesCommand(pixelPattern([path], seconds), command));
 }
 export const matchesCommand = (pattern: string, command: unknown) => typeof command === "string" && new RegExp(pattern).test(command);
 export function probePattern(seconds: number, draft = false, format: "json" | "selected-default" = "json") {

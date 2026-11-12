@@ -19,6 +19,7 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.notCalledTool("set_session_preview");
     t.check(previewEvidence(turn.events, 120).draftWithoutPreview, satisfies(Boolean, "завершённый черновик без публикации превью и финала"));
     t.check(previewEvidence(turn.events, 120).questionAfterDraft, satisfies(Boolean, "согласование запрошено после завершения черновика"));
+    t.check(previewEvidence(turn.events, 120).draftLinkBeforeQuestion, satisfies(Boolean, "ссылка на черновик отправлена отдельным текстом до запроса согласования"));
     t.check(reviewedBeforeVideo(turn.events, 120), satisfies(Boolean, "проверенные реальные кадры перед черновиком"));
     t.check(inspectedVideo(turn.events, 120), satisfies(Boolean, "черновик имеет размер, 960×540 и длительность 120 секунд"));
     turn.messageIncludes(videoLinkPattern(120, true));
