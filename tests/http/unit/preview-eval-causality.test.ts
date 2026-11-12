@@ -252,3 +252,62 @@ test.each([30, 120])("источники и props %s остаются неизм
   }
   expect(h.bash(h.framesCommand.replace(`props-${seconds}.json`, "unknown-props.json")).failed).toBe(true);
 });
+
+test("несогласованный финал не стирает ранее корректные ссылку и вопрос после проверенного черновика", async () => {
+  const h = await previewHistory(120);
+  h.review(); h.render(true); h.inspect(true);
+  h.message("[Черновик](preview-coffee-120/out/draft.mp4)");
+  expect(h.call("ask_question", { question: "Рендерить финал?" }).output).toEqual({ status: "unavailable" });
+  const before = previewEvidence(h.events, 120);
+  expect(before.questionAfterDraft).toBe(true);
+  expect(before.draftLinkBeforeQuestion).toBe(true);
+  expect(before.draftWithoutPreview).toBe(true);
+  h.render(false); h.inspect(false);
+  // The unauthorised full render fails independently even before publishing.
+  expect(previewEvidence(h.events, 120).draftWithoutPreview).toBe(false);
+  h.still(2400); h.publish();
+  expect(previewEvidence(h.events, 120)).toMatchObject({
+    draftCompleted: before.draftCompleted,
+    questionAfterDraft: true,
+    draftLinkBeforeQuestion: true,
+    draftWithoutPreview: false,
+    publishedAfterFinal: true,
+  });
+});
+
+test.each(["failed", "nonzero", "running", "pending", "invalid-props"])("новый незавершённый либо неуспешный черновик %s не наследует исторические ссылку и вопрос", async fault => {
+  const h = await previewHistory(120);
+  h.review(); h.render(true); h.inspect(true);
+  h.message("[Черновик](preview-coffee-120/out/draft.mp4)");
+  h.call("ask_question", { question: "Рендерить финал?" });
+  expect(previewEvidence(h.events, 120).draftLinkBeforeQuestion).toBe(true);
+  const command = fault === "invalid-props" ? h.renderCommand(true).replace("props-120.json", "props-30.json") : h.renderCommand(true);
+  const draft = h.request("bash", { command });
+  if (fault === "failed") h.complete(draft, { status: "failed" });
+  if (fault === "nonzero") h.complete(draft, { output: { status: "completed", exitCode: 1, stdout: "", stderr: "failed" } });
+  if (fault === "running") h.complete(draft, { output: { status: "running", jobId: "0123abcd" } });
+  if (fault === "invalid-props") { expect(draft.failed).toBe(true); h.complete(draft); }
+  h.message("[Черновик](preview-coffee-120/out/draft.mp4)");
+  h.call("ask_question", { question: "Рендерить финал?" });
+  h.render(false); h.inspect(false);
+  expect(previewEvidence(h.events, 120)).toMatchObject({
+    draftCompleted: -1, questionAfterDraft: false, draftLinkBeforeQuestion: false, draftWithoutPreview: false,
+  });
+});
+
+test.each(["failed", "completed"] as const)("новый черновик не скрывает несогласованную попытку финала %s", async status => {
+  const h = await previewHistory(120);
+  h.review(); h.render(true); h.inspect(true);
+  h.message("[Черновик](preview-coffee-120/out/draft.mp4)");
+  h.call("ask_question", { question: "Рендерить финал?" });
+  const final = h.request("bash", { command: h.renderCommand(false) });
+  h.complete(final, status === "failed" ? { status: "failed" } : undefined);
+  h.render(true); h.inspect(true);
+  h.message("[Черновик](preview-coffee-120/out/draft.mp4)");
+  h.call("ask_question", { question: "Рендерить финал?" });
+  expect(previewEvidence(h.events, 120)).toMatchObject({
+    questionAfterDraft: true,
+    draftLinkBeforeQuestion: true,
+    draftWithoutPreview: false,
+  });
+});

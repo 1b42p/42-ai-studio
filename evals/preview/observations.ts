@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 import type { EveEvalStreamEvent } from "eve/evals";
-import { frameName, frameNumbers, framesPattern, isPixelCommand, matchesCommand, nonemptyPattern, probePattern, projectPath, sizePattern, stillSelection, videoLinkPattern, videoPattern } from "./commands";
+import { frameName, frameNumbers, framesPattern, isPixelCommand, matchesCommand, nonemptyPattern, pathArg, probePattern, projectPath, sizePattern, stillSelection, videoLinkPattern, videoPattern } from "./commands";
 import { currentReviewFrames, knownImage, previewFrames } from "./media-fixture";
 
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -145,6 +145,9 @@ function completedStillFor(events: readonly EveEvalStreamEvent[], seconds: numbe
 export function previewEvidence(events: readonly EveEvalStreamEvent[], seconds: number) {
   const requests = new Map<string, { name: string; input: Record<string, unknown>; at: number }>();
   let lastRenderRequest = -1;
+  let lastDraftRequest = -1;
+  let lastDraftCallId: string | null = null;
+  const draftTarget = new RegExp(`\\s${pathArg("out/draft.mp4", seconds)}(?:\\s|$)`);
   let finalCompleted = -1;
   let draftCompleted = -1;
   let previewRequested = -1;
@@ -154,6 +157,7 @@ export function previewEvidence(events: readonly EveEvalStreamEvent[], seconds: 
   let previewPath: string | null = null;
   let draftLinkAt = -1;
   let questionHasPriorLink = false;
+  let finalAttempted = false;
   for (let at = 0; at < events.length; at++) {
     const event = events[at];
     if (event.type === "actions.requested") {
@@ -168,9 +172,19 @@ export function previewEvidence(events: readonly EveEvalStreamEvent[], seconds: 
         if (action.toolName === "bash" && typeof action.input.command === "string" && /\bremotion\s+render\b/.test(action.input.command) && !/--frames(?:=|\s)/.test(action.input.command)) {
           lastRenderRequest = at;
           finalCompleted = -1;
-          draftCompleted = -1;
-          draftLinkAt = -1;
-          questionHasPriorLink = false;
+          // A final writes a different file: it may violate approval policy,
+          // but cannot erase a previously correct draft/question sequence.
+          // Any new writer of the draft invalidates its previous proof first,
+          // including an unsupported command that ultimately fails.
+          if (draftTarget.test(action.input.command)) {
+            lastDraftRequest = at;
+            lastDraftCallId = action.callId;
+            draftCompleted = -1;
+            draftLinkAt = -1;
+            questionHasPriorLink = false;
+          } else {
+            finalAttempted = true;
+          }
         }
       }
     }
@@ -186,13 +200,14 @@ export function previewEvidence(events: readonly EveEvalStreamEvent[], seconds: 
     }
     if (request.name === "bash" && request.at === lastRenderRequest && output.status === "completed" && output.exitCode === 0) {
       if (matchesCommand(videoPattern(seconds), request.input.command)) finalCompleted = at;
-      if (matchesCommand(videoPattern(seconds, true), request.input.command)) draftCompleted = at;
     }
+    if (request.name === "bash" && event.data.result.callId === lastDraftCallId && output.status === "completed" && output.exitCode === 0 &&
+      matchesCommand(videoPattern(seconds, true), request.input.command)) draftCompleted = at;
   }
   return {
     publishedAfterFinal: previewCount === 1 && previewCompleted && finalCompleted >= 0 && previewRequested > finalCompleted,
     stillAfterVerifiedFinal: previewCount === 1 && previewCompleted && completedStillFor(events, seconds, previewPath, finalCompleted, previewRequested),
-    draftWithoutPreview: draftCompleted >= 0 && previewCount === 0 && finalCompleted === -1,
+    draftWithoutPreview: draftCompleted >= 0 && !finalAttempted && lastRenderRequest === lastDraftRequest && previewCount === 0 && finalCompleted === -1,
     questionAfterDraft: draftCompleted >= 0 && questionRequested > draftCompleted,
     draftLinkBeforeQuestion: draftCompleted >= 0 && questionRequested > draftCompleted && questionHasPriorLink,
     finalCompleted,
