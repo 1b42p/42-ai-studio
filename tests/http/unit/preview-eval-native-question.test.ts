@@ -82,8 +82,8 @@ async function draftHarness(mode = "parked", cleanupError = false) {
   if (mode !== "noask-unverified") h.inspect();
   const link = "[Черновик](preview-coffee-120/out/draft.mp4)";
   if (mode === "noask-wrong-link") h.message("[Черновик](preview-coffee-30/out/draft.mp4)");
-  else if (mode !== "noask-missing-link" && mode !== "late-link") h.message(link);
-  const input = { question: "Рендерить финал?" };
+  else if (mode !== "noask-missing-link" && mode !== "late-link" && mode !== "link-in-question") h.message(link);
+  const input = { question: mode === "link-in-question" ? `${link} Рендерить финал?` : "Рендерить финал?" };
   const action = { kind: "tool-call", toolName: "ask_question", callId: "native-question", input };
   const request = { requestId: "req_question", kind: "question", prompt: input.question, allowFreeform: true, action };
   if (!noAsk) h.events.push(event("actions.requested", { turnId: "turn_0", stepIndex: 10, actions: [action] }));
@@ -160,7 +160,7 @@ test("настоящий Eve EvalSessionDriver проверяет parked/pending
   expect(results.every(result => result.passed), JSON.stringify(results)).toBe(true);
 });
 
-test.each(["unavailable", "unauthorised-final", "duplicate-input", "duplicate-call", "missing-input", "late-link"])("native draft отклоняет %s и всё равно отменяет сессию", async mode => {
+test.each(["unavailable", "unauthorised-final", "duplicate-input", "duplicate-call", "missing-input", "late-link", "link-in-question"])("native draft отклоняет %s и всё равно отменяет сессию", async mode => {
   const h = await draftHarness(mode);
   try { await h.run(); } catch (error) {
     if (!(error instanceof EvalRequirementFailed)) throw error;

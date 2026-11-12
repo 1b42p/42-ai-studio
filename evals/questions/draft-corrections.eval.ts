@@ -22,6 +22,10 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.check(renderCommands(corrected).some((command) => isDraft(command) && command.includes("props-v2.json")), equals(true));
     const next = session.requireInputRequest({ toolName: "ask_question", prompt: /Рендерить финал/ });
     t.check(next.requestId !== request.requestId, equals(true));
+    const questionIndex = corrected.events.findIndex((event) => event.type === "input.requested" &&
+      event.data.requests.some((input) => input.requestId === next.requestId));
+    t.check(questionIndex >= 0 && corrected.events.slice(0, questionIndex).some((event) =>
+      event.type === "message.completed" && /\]\([^)]*\.mp4\)/.test(event.data.message)), equals(true));
     t.parked();
   },
 }));
