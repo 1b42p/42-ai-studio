@@ -16,7 +16,7 @@ export const request = (seconds: number) => [
   `Сделай ролик о спокойном утреннем кофейном ритуале для взрослых, ${seconds} секунд, 16:9, 1920×1080, 30 кадров/с, по-русски, без звука, озвучки и музыки.`,
   `Используй подготовленный проект ${projectPath(seconds)}, композиция Main, параметры props-${seconds}.json. Графика трёх сцен и тексты уже утверждены; исходники и параметры сохраняй.`,
   `Контрольная выборка проекта: ${frameNumbers(seconds).join(", ")}; каталог out/frames-1, имена element-NNNN.jpeg. Это неизменяемый подготовленный проект, операции и доступные файлы описаны в SPEC.md.`,
-  "Оставь готовый ролик out/final.mp4. Дополнительных пожеланий нет.",
+  "Результаты сохраняй в out/. Дополнительных пожеланий нет.",
 ].join("\n");
 
 const references = ["frame-review/references/notes-template.md", "frame-review/scripts/check-frames.py"];
@@ -33,11 +33,9 @@ export function previewStubs(seconds: number): ToolStub[] {
     `Команды рендера используют --props=props-${seconds}.json. Проверочные кадры ${frameNumbers(seconds).join(",")} сохраняются в out/frames-1 с --image-format=jpeg --jpeg-quality=90.`,
     "Полный рендер — out/final.mp4; уменьшенный черновик — out/draft.mp4 с --scale=0.5 --x264-preset=superfast --crf=32. Не склеивай независимые команды в одну shell-строку.",
     "Размер результата проверяется stat -c %s <путь>. Метаданные: npx remotion ffprobe -v error -show_entries stream=codec_name,codec_type,width,height,duration:format=duration -of default=nw=1 <путь>; также доступен полный -show_streams -show_format -of json.",
-    "Подготовлены независимые экспорты выразительных кадров (JPEG quality 85, scale 0.5); можно выбрать любой из них. Повторный still с тем же номером кадра и соответствующим путём воспроизводит те же пиксели:",
-    ...exports.map(frame => `кадр ${frame.frame}: ${posix.relative(P, frame.path)}`),
     "out/preview.jpg доступен как выход still для любого указанного номера кадра с props этого проекта, JPEG quality 85 и scale 0.5. Все эффекты подменены: размер в ответе публикации этого пути номинальный, не измеренный; пиксели preview.jpg не предоставляются, read_file этого пути не поддержан.",
     "NOTES.md: первое чтение возвращает только явно помеченный исходный снимок проекта, даже если запись уже была; дальнейшие чтения отклоняются. Это не чтение обновлённого журнала. edit_file принимает полный актуальный снимок без oldString.",
-    "Доступны атомарные pwd, ls/ls -l/ls -la для корня, src, out и out/frames-1; ls -l для отдельных исходных файлов и полного списка именных key-JPEG; test -s известных неизменяемых файлов и test -d node_modules. Листинги — исходный манифест: служебные поля условны, размеры обычных файлов взяты из исходников и записанных медиа, они не отражают прогресс текущей оценки.",
+    "Доступны атомарные pwd, ls/ls -l/ls -la для корня, src, out и out/frames-1; ls -l для отдельных исходных файлов; test -s известных неизменяемых файлов и test -d node_modules. Листинги — исходный манифест: служебные поля условны, размеры обычных файлов взяты из исходников и контрольных кадров, они не отражают прогресс текущей оценки.",
     "Домашний каталог этой среды — /; ссылки навыков читаются через $HOME/.agents/skills/ или /.agents/skills/ (также поддержан прежний псевдоним /root). Составные команды, неподдержанные пути и параметры отклоняются без частичного исполнения или подтверждения успеха.",
   ].join("\n");
   const files = { "src/index.tsx": projectSource, [`props-${seconds}.json`]: projectProps(seconds), "SPEC.md": spec,
@@ -46,6 +44,9 @@ export function previewStubs(seconds: number): ToolStub[] {
   for (const path of references) {
     stubs.push({ id: `reference-${path}`, tool: "read_file", match: { filePath: { pattern: `^${skillRootPattern}/${esc(path)}$` } }, outcome: { response: read(`/.agents/skills/${path}`, readFileSync(`agent/skills/${path}`, "utf8")) } });
   }
+  // Named exports are recorded pixel responses for the immutable render
+  // capability, not initial project assets. The byte cache is not a mutable
+  // filesystem model; reading it never substitutes for a new matching still.
   for (const frame of [...frames, ...exports]) {
     const relative = posix.relative(P, frame.path);
     stubs.push({ id: `image-${relative}`, tool: "read_file", match: { filePath: { enum: [frame.path, `preview-coffee-${seconds}/${relative}`] } }, outcome: { response: imageOutput(frame) } });
@@ -84,9 +85,9 @@ export function previewStubs(seconds: number): ToolStub[] {
   for (const frame of [...frames, ...exports]) {
     stubs.push({ id: `publish-${posix.basename(frame.path)}`, tool: "set_session_preview", match: { path: { enum: [frame.path, `preview-coffee-${seconds}/${posix.relative(P, frame.path)}`] } }, outcome: { response: { path: frame.path, size: frame.size, contentType: "image/jpeg" } } });
   }
-  stubs.push({ id: "preview-catchall", tool: "set_session_preview", outcome: { throw: { message: "preview_not_found: Этот путь не записан в подготовленном проекте. Доступные JPEG и номера кадров перечислены в SPEC.md; выбери любой из них." } } });
+  stubs.push({ id: "preview-catchall", tool: "set_session_preview", outcome: { throw: { message: "preview_not_found: Публикация этого пути не записана в контракте проекта. SPEC.md описывает поддержанные операции и контрольную выборку." } } });
   stubs.push(bash("pwd", atomic("pwd", seconds), `${P}\n`));
-  stubs.push(...preflightStubs(seconds, { ...files, "NOTES.md": initialNotes(seconds) }, [...frames, ...exports], exports.map(frame => frame.path)));
+  stubs.push(...preflightStubs(seconds, { ...files, "NOTES.md": initialNotes(seconds) }, frames));
   stubs.push(bash("mkdir-out", atomic(`mkdir\\s+-p\\s+${pathArg("out", seconds)}`, seconds)));
   stubs.push({ id: "initial-notes", tool: "read_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] } }, outcomes: [
     { response: read(`${P}/NOTES.md`, initialNotes(seconds)) },

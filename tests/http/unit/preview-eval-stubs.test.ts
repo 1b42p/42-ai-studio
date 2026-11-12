@@ -17,7 +17,8 @@ const toolNames = ["bash", "read_file", "edit_file", "agent", "ask_question", "s
 
 test.each([30, 120])("бриф %s не подсказывает автоматическое создание превью", seconds => {
   expect(request(seconds)).not.toMatch(/миниатюр|превью|выразительн|set_session_preview/i);
-  expect(request(seconds)).toContain("out/final.mp4");
+  expect(request(seconds)).toContain("Результаты сохраняй в out/. Дополнительных пожеланий нет.");
+  expect(request(seconds)).not.toMatch(/final\.mp4|draft|черновик|срочно|немедленно|ask_question/);
 });
 async function capture(create: (t: EveEvalContext) => Promise<unknown>) {
   let captured: readonly ToolStub[] = [];

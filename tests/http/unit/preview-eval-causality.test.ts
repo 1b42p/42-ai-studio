@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { previewEvidence, reviewedBeforeVideo } from "../../../evals/preview/observations";
+import { inspectedVideo, previewEvidence, reviewedBeforeVideo } from "../../../evals/preview/observations";
 import { previewFrames } from "../../../evals/preview/media-fixture";
 import { previewHistory } from "./preview-eval-support";
 import { frameName, frameNumbers, projectPath } from "../../../evals/preview/commands";
@@ -86,12 +86,11 @@ test.each(frameNumbers(30))("канонический still кадра %s под
   expect(h.call("read_file", { filePath: `${projectPath(30)}/out/preview.jpg` }).failed).toBe(true);
 });
 
-test.each(["no-still", "before-final", "before-file-checks", "parallel-publication", "stale-final", "failed", "running", "pending-overwrite", "failed-overwrite", "wrong-path", "wrong-props", "wrong-quality", "wrong-scale", "unknown-frame"])("публикация не наследует неподходящий still: %s", async fault => {
+test.each(["no-still", "before-final", "parallel-publication", "stale-final", "failed", "running", "pending-overwrite", "failed-overwrite", "wrong-path", "wrong-props", "wrong-quality", "wrong-scale", "unknown-frame"])("публикация не наследует неподходящий still: %s", async fault => {
   const h = await previewHistory();
   h.review();
   if (fault === "before-final") h.still();
   h.render();
-  if (fault === "before-file-checks") h.still();
   h.inspect();
   if (fault === "parallel-publication") {
     const still = h.request("bash", { command: h.stillCommand() });
@@ -134,6 +133,71 @@ test("ранний still не мешает новому корректному s
   const cached = await previewHistory();
   cached.review(); cached.render(); cached.inspect(); cached.publish(selected);
   expect(previewEvidence(cached.events, 30).stillAfterVerifiedFinal).toBe(false);
+});
+
+test.each(["still-first", "checks-first", "parallel-still-first", "parallel-checks-first", "same-batch"])("после успешного финала проверки видео и still могут завершаться независимо: %s", async mode => {
+  const h = await previewHistory();
+  h.review(); h.render();
+  if (mode === "still-first") { h.still(); h.inspect(); }
+  else if (mode === "checks-first") { h.inspect(); h.still(); }
+  else {
+    const start = h.events.length;
+    const size = h.request("bash", { command: "stat -c %s out/final.mp4" });
+    const probe = h.request("bash", { command: "npx remotion ffprobe -v error -show_streams -show_format -of json out/final.mp4" });
+    const still = h.request("bash", { command: h.stillCommand() });
+    if (mode === "same-batch") {
+      const requests = h.events.splice(start);
+      const first = requests[0];
+      if (first.type !== "actions.requested") throw new Error("Missing request");
+      h.events.push({ ...first, data: { ...first.data, actions: requests.flatMap(row => row.type === "actions.requested" ? row.data.actions : []) } });
+    }
+    if (mode !== "parallel-checks-first") h.complete(still);
+    h.complete(probe); h.complete(size);
+    if (mode === "parallel-checks-first") h.complete(still);
+  }
+  h.publish();
+  expect(previewEvidence(h.events, 30).stillAfterVerifiedFinal).toBe(true);
+  expect(inspectedVideo(h.events, 30)).toBe(true);
+  expect(reviewedBeforeVideo(h.events, 30)).toBe(true);
+});
+
+test.each(["failed", "nonzero", "running", "pending", "late-result", "late-request", "invalid-metadata"])("завершённый still не заменяет подтверждённые до публикации метаданные видео: %s", async mode => {
+  const h = await previewHistory();
+  h.review(); h.render(); h.still();
+  h.bash("stat -c %s out/final.mp4");
+  const input = { command: "npx remotion ffprobe -v error -show_streams -show_format -of json out/final.mp4" };
+  if (mode === "late-request") h.publish();
+  const probe = h.request("bash", input);
+  if (mode === "failed") h.complete(probe, { status: "failed" });
+  if (mode === "nonzero") h.complete(probe, { output: { status: "completed", exitCode: 1 } });
+  if (mode === "running") h.complete(probe, { output: { status: "running", jobId: "0123abcd" } });
+  if (mode === "invalid-metadata") h.complete(probe, { output: { status: "completed", exitCode: 0, stdout: "{}" } });
+  if (mode !== "late-request") h.publish();
+  if (mode === "late-result" || mode === "late-request") h.complete(probe);
+  expect(previewEvidence(h.events, 30).stillAfterVerifiedFinal).toBe(false);
+  expect(inspectedVideo(h.events, 30)).toBe(false);
+});
+
+test.each(["pending", "failed", "running"])("still, начатый до успешного завершения финала (%s), не подтверждает новый кадр", async mode => {
+  const h = await previewHistory();
+  h.review();
+  const final = h.request("bash", { command: h.renderCommand(false) });
+  if (mode === "failed") h.complete(final, { status: "failed" });
+  if (mode === "running") h.complete(final, { output: { status: "running", jobId: "0123abcd" } });
+  h.still();
+  if (mode === "pending") h.complete(final);
+  h.inspect(); h.publish();
+  expect(previewEvidence(h.events, 30).stillAfterVerifiedFinal).toBe(false);
+});
+
+test.each(["out/preview.jpg", "out/key-150.jpg", "out/frames-1/element-0150.jpeg"])("проверенный финал и доступный JPEG без нового still не завершают задачу: %s", async path => {
+  const h = await previewHistory();
+  h.review(); h.render(); h.inspect();
+  if (path.includes("key-")) expect(h.call("read_file", { filePath: `${projectPath(30)}/${path}` }).failed).toBe(false);
+  h.publish(path);
+  expect(inspectedVideo(h.events, 30)).toBe(true);
+  expect(previewEvidence(h.events, 30).publishedAfterFinal).toBe(true);
+  expect(previewEvidence(h.events, 30).stillAfterVerifiedFinal).toBe(false);
 });
 
 test.each(["late-after-publication", "both-before-publication", "same-batch"])("перекрывающиеся still в один путь не дают готовое превью: %s", async mode => {
@@ -212,11 +276,15 @@ test.each([30, 120])("атомарные проверки известного �
   const h = await previewHistory(seconds);
   const P = projectPath(seconds);
   const keys = frameNumbers(seconds).map(frame => `out/key-${frame}.jpg`).join(" ");
-  for (const command of ["pwd", "ls -la src", "ls -la out", "ls -la", "ls out/frames-1", "test -s src/index.tsx", "test -s package.json", `test -s props-${seconds}.json`, "test -d node_modules", `ls -l ${keys}`, "ls -l src/index.tsx", `ls -l ${P}/props-${seconds}.json`]) {
+  for (const command of ["pwd", "ls -la src", "ls -la out", "ls -la", "ls out/frames-1", "test -s src/index.tsx", "test -s package.json", `test -s props-${seconds}.json`, "test -d node_modules", "ls -l src/index.tsx", `ls -l ${P}/props-${seconds}.json`]) {
     expect(h.bash(`cd ${P} && ${command}`).failed, command).toBe(false);
   }
   const initialOut = h.bash("ls out").output as { stdout: string };
-  expect(initialOut.stdout).not.toMatch(/(?:final|draft)\.mp4|preview\.jpg/);
+  expect(initialOut.stdout).toBe("frames-1\n");
+  expect(h.bash(`ls -l ${keys}`).failed).toBe(true);
+  expect(h.bash("test -s out/key-0.jpg").failed).toBe(true);
+  const spec = h.call("read_file", { filePath: `${P}/SPEC.md` }).output as { content: string };
+  expect(spec.content).not.toMatch(/key-\d+\.jpg|выразительных|Подготовлены независимые экспорты/);
   for (const command of ["test -s src/Root.tsx", "ls -l src/Root.tsx", "test -s src/index.tsx && false", "ls -la src && ls out"]) expect(h.bash(command).failed, command).toBe(true);
   expect(h.call("read_file", { filePath: `${P}/src/Root.tsx` }).failed).toBe(true);
   for (const home of ["$HOME", "/root", "", "/"]) expect(h.call("read_file", { filePath: `${home}/.agents/skills/frame-review/references/notes-template.md` }).failed).toBe(false);

@@ -5,7 +5,7 @@ import { atomic, pathArg, projectPath } from "./commands";
 
 /** Fixed initial manifest only: no shell evaluation or mutable filesystem. */
 export function preflightStubs(seconds: number, files: Readonly<Record<string, string>>,
-  media: readonly { path: string; size: number }[], keyPaths: readonly string[]): ToolStub[] {
+  media: readonly { path: string; size: number }[]): ToolStub[] {
   const P = projectPath(seconds);
   const sizes = Object.fromEntries([
     ...Object.entries(files).map(([path, content]) => [path, Buffer.byteLength(content)] as const),
@@ -40,9 +40,6 @@ export function preflightStubs(seconds: number, files: Readonly<Record<string, s
     for (const path of Object.keys(files).filter(path => path !== "NOTES.md")) {
       stubs.push(bash(`preflight-file-${path}-${absolute}`, `ls\\s+-(?:l|la|al)\\s+${quote(esc(displayed(path)))}`, longLine(displayed(path), path) + "\n"));
     }
-    const keys = keyPaths.map(path => path.startsWith(`${P}/`) ? path.slice(P.length + 1) : path);
-    stubs.push(bash(`preflight-key-list-${absolute}`, `ls\\s+-l\\s+${keys.map(path => quote(esc(displayed(path)))).join("\\s+")}`,
-      [...keys].sort().map(path => longLine(displayed(path), path)).join("\n") + "\n"));
   }
   return stubs;
 }

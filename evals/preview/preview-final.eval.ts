@@ -15,7 +15,7 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.loadedSkill("frame-review");
     t.calledTool("set_session_preview", { count: 1, input: { path: value => workspaceJpeg(value) !== null }, output: { contentType: "image/jpeg" } });
     t.check(previewEvidence(turn.events, 30).publishedAfterFinal, satisfies(Boolean, "JPEG запрошен после завершения последнего полного рендера, ровно один раз"));
-    t.check(previewEvidence(turn.events, 30).stillAfterVerifiedFinal, satisfies(Boolean, "выбранный JPEG отрендерен после проверенного финала и до запроса публикации"));
+    t.check(previewEvidence(turn.events, 30).stillAfterVerifiedFinal, satisfies(Boolean, "выбранный JPEG заново отрендерен после успешного финала; JPEG и проверки видео завершены до публикации"));
     t.check(reviewedBeforeVideo(turn.events, 30), satisfies(Boolean, "шесть настоящих JPEG проверены и просмотрены до рендера"));
     t.check(inspectedVideo(turn.events, 30), satisfies(Boolean, "размер и метаданные последнего финала проверены до публикации превью"));
     turn.messageIncludes(videoLinkPattern(30));
