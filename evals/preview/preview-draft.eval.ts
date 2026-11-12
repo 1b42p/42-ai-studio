@@ -2,6 +2,7 @@ import { defineEval } from "eve/evals";
 import { satisfies } from "eve/evals/expect";
 import { previewSession, request, TIMEOUT } from "./fixtures";
 import { inspectedVideo, previewEvidence, reviewedBeforeVideo } from "./observations";
+import { videoLinkPattern } from "./commands";
 
 export default Array.from({ length: 3 }, () => defineEval({
   description: "После уменьшенного 120-секундного черновика агент не меняет превью и ждёт согласования.",
@@ -11,18 +12,33 @@ export default Array.from({ length: 3 }, () => defineEval({
     const session = await previewSession(t, 120);
     try {
       const turn = await session.send(request(120));
-      turn.parked();
+      const evidence = previewEvidence(turn.events, 120);
       turn.loadedSkill("frame-review");
-      turn.calledTool("ask_question", { status: "pending", count: 1 });
-      session.requireInputRequest({ toolName: "ask_question" });
       turn.notCalledTool("set_session_preview");
-      t.check(previewEvidence(turn.events, 120).draftWithoutPreview, satisfies(Boolean, "завершённый черновик без публикации превью и финала"));
-      t.check(previewEvidence(turn.events, 120).questionAfterDraft, satisfies(Boolean, "согласование запрошено после завершения черновика"));
-      t.check(previewEvidence(turn.events, 120).draftLinkBeforeQuestion, satisfies(Boolean, "ссылка на черновик отправлена отдельным текстом до запроса согласования"));
+      t.check(evidence.draftWithoutPreview, satisfies(Boolean, "завершённый черновик без публикации превью и попыток финала"));
       t.check(reviewedBeforeVideo(turn.events, 120), satisfies(Boolean, "проверенные реальные кадры перед черновиком"));
       t.check(inspectedVideo(turn.events, 120), satisfies(Boolean, "черновик имеет размер, 960×540 и длительность 120 секунд"));
-      // The last text block can be empty at the native question boundary;
-      // draftLinkBeforeQuestion checks the completed assistant message instead.
+      // Inspect completed text, not the last (possibly empty) question step.
+      const linkedDraft = turn.events.some((event, index) => event.type === "message.completed" &&
+        index > evidence.draftCompleted && evidence.draftCompleted >= 0 &&
+        typeof event.data.message === "string" && videoLinkPattern(120, true).test(event.data.message) &&
+        inspectedVideo(turn.events.slice(0, index), 120));
+      t.check(linkedDraft, satisfies(Boolean, "ссылка на текущий проверенный черновик отправлена завершённым сообщением"));
+
+      const questions = turn.toolCalls.filter(call => call.name === "ask_question");
+      if (questions.length > 0) {
+        turn.parked();
+        t.check(questions.length, satisfies(count => count === 1, "ровно один вызов ask_question"));
+        turn.calledTool("ask_question", { status: "pending", count: 1 });
+        t.check(evidence.questionAfterDraft, satisfies(Boolean, "согласование запрошено после завершения черновика"));
+        t.check(evidence.draftLinkBeforeQuestion, satisfies(Boolean, "ссылка на черновик отправлена отдельным текстом до запроса согласования"));
+        session.requireInputRequest({ toolName: "ask_question" });
+      } else {
+        turn.succeeded();
+        t.check(turn.status === "waiting" && turn.events.at(-1)?.type === "session.waiting" && turn.inputRequests.length === 0,
+          satisfies(Boolean, "ход завершён и сессия ожидает следующего сообщения пользователя"));
+        t.log("Диагностика #17: ask_question не вызван. Этот сценарий проверяет отсутствие превью после черновика (#18), а не успешность native HITL.");
+      }
     } finally {
       await session.cancel();
     }

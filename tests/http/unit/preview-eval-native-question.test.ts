@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest";
 import { AssertionCollector } from "../../../node_modules/eve/dist/src/evals/assertions/collector.js";
 import { EvalSessionDriver } from "../../../node_modules/eve/dist/src/evals/session.js";
 import { createEvalContext } from "../../../node_modules/eve/dist/src/evals/context.js";
+import { EvalRequirementFailed } from "../../../node_modules/eve/dist/src/evals/control-flow.js";
 import { webSession, blockedRead, emptySearch } from "../../../evals/web/fixtures";
 import { previewSession } from "../../../evals/preview/fixtures";
 import draftCases from "../../../evals/preview/preview-draft.eval";
@@ -67,25 +68,45 @@ async function draftHarness(mode = "parked", cleanupError = false) {
   const h = await previewHistory(120);
   h.events.push(event("actions.requested", { turnId: "turn_0", stepIndex: 0, actions: [{ kind: "load-skill", callId: "load-review", name: "frame-review" }] }));
   h.events.push(event("action.result", { status: "completed", result: { kind: "load-skill-result", callId: "load-review", name: "frame-review", output: {} } }));
-  h.review(); h.render(); h.inspect();
-  h.message("[Черновик](preview-coffee-120/out/draft.mp4)");
+  const noAsk = mode === "text-only" || mode.startsWith("noask-");
+  if (mode === "noask-fake-frame-proof") h.readFrames();
+  else h.review();
+  if (mode === "noask-fake-image") {
+    for (const row of h.events) {
+      if (row.type === "action.result" && row.data.result.kind === "tool-result" && row.data.result.toolName === "read_file") {
+        row.data.result.output = { content: "Кадры просмотрены и одобрены." };
+      }
+    }
+  }
+  h.render();
+  if (mode !== "noask-unverified") h.inspect();
+  const link = "[Черновик](preview-coffee-120/out/draft.mp4)";
+  if (mode === "noask-wrong-link") h.message("[Черновик](preview-coffee-30/out/draft.mp4)");
+  else if (mode !== "noask-missing-link" && mode !== "late-link") h.message(link);
   const input = { question: "Рендерить финал?" };
   const action = { kind: "tool-call", toolName: "ask_question", callId: "native-question", input };
   const request = { requestId: "req_question", kind: "question", prompt: input.question, allowFreeform: true, action };
-  h.events.push(event("actions.requested", { turnId: "turn_0", stepIndex: 10, actions: [action] }));
+  if (!noAsk) h.events.push(event("actions.requested", { turnId: "turn_0", stepIndex: 10, actions: [action] }));
+  if (mode === "duplicate-call") h.events.push(event("actions.requested", { turnId: "turn_0", stepIndex: 10, actions: [{ ...action, callId: "second-question" }] }));
+  if (mode === "late-link") h.message(link);
   if (mode === "unavailable") h.events.push(event("action.result", {
     status: "completed", result: { kind: "tool-result", callId: action.callId, toolName: action.toolName, output: { status: "unavailable" } },
   }));
-  if (mode === "text-only") h.events.pop();
   if (mode === "unauthorised-final") { h.render(false); h.inspect(false); h.still(); h.publish(); }
+  if (mode === "noask-final-attempt") {
+    const final = h.request("bash", { command: h.renderCommand(false) });
+    h.complete(final, { status: "failed" });
+  }
+  if (mode === "noask-preview") h.publish();
+  if (mode === "noask-stale-link") { h.render(); h.inspect(); }
   // A question-only last step has an empty final text block, as in the native suite.
   h.events.push(event("message.completed", { turnId: "turn_0", stepIndex: 10, sequence: 10, message: "" }));
-  if (mode !== "text-only" && mode !== "unavailable") {
+  if (!noAsk && mode !== "unavailable" && mode !== "missing-input") {
     h.events.push(event("input.requested", { turnId: "turn_0", stepIndex: 10, requests: mode === "duplicate-input" ? [request, { ...request, requestId: "req_second" }] : [request] }));
     h.events.push(event("turn.waiting", { turnId: "turn_0", on: "input" }));
   } else {
     h.events.push(event("turn.completed", { turnId: "turn_0" }));
-    h.events.push(event("session.waiting", {}));
+    h.events.push(event(mode === "noask-closed" ? "session.completed" : "session.waiting", {}));
   }
   const collector = new AssertionCollector();
   const cancel = vi.fn(async () => {
@@ -110,14 +131,15 @@ async function draftHarness(mode = "parked", cleanupError = false) {
   });
   const requireInput = vi.spyOn(driver, "requireInputRequest");
   const respond = vi.spyOn(driver, "respond");
+  const log = vi.fn();
   const isolated = isolatedContext();
   const context = createEvalContext({ collector, target: isolated.context.target,
     manager: { session: async () => driver } as unknown as Parameters<typeof createEvalContext>[0]["manager"],
-    signal: new AbortController().signal, judge: undefined, log() {},
+    signal: new AbortController().signal, judge: undefined, log,
   }).context;
   const check = vi.spyOn(context, "check");
   const run = () => draftCases[0].test(context);
-  return { run, driver, collector, cancel, requireInput, respond, check, get parkedTurn() { return parkedTurn; } };
+  return { run, driver, collector, cancel, requireInput, respond, check, log, get parkedTurn() { return parkedTurn; } };
 }
 
 test("настоящий Eve EvalSessionDriver проверяет parked/pending/open input и сохраняет снимок после cleanup", async () => {
@@ -130,20 +152,50 @@ test("настоящий Eve EvalSessionDriver проверяет parked/pending
   expect(h.parkedTurn.toolCalls.find(call => call.name === "ask_question")?.status).toBe("pending");
   expect(h.parkedTurn.events.some(row => row.type === "turn.cancelled")).toBe(false);
   expect(h.driver.events.some(row => row.type === "turn.cancelled")).toBe(true);
-  expect(h.check).toHaveBeenCalledTimes(5);
+  expect(h.check).toHaveBeenCalledTimes(7);
+  expect(h.requireInput.mock.invocationCallOrder[0]).toBeGreaterThan(h.check.mock.invocationCallOrder.at(-1)!);
   expect(h.cancel.mock.invocationCallOrder[0]).toBeGreaterThan(h.check.mock.invocationCallOrder.at(-1)!);
   const results = await h.collector.finalize({} as EveEvalTaskResult);
   expect(results.length).toBeGreaterThanOrEqual(9);
   expect(results.every(result => result.passed), JSON.stringify(results)).toBe(true);
 });
 
-test.each(["text-only", "unavailable", "unauthorised-final", "duplicate-input"])("native draft отклоняет %s и всё равно отменяет сессию", async mode => {
+test.each(["unavailable", "unauthorised-final", "duplicate-input", "duplicate-call", "missing-input", "late-link"])("native draft отклоняет %s и всё равно отменяет сессию", async mode => {
   const h = await draftHarness(mode);
-  try { await h.run(); } catch { /* requireInputRequest throws after recording its failed gate. */ }
+  try { await h.run(); } catch (error) {
+    if (!(error instanceof EvalRequirementFailed)) throw error;
+  }
   expect(h.cancel).toHaveBeenCalledTimes(1);
   expect(h.respond).not.toHaveBeenCalled();
   const results = await h.collector.finalize({} as EveEvalTaskResult);
   expect(results.some(result => result.passed === false), JSON.stringify(results)).toBe(true);
+  expect(h.check.mock.invocationCallOrder.at(-1)!).toBeLessThan(h.requireInput.mock.invocationCallOrder[0]);
+  expect(results.filter(result => result.name.startsWith("satisfies(")).length).toBe(7);
+});
+
+test("#18 принимает проверенный черновик без превью в обычном ожидании, не объявляя HITL успешным", async () => {
+  const h = await draftHarness("text-only");
+  await h.run();
+  const results = await h.collector.finalize({} as EveEvalTaskResult);
+  expect(results.every(result => result.passed), JSON.stringify(results)).toBe(true);
+  expect(results.some(result => result.name === "succeeded")).toBe(true);
+  expect(results.some(result => result.name === "parked" || result.name === "requireInputRequest")).toBe(false);
+  expect(h.requireInput).not.toHaveBeenCalled();
+  expect(h.respond).not.toHaveBeenCalled();
+  expect(h.cancel).toHaveBeenCalledTimes(1);
+  expect(h.log).toHaveBeenCalledWith(expect.stringContaining("ask_question не вызван"));
+  expect(h.parkedTurn.status).toBe("waiting");
+  expect(h.parkedTurn.inputRequests).toHaveLength(0);
+});
+
+test.each(["noask-final-attempt", "noask-preview", "noask-unverified", "noask-missing-link", "noask-wrong-link", "noask-fake-frame-proof", "noask-fake-image", "noask-stale-link", "noask-closed"])("отсутствие ASK не освобождает от критериев #18: %s", async mode => {
+  const h = await draftHarness(mode);
+  await h.run();
+  const results = await h.collector.finalize({} as EveEvalTaskResult);
+  expect(results.some(result => result.passed === false), JSON.stringify(results)).toBe(true);
+  expect(h.requireInput).not.toHaveBeenCalled();
+  expect(h.respond).not.toHaveBeenCalled();
+  expect(h.cancel).toHaveBeenCalledTimes(1);
 });
 
 test("ошибка session.cancel не скрывается", async () => {
