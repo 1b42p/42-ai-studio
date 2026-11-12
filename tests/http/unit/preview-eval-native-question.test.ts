@@ -188,11 +188,21 @@ test("#18 требует интерактивный вопрос: провере
   expect(h.parkedTurn.inputRequests).toHaveLength(0);
 });
 
-test.each(["noask-final-attempt", "noask-preview", "noask-unverified", "noask-missing-link", "noask-wrong-link", "noask-fake-frame-proof", "noask-fake-image", "noask-stale-link", "noask-closed"])("отсутствие ASK не освобождает от критериев #18: %s", async mode => {
+test.each([
+  ["noask-final-attempt", "satisfies(завершённый черновик без публикации превью и попыток финала)"],
+  ["noask-preview", "notCalledTool(set_session_preview)"],
+  ["noask-unverified", "satisfies(черновик имеет размер, 960×540 и длительность 120 секунд)"],
+  ["noask-missing-link", "satisfies(ссылка на текущий проверенный черновик отправлена завершённым сообщением)"],
+  ["noask-wrong-link", "satisfies(ссылка на текущий проверенный черновик отправлена завершённым сообщением)"],
+  ["noask-fake-frame-proof", "satisfies(проверенные реальные кадры перед черновиком)"],
+  ["noask-fake-image", "satisfies(проверенные реальные кадры перед черновиком)"],
+  ["noask-stale-link", "satisfies(ссылка на текущий проверенный черновик отправлена завершённым сообщением)"],
+  ["noask-closed", "parked"],
+])("отсутствие ASK не маскирует отказ другого критерия #18: %s", async (mode, assertionName) => {
   const h = await draftHarness(mode);
   await expect(h.run()).rejects.toBeInstanceOf(EvalRequirementFailed);
   const results = await h.collector.finalize({} as EveEvalTaskResult);
-  expect(results.some(result => result.passed === false), JSON.stringify(results)).toBe(true);
+  expect(results.find(result => result.name === assertionName)?.passed, JSON.stringify(results)).toBe(false);
   expect(h.requireInput).toHaveBeenCalledWith({ toolName: "ask_question" });
   expect(h.check.mock.invocationCallOrder.at(-1)!).toBeLessThan(h.requireInput.mock.invocationCallOrder[0]);
   expect(h.respond).not.toHaveBeenCalled();
