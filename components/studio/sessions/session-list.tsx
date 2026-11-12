@@ -3,13 +3,13 @@
 import {
   AlertCircleIcon,
   ChevronDownIcon,
-  ClapperboardIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { SessionsEmptyState } from "@/components/studio/sessions-empty-state";
+import { SessionPreview } from "@/components/studio/sessions/session-preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -24,7 +24,6 @@ import {
   ItemContent,
   ItemDescription,
   ItemGroup,
-  ItemMedia,
   ItemTitle,
 } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,6 +35,7 @@ export interface SessionListItem {
   readonly title: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly preview: { readonly mediaId: string } | null;
 }
 
 export interface SessionListPage {
@@ -222,12 +222,7 @@ export function SessionList({
         <ItemGroup>
           {items.map((item) => (
             <Item key={item.id} render={<a href={`/s/${item.id}`} />}>
-              <ItemMedia
-                className="aspect-video w-24 rounded-md bg-muted md:w-40"
-                variant="icon"
-              >
-                <ClapperboardIcon />
-              </ItemMedia>
+              <SessionPreview preview={item.preview} />
               <ItemContent className="min-w-0">
                 <ItemTitle className="line-clamp-none w-full min-w-0 truncate">
                   {item.title ?? "Без названия"}

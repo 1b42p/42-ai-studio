@@ -293,14 +293,14 @@ export class FakeStore {
     command: string,
   ): Promise<Pick<StoredRule, "stdout" | "stderr" | "exitCode"> | null> {
     const quoted = /'(?:[^']|'\\'')*'/;
-    const realpath = new RegExp(`^realpath -- (${quoted.source})$`).exec(command);
+    const realpath = new RegExp(`^realpath( -e)? -- (${quoted.source})$`).exec(command);
     if (realpath !== null) {
-      const sandboxPath = unquoteShell(realpath[1]!);
+      const sandboxPath = unquoteShell(realpath[2]!);
       if (sandboxPath === null) return null;
       const absolute = path.posix.resolve("/workspace", sandboxPath);
       const host = await this.filePath(root, sandboxPath);
       try {
-        await fs.stat(path.dirname(host));
+        await fs.stat(realpath[1] ? host : path.dirname(host));
       } catch (error) {
         if (hasCode(error, "ENOENT") || hasCode(error, "ENOTDIR")) {
           return { stderr: `realpath: ${absolute}: No such file or directory\n`, exitCode: 1 };
@@ -310,9 +310,22 @@ export class FakeStore {
       return { stdout: `${absolute}\n`, exitCode: 0 };
     }
 
-    const stat = new RegExp(`^LC_ALL=C stat -c '%F\\|%s' -- (${quoted.source})$`).exec(command);
+    const regular = new RegExp(`^test -f (${quoted.source})$`).exec(command);
+    if (regular !== null) {
+      const sandboxPath = unquoteShell(regular[1]!);
+      if (sandboxPath === null) return null;
+      try {
+        const info = await fs.stat(await this.filePath(root, sandboxPath));
+        return { exitCode: info.isFile() ? 0 : 1 };
+      } catch (error) {
+        if (hasCode(error, "ENOENT") || hasCode(error, "ENOTDIR")) return { exitCode: 1 };
+        throw error;
+      }
+    }
+
+    const stat = new RegExp(`^LC_ALL=C stat -c ('%F\\|%s'|%s) -- (${quoted.source})$`).exec(command);
     if (stat !== null) {
-      const sandboxPath = unquoteShell(stat[1]!);
+      const sandboxPath = unquoteShell(stat[2]!);
       if (sandboxPath === null) return null;
       let info;
       try {
@@ -330,7 +343,7 @@ export class FakeStore {
             ? "regular empty file"
             : "regular file"
           : "special file";
-      return { stdout: `${kind}|${info.size}\n`, exitCode: 0 };
+      return { stdout: stat[1] === "%s" ? `${info.size}\n` : `${kind}|${info.size}\n`, exitCode: 0 };
     }
 
     return null;

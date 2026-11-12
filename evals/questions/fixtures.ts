@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { EveEvalContext, EveEvalTurn, ToolStub } from "eve/evals";
 import { frameExtrema, frameOutput, reviewFrames } from "./media-fixture";
-import { blockedRead, emptySearch } from "../web/fixtures";
+import { blockedRead, emptySearch, isolateDownload, isolatePreview } from "../web/fixtures";
 
 export const TIMEOUT = 20 * 60 * 1000;
 export const REQUEST = (seconds: number) => `Сделай ролик про кофе длительностью ${seconds} секунд, ` +
@@ -84,7 +84,7 @@ export const Root=()=> <Composition id="Main" component={Main} defaultProps={{ti
     { id: "copy", tool: "agent", outcome: { throw: { message: "Собери ролик основным агентом." } } },
     { id: "speech", tool: "speak", outcome: { throw: { message: "Озвучка не нужна." } } },
     { id: "voices", tool: "list_voices", outcome: { response: { voices: [] } } },
-    blockedRead, emptySearch,
+    blockedRead, emptySearch, isolateDownload, isolatePreview,
   ];
   return stubs;
 }

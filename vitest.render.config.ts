@@ -10,6 +10,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
 import type { BrowserCommand } from "vitest/node";
+import { sessionPreviewMedia } from "./tests/render/fixtures/session-preview-commands";
 
 /** Эмуляция системной цветовой схемы через настройки страницы Playwright. */
 const emulateColorScheme: BrowserCommand<["light" | "dark"]> = async (
@@ -82,6 +83,9 @@ declare module "vitest/browser" {
 
 export default defineConfig({
   plugins: [tailwindcss()],
+  optimizeDeps: {
+    include: ["react-dom/client", "react-dom/server"],
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),
@@ -95,7 +99,7 @@ export default defineConfig({
       provider: playwright(),
       headless: true,
       instances: [{ browser: "chromium" }],
-      commands: { emulateColorScheme, failMedia, retryMedia, serveAudio },
+      commands: { emulateColorScheme, failMedia, retryMedia, serveAudio, sessionPreviewMedia },
     },
   },
 });

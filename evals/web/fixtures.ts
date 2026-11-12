@@ -27,7 +27,12 @@ export function readStub(id: string, url: string, title: string, content: string
   };
 }
 
-const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices", "download_video"] as const;
+const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices", "download_video", "set_session_preview"] as const;
+
+export const isolatePreview: ToolStub = {
+  id: "isolate-preview", tool: "set_session_preview",
+  outcome: { response: { path: "/workspace/out/preview.jpg", size: 42000, contentType: "image/jpeg" } },
+};
 
 export const isolateDownload: ToolStub = {
   id: "isolate-download",
@@ -64,6 +69,7 @@ const isolationStubs: readonly ToolStub[] = [
   },
   { id: "isolate-voices", tool: "list_voices", outcome: { response: { voices: [] } } },
   isolateDownload,
+  isolatePreview,
 ];
 
 /** Любой неожиданный URL тоже перехватывается: реального HTTP-чтения нет. */
