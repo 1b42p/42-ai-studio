@@ -147,7 +147,8 @@ test("несогласованные props, каталоги, выборки, к
   const destination = `${questionProjectPath(120)}/props-v2.json`;
   const exact = questionProps(2);
   expect(h.success("edit_file", { filePath: destination, newString: exact })).toMatchObject({ path: destination, newContent: exact });
-  h.success("edit_file", { filePath: `${questionProjectPath(120)}/NOTES.md`, newString: "Обновлённые заметки", overwrite: true });
+  expect(h.success("edit_file", { filePath: `${questionProjectPath(120)}/NOTES.md`, newString: "Обновлённые заметки", overwrite: true }))
+    .toMatchObject({ oldContent: expect.any(String), newContent: expect.stringContaining("Номинальный снимок") });
   h.rejected("edit_file", { filePath: `${questionProjectPath(120)}/NOTES.md`, newString: "Обновлённые заметки" });
   const pixelCommand = `python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py" out/props-v1/frames-1/*.jpeg`;
   h.success("bash", { command: pixelCommand });

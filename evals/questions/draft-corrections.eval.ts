@@ -18,7 +18,10 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.check(renderCommands(first).some(isDraft) && !renderCommands(first).some(isFinal), equals(true));
     const initialRenders = new Set(renderCommands(first));
     const initialEdits = new Set(first.toolCalls.filter((call) => call.name === "edit_file").map((call) => JSON.stringify(call.input)));
-    const request = session.requireInputRequest({ toolName: "ask_question", prompt: /Рендерить финал/ });
+    const request = session.requireInputRequest();
+    first.calledTool("ask_question", { status: "pending", count: 1 });
+    t.check(request.action?.kind === "tool-call" && request.action.toolName === "ask_question" && /Рендерить финал/.test(request.prompt), equals(true));
+    t.check(request.options?.map(option => option.label), equals(["Рендерить финал", "Хочу поправить"]));
     t.check(verifiedVideoLinkBeforeQuestion(first.events, originalVideo, request.requestId), equals(true));
     const corrected = await session.respond([{ requestId: request.requestId, text: "Поправь заголовок на «Утро начинается с кофе»" }]);
     corrected.parked();
@@ -29,7 +32,10 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.check(renderCommands(corrected).some((command) => isDraft(command) && !initialRenders.has(command)) &&
       !renderCommands(corrected).some(isFinal), equals(true));
     t.check(renderCommands(corrected).some((command) => isDraft(command) && command.includes("props-v2.json")), equals(true));
-    const next = session.requireInputRequest({ toolName: "ask_question", prompt: /Рендерить финал/ });
+    const next = session.requireInputRequest();
+    corrected.calledTool("ask_question", { status: "pending", count: 1 });
+    t.check(next.action?.kind === "tool-call" && next.action.toolName === "ask_question" && /Рендерить финал/.test(next.prompt), equals(true));
+    t.check(next.options?.map(option => option.label), equals(["Рендерить финал", "Хочу поправить"]));
     t.check(next.requestId !== request.requestId, equals(true));
     t.check(verifiedVideoLinkBeforeQuestion(corrected.events, revisedVideo, next.requestId), equals(true));
     t.parked();

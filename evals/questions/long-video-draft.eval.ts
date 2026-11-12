@@ -16,7 +16,9 @@ export default Array.from({ length: 3 }, () => defineEval({
     draft.notCalledTool("set_session_preview");
     const commands = renderCommands(draft);
     t.check(commands.some(isDraft) && !commands.some(isFinal), equals(true));
-    const request = session.requireInputRequest({ toolName: "ask_question", prompt: /Рендерить финал/ });
+    const request = session.requireInputRequest();
+    draft.calledTool("ask_question", { status: "pending", count: 1 });
+    t.check(request.action?.kind === "tool-call" && request.action.toolName === "ask_question" && /Рендерить финал/.test(request.prompt), equals(true));
     t.check(request.options?.map((option) => option.label), equals(["Рендерить финал", "Хочу поправить"]));
     t.check(verifiedVideoLinkBeforeQuestion(draft.events, draftVideo, request.requestId), equals(true));
     const final = await session.respond([{ requestId: request.requestId, text: "Рендерить финал" }]);

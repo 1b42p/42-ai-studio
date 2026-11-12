@@ -131,7 +131,9 @@ function videoEvidence(events: readonly EveEvalStreamEvent[], expected: VideoPre
 /** A final is verified before its still, published successfully, then linked in a message. */
 export function verifiedFinalPreview(events: readonly EveEvalStreamEvent[], expected: FinalPreviewContract): boolean {
   const calls = new Map<string, { operation: "still" | "publish"; generation: number; ready: boolean }>();
+  const pendingStills = new Set<string>();
   let generation = 0;
+  let overlappingStills = false;
   let stillReady = false;
   let published = false;
   let linked = false;
@@ -144,26 +146,31 @@ export function verifiedFinalPreview(events: readonly EveEvalStreamEvent[], expe
       if (writesVideo || stills.length > 0) {
         generation++;
         stillReady = published = linked = false;
+        overlappingStills = pendingStills.size > 0 || stills.length > 1;
+        stills.forEach(action => pendingStills.add(action.callId));
       }
       for (const action of event.data.actions) {
         if (action.kind !== "tool-call") continue;
         if (action.toolName === "bash" && typeof action.input.command === "string" && expected.stillRegExp.test(action.input.command)) {
-          calls.set(action.callId, { operation: "still", generation, ready: stills.length === 1 && !writesVideo &&
+          calls.set(action.callId, { operation: "still", generation, ready: !overlappingStills && !writesVideo &&
             videoEvidence(events.slice(0, index + 1), expected).verified });
         }
         if (action.toolName === "set_session_preview") {
           published = linked = false;
           const path = typeof action.input.path === "string" ? resolveSandboxFilePath(action.input.path) : undefined;
           calls.set(action.callId, { operation: "publish", generation,
-            ready: stillReady && path?.kind === "file" && path.path === expected.previewPath });
+            ready: stillReady && !overlappingStills && pendingStills.size === 0 && path?.kind === "file" && path.path === expected.previewPath });
         }
       }
     }
     if (event.type === "action.result" && event.data.result.kind === "tool-result") {
       const call = calls.get(event.data.result.callId);
       const output = event.data.result.output;
+      const running = event.data.status === "completed" && record(output) && output.status === "running";
+      if (!running) pendingStills.delete(event.data.result.callId);
       if (!call || call.generation !== generation || event.data.status !== "completed" || !record(output)) continue;
-      if (call.operation === "still") stillReady = call.ready && output.status === "completed" && output.exitCode === 0;
+      if (call.operation === "still") stillReady = call.ready && !overlappingStills && pendingStills.size === 0 &&
+        output.status === "completed" && output.exitCode === 0;
       if (call.operation === "publish") {
         const path = typeof output.path === "string" ? resolveSandboxFilePath(output.path) : undefined;
         published = call.ready && path?.kind === "file" && path.path === expected.previewPath &&
@@ -173,5 +180,5 @@ export function verifiedFinalPreview(events: readonly EveEvalStreamEvent[], expe
     if (event.type === "message.completed" && published) linked ||= parseSandboxLinks(event.data.message, { includeUnusedDefinitions: false })
       .some(link => link.kind === "file" && link.path === expected.path);
   }
-  return published && linked && videoEvidence(events, expected).verified;
+  return published && linked && pendingStills.size === 0 && videoEvidence(events, expected).verified;
 }

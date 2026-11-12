@@ -130,6 +130,11 @@ function finalHistory(mode = "valid") {
   const probe = bash("probe", "npx remotion ffprobe -v error -show_streams -show_format -of json out/coffee-v1.mp4", JSON.stringify(metadata));
   const still = bash("still", mode === "wrong-props" ? stillCommand.replace("props-v1", "props-v2") : stillCommand,
     "Nominal still", mode === "failed-still" ? 1 : 0);
+  if (mode === "overlapping-stills") events.push(call("still-earlier", "bash", { command: `cd ${root} && ${stillCommand}` }));
+  if (mode === "background-still") events.push(
+    call("still-earlier", "bash", { command: `cd ${root} && ${stillCommand}` }),
+    result("still-earlier", "bash", { status: "running", outputDirectory: "/tmp/job" }),
+  );
   if (mode === "early-still") events.push(...still, ...probe);
   else events.push(...probe, ...(mode === "missing-still" ? [] : still));
   const publish = call("publish", "set_session_preview", { path: mode === "wrong-path" ? `${root}/out/wrong.jpg` : finalVideo.previewPath });
@@ -156,6 +161,7 @@ test("после согласия финал проверен, затем соз
 test.each([
   "failed-render", "wrong-dimensions", "wrong-props", "failed-still", "early-still", "missing-still",
   "wrong-path", "failed-publish", "same-batch", "pending-publish", "rewrite", "wrong-new-still", "old-link",
+  "overlapping-stills", "background-still",
 ])("превью не подтверждает незавершённый финал: %s", mode => {
   expect(verifiedFinalPreview(finalHistory(mode), finalVideo)).toBe(false);
 });

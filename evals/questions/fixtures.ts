@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { posix } from "node:path";
 import type { EveEvalContext, EveEvalTurn, ToolStub } from "eve/evals";
+import type { EditFileResult } from "../../agent/tools/edit_file";
 import {
   frameDirectory, frameName, frameOutput, framePasses, questionFramesFor, questionProjectPath,
   questionProps, questionSnapshot, questionSources, reviewFrames, type PropsVersion,
@@ -133,6 +134,11 @@ export function questionStubs(seconds = 120): ToolStub[] {
     `| Сцена | Начало | Конец |\n| Зерно | 0 | ${seconds * 10 - 1} |\n` +
     `| Приготовление | ${seconds * 10} | ${seconds * 20 - 1} |\n| Чашка | ${seconds * 20} | ${seconds * 30 - 1} |\n` +
     "Без озвучки и музыки. Исходные тексты передаются через props-v1.json.\n";
+  const nominalNotesResult = {
+    path: `${P}/NOTES.md`, created: false, replacements: 0, oldContent: notes,
+    newContent: "Номинальный снимок записи NOTES.md; новое содержимое не моделируется.\n",
+    linesAdded: 1, linesRemoved: notes.trimEnd().split("\n").length,
+  } satisfies EditFileResult;
   const batches = ([1, 2] as PropsVersion[]).flatMap(version => framePasses(version).map(pass => ({
     version, pass, directory: frameDirectory(version, pass), frames: questionFramesFor(seconds, version, pass),
   })));
@@ -152,7 +158,7 @@ export function questionStubs(seconds = 120): ToolStub[] {
     "Видеоэффекты полностью подменены: завершение render, размер и probe — номинальные ответы, не реальное создание или измерение MP4. Размер: stat -c %s <известный MP4>; ненулевой файл: test -s <известный MP4>. Метаданные: npx remotion ffprobe -v error -show_streams -show_format -of json <известный MP4>; также поддержан -show_entries stream=codec_name,codec_type,width,height,duration:format=duration -of default=nw=1.",
     `Номинальная возможность still: npx remotion still src/index.ts Main out/preview-v<версия>.jpg --props=props-v<та же версия>.json --frame=<один из ${reviewFrames(seconds).join(",")}> --image-format=jpeg --jpeg-quality=85 --scale=0.5. Поддержаны только версии 1 и 2. set_session_preview принимает соответствующий полный путь ${P}/out/preview-v1.jpg или ${P}/out/preview-v2.jpg (также путь от /workspace/). Оба вызова полностью подменены: JPEG и объект S3 не создаются; размер 65536 в ответе публикации номинальный. Пиксели preview-v1.jpg и preview-v2.jpg не записаны: read_file этих путей не поддержан и не подменяется контрольным кадром.`,
     `edit_file принимает единственную записанную подстановку props-v2.json: полный newString ${questionProps(2)} без oldString. Чтение props-v2.json возвращает этот неизменяемый образец, не подтверждение предшествующей записи. Другие тексты, версии и правки src не поддержаны.`,
-    "NOTES.md возвращает только первый исходный снимок; повторное чтение отклоняется, чтобы старые заметки не выдавались за новые. edit_file принимает полный снимок NOTES.md с overwrite: true без oldString, не моделируя последующее чтение. Сохраняй актуальные заметки в контексте.",
+    "NOTES.md возвращает только первый исходный снимок; повторное чтение отклоняется, чтобы старые заметки не выдавались за новые. edit_file принимает полный снимок NOTES.md с overwrite: true без oldString. Ответ записи — фиксированная номинальная квитанция, не сохранённый текст; последующее чтение не моделируется. Сохраняй актуальные заметки в контексте.",
     "Доступны pwd, test -d node_modules, test -s неизменяемого файла, mkdir -p известного выходного каталога; ls для известных каталогов, ls -l и ls -la для корня и src, ls -l package.json показывают исходный манифест, не состояние записей. Неизвестные команды, пути и параметры отклоняются без частичного исполнения.",
     `Навыки загружаются штатным каталогом eve. read_file поддерживает вложенные справочные файлы: ${references.join(", ")}; пути $HOME/.agents/skills/, /.agents/skills/ и /root/.agents/skills/.`,
   ].join("\n");
@@ -242,9 +248,9 @@ export function questionStubs(seconds = 120): ToolStub[] {
     { id: "unknown-source", tool: "read_file", outcome: { throw: { message: "Чтение не записано. SPEC.md перечисляет точные пути; произвольные изображения и порядковые имена извлечения не имеют подтверждённых пикселей." } } },
     { id: "reject-replacement", tool: "edit_file", match: { oldString: { minLength: 1 } }, outcome: { throw: { message: "Доступны только полные записанные подстановки без oldString; исходники неизменяемы." } } },
     { id: "edit-props", tool: "edit_file", match: { filePath: { enum: paths("props-v2.json") }, newString: { const: questionProps(2) } },
-      outcome: { response: { path: `${P}/props-v2.json`, created: true, replacements: 0, oldContent: "", newContent: questionProps(2), linesAdded: 1, linesRemoved: 0 } } },
+      outcome: { response: { path: `${P}/props-v2.json`, created: true, replacements: 0, oldContent: null, newContent: questionProps(2), linesAdded: 1, linesRemoved: 0 } } },
     { id: "edit-notes", tool: "edit_file", match: { filePath: { enum: paths("NOTES.md") }, newString: { minLength: 1, maxLength: 262144 }, overwrite: { const: true } },
-      outcome: { response: { path: `${P}/NOTES.md`, created: false, replacements: 0, linesAdded: 0, linesRemoved: 0 } } },
+      outcome: { response: nominalNotesResult } },
     { id: "edit", tool: "edit_file", outcome: { throw: { message: "Правка не записана. Разрешены только полный снимок NOTES.md и точный JSON подстановки props-v2.json из SPEC.md; src и прочие версии неизменяемы." } } },
     { id: "command", tool: "bash", outcome: { throw: { message: "Команда, путь или параметры не записаны в SPEC.md. Успех, запись и пиксели не подтверждены; составные команды не исполнялись." } } },
     { id: "copy", tool: "agent", outcome: { throw: { message: "Собери ролик основным агентом." } } },
