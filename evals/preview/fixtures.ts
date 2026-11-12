@@ -105,5 +105,5 @@ export function previewStubs(seconds: number): ToolStub[] {
 export async function previewSession(t: EveEvalContext, seconds: number) {
   const health = await t.target.fetch("/api/health");
   if (!health.headers.get("x-studio-eval-runtime")) throw new Error("Оценкам превью нужен APP_STUB_EVAL_SANDBOX=1 на выделенном сервере.");
-  return webSession(t, previewStubs(seconds));
+  return webSession(t, previewStubs(seconds), { allowNativeQuestion: seconds === 120 });
 }

@@ -1,16 +1,19 @@
 import type { EveEvalContext, EveEvalStreamEvent, ToolStub } from "eve/evals";
 import { parseToolStubs } from "../../../node_modules/eve/dist/src/tool-stubs/rules.js";
 import { StubPlayback } from "../../../node_modules/eve/dist/src/tool-stubs/playback.js";
-import { previewSession } from "../../../evals/preview/fixtures";
+import { previewStubs } from "../../../evals/preview/fixtures";
+import { webSession } from "../../../evals/web/fixtures";
 import { frameName, frameNumbers, projectPath } from "../../../evals/preview/commands";
 
 export const event = (type: string, data: unknown) => ({ type, data }) as EveEvalStreamEvent;
 export async function previewHistory(seconds = 30) {
   let stubs: readonly ToolStub[] = [];
-  await previewSession({ target: { async fetch(path: string) {
+  // Historical causality tests deliberately include unavailable-question traces.
+  // Use default isolation, not the native-HITL previewSession scenario.
+  await webSession({ target: { async fetch(path: string) {
     return path === "/api/health" ? new Response(null, { headers: { "x-studio-eval-runtime": "stub" } })
       : Response.json({ tools: { static: ["bash", "read_file", "edit_file", "agent", "ask_question", "speak", "list_voices", "download_video", "read_page", "web_search", "set_session_preview"].map(name => ({ name })), dynamic: [] } });
-  } }, session: async (options: { stubs: readonly ToolStub[] }) => { stubs = options.stubs; return {}; } } as unknown as EveEvalContext, seconds);
+  } }, session: async (options: { stubs: readonly ToolStub[] }) => { stubs = options.stubs; return {}; } } as unknown as EveEvalContext, previewStubs(seconds));
   const playback = new StubPlayback(parseToolStubs(stubs));
   const events: EveEvalStreamEvent[] = [];
   let sequence = 0;

@@ -37,11 +37,14 @@ test.each([
   ["video", (t: EveEvalContext) => videoSession(t, { caseId: "preview-isolation" })],
   ["web", (t: EveEvalContext) => webSession(t, [{ id: "pages", tool: "read_page", outcome: { response: {} } }, { id: "search", tool: "web_search", outcome: { response: {} } }])],
   ["documents", (t: EveEvalContext) => documentSession(t, "/workspace/source/book.pdf")],
-] as const)("%s: все эффекты изолированы и не больше 100 native правил", async (_name, create) => {
+] as const)("%s: все эффекты изолированы и не больше 100 native правил", async (name, create) => {
   const stubs = await capture(create);
   expect(stubs.length).toBeLessThanOrEqual(100);
   expect(parseToolStubs(stubs)).toHaveLength(stubs.length);
   expect(stubs.some(stub => stub.tool === "set_session_preview" && stub.match === undefined)).toBe(true);
+  if (name !== "preview-draft" && name !== "questions") {
+    expect(stubs.find(stub => stub.tool === "ask_question" && stub.match === undefined)?.outcome).toEqual({ response: { status: "unavailable" } });
+  }
 });
 
 test.each([[30, false], [120, true], [120, false]] as const)("native playback %s, draft=%s: полный причинный путь, не эмуляция изменяемой FS", async (seconds, draft) => {
@@ -84,7 +87,7 @@ test.each([[30, false], [120, true], [120, false]] as const)("native playback %s
     expect(previewEvidence(events, seconds).publishedAfterFinal).toBe(true);
   } else if (draft) {
     expect(previewEvidence(events, seconds).draftWithoutPreview).toBe(true);
-    expect(call("ask_question", { question: "Согласуете черновик?" }).output).toEqual({ status: "unavailable" });
+    expect(playback.call({ callId: "native-question", tool: "ask_question", input: { question: "Согласуете черновик?" } }).kind).not.toBe("stub");
   } else {
     // Reproduce the model's wrong branch without manufacturing tool failures:
     // frames, full render, file checks and preview all complete successfully.
