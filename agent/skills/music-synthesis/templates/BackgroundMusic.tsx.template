@@ -1,0 +1,28 @@
+import { Audio } from "@remotion/media";
+import { staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { duckingGain, type SpeechSpan } from "./ducking";
+
+/**
+ * Фоновая музыка. `volume` — число с текущего кадра.
+ * `speech` пуст, если озвучки нет: музыка играет ровно.
+ * `level` опускает всю дорожку, если пик готового ролика выше −1 dBTP.
+ */
+export function BackgroundMusic({
+  src,
+  speech = [],
+  level = 1,
+}: {
+  src: string;
+  speech?: readonly SpeechSpan[];
+  level?: number;
+}) {
+  const frame = useCurrentFrame();
+  const { fps, durationInFrames } = useVideoConfig();
+  return (
+    <Audio
+      src={staticFile(src)}
+      durationInFrames={durationInFrames}
+      volume={level * duckingGain(speech, fps, frame)}
+    />
+  );
+}

@@ -96,6 +96,8 @@ export interface AppConfig {
   /** Размер контекстного окна модели в токенах. */
   readonly agentModelContextTokens: number | undefined;
   readonly agentModelStreaming: boolean;
+  /** Протокол провайдера модели: OpenAI-совместимый или Anthropic Messages. */
+  readonly agentModelApi: "openai" | "anthropic";
   /** Уровень рассуждения модели. */
   readonly agentReasoning: AgentReasoning;
   /** Необязательная модель судьи; используется процессом eve eval, не агентом. */
@@ -268,6 +270,10 @@ const envSchema = z.object({
   AGENT_MODEL_BASE_URL: envUrl.optional(),
   AGENT_MODEL_API_KEY: envString.optional(),
   AGENT_MODEL_STREAMING: envBoolean.optional().default(true),
+  AGENT_MODEL_API: z
+    .enum(["openai", "anthropic"], { error: "ожидается openai или anthropic" })
+    .optional()
+    .default("openai"),
   EVAL_JUDGE_MODEL: envString.trim().optional(),
   EVAL_CHECKPOINT_DIR: envString.optional(),
   AGENT_MODEL_CONTEXT_TOKENS: z.coerce
@@ -454,6 +460,14 @@ export function parseConfig(env: EnvRecord): AppConfig {
       if (data.AGENT_MODEL_CONTEXT_TOKENS === undefined) {
         addIssue("AGENT_MODEL_CONTEXT_TOKENS", "нужна вместе с AGENT_MODEL_BASE_URL");
       }
+    } else if (!data.APP_TEST_MODE && data.AGENT_MODEL_API === "anthropic") {
+      addIssue("AGENT_MODEL_BASE_URL", "нужна для AGENT_MODEL_API=anthropic");
+      if (data.AGENT_MODEL_API_KEY === undefined) {
+        addIssue("AGENT_MODEL_API_KEY", "нужна для AGENT_MODEL_API=anthropic");
+      }
+      if (data.AGENT_MODEL_CONTEXT_TOKENS === undefined) {
+        addIssue("AGENT_MODEL_CONTEXT_TOKENS", "нужна для AGENT_MODEL_API=anthropic");
+      }
     }
     if (!data.AGENT_MODEL_STREAMING && !data.AGENT_MODEL_BASE_URL && !data.APP_TEST_MODE) {
       addIssue("AGENT_MODEL_STREAMING", "false поддерживается только с AGENT_MODEL_BASE_URL");
@@ -491,6 +505,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     agentModelApiKey: data.AGENT_MODEL_API_KEY,
     agentModelContextTokens: data.AGENT_MODEL_CONTEXT_TOKENS,
     agentModelStreaming: data.AGENT_MODEL_STREAMING,
+    agentModelApi: data.AGENT_MODEL_API,
     agentReasoning: data.AGENT_REASONING,
     evalJudgeModel: data.EVAL_JUDGE_MODEL,
     secretsEncryptionKey: data.SECRETS_ENCRYPTION_KEY,
@@ -558,6 +573,7 @@ export interface EvalJudgeConfig {
   readonly model: string | undefined;
   readonly baseUrl: string | undefined;
   readonly apiKey: string | undefined;
+  readonly api: AppConfig["agentModelApi"];
 }
 
 // Процесс оценок может обращаться к удалённому приложению: его судье не нужны
@@ -566,6 +582,7 @@ const evalJudgeSchema = envSchema.pick({
   EVAL_JUDGE_MODEL: true,
   AGENT_MODEL_BASE_URL: true,
   AGENT_MODEL_API_KEY: true,
+  AGENT_MODEL_API: true,
 });
 
 export function parseEvalJudgeConfig(env: EnvRecord): EvalJudgeConfig {
@@ -573,9 +590,13 @@ export function parseEvalJudgeConfig(env: EnvRecord): EvalJudgeConfig {
     EVAL_JUDGE_MODEL: env.EVAL_JUDGE_MODEL?.trim() || undefined,
     AGENT_MODEL_BASE_URL: env.AGENT_MODEL_BASE_URL?.trim() || undefined,
     AGENT_MODEL_API_KEY: env.AGENT_MODEL_API_KEY?.trim() || undefined,
+    AGENT_MODEL_API: env.AGENT_MODEL_API?.trim() || undefined,
   });
   if (!result.success) throw new ConfigError(formatIssues(result.error));
   const data = result.data;
+  if (data.EVAL_JUDGE_MODEL && data.AGENT_MODEL_API === "anthropic" && !data.AGENT_MODEL_BASE_URL) {
+    throw new ConfigError(["AGENT_MODEL_BASE_URL: нужна судье для AGENT_MODEL_API=anthropic"]);
+  }
   if (data.EVAL_JUDGE_MODEL && data.AGENT_MODEL_BASE_URL && !data.AGENT_MODEL_API_KEY) {
     throw new ConfigError(["AGENT_MODEL_API_KEY: нужна судье вместе с AGENT_MODEL_BASE_URL"]);
   }
@@ -583,6 +604,7 @@ export function parseEvalJudgeConfig(env: EnvRecord): EvalJudgeConfig {
     model: data.EVAL_JUDGE_MODEL,
     baseUrl: data.AGENT_MODEL_BASE_URL,
     apiKey: data.AGENT_MODEL_API_KEY,
+    api: data.AGENT_MODEL_API,
   };
 }
 
@@ -601,7 +623,7 @@ export function readEvalCheckpointDirectory(): string | undefined {
 /** Non-secret identity: model, provider, reasoning, and sandbox mode, never credentials. */
 export function evalRuntimeFingerprint(config = loadConfig()): string {
   return createHash("sha256").update(JSON.stringify({
-    model: config.agentModel, baseUrl: config.agentModelBaseUrl,
+    model: config.agentModel, baseUrl: config.agentModelBaseUrl, api: config.agentModelApi,
     context: config.agentModelContextTokens, reasoning: config.agentReasoning, streaming: config.agentModelStreaming,
     fixture: config.appTestMode, videoSandbox: config.appVideoEvalSandbox,
     cpu: config.sandboxCpu, memory: config.sandboxMemoryGb, disk: config.sandboxDiskGb,

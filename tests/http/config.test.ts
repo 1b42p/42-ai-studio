@@ -63,6 +63,9 @@ describe("parseConfig", () => {
     expect(config.appUrl).toBe("http://localhost:3100");
     expect(config.appTestMode).toBe(true);
     expect(config.agentModelStreaming).toBe(true);
+    expect(config.agentModelApi).toBe("openai");
+    expect(parseConfig({ ...validEnv(), AGENT_MODEL_API: "anthropic" }).agentModelApi).toBe("anthropic");
+    expect(issuesOf({ ...validEnv(), AGENT_MODEL_API: "chat" }).join()).toContain("AGENT_MODEL_API");
     expect(config.testAppPort).toBe(3100);
     expect(config.nextDistDir).toBe(".next-test-3100");
   });
@@ -206,7 +209,7 @@ describe("parseConfig", () => {
 describe("конфигурация судьи eve eval", () => {
   test("не требует конфигурации приложения и оставляет выбор модели eve", () => {
     expect(parseEvalJudgeConfig({})).toEqual({
-      model: undefined, baseUrl: undefined, apiKey: undefined,
+      model: undefined, baseUrl: undefined, apiKey: undefined, api: "openai",
     });
     expect(parseEvalJudgeConfig({
       EVAL_JUDGE_MODEL: "   ", DATABASE_URL: "not-a-url", SESSION_SECRET: "short",
@@ -219,7 +222,7 @@ describe("конфигурация судьи eve eval", () => {
       AGENT_MODEL_BASE_URL: "  https://api.example.com/v1  ",
       AGENT_MODEL_API_KEY: "judge-test-key",
     })).toEqual({
-      model: "judge/model", baseUrl: "https://api.example.com/v1", apiKey: "judge-test-key",
+      model: "judge/model", baseUrl: "https://api.example.com/v1", apiKey: "judge-test-key", api: "openai",
     });
     expect(parseEvalJudgeConfig({ EVAL_JUDGE_MODEL: "typesafe-ai/jev" }).model).toBe("typesafe-ai/jev");
     expect(parseConfig({ ...validEnv(), EVAL_JUDGE_MODEL: "judge/model" }).evalJudgeModel).toBe("judge/model");
@@ -348,6 +351,21 @@ describe("parseConfig: модель агента", () => {
     const issues = issuesOf(env);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toContain("AGENT_MODEL");
+  });
+
+  test("AGENT_MODEL_API=anthropic без адреса, ключа и окна не стартует", () => {
+    const issues = issuesOf({ ...productionEnv(), AGENT_MODEL_API: "anthropic" });
+
+    expect(issues.join("\n")).toContain("AGENT_MODEL_BASE_URL");
+    expect(issues.join("\n")).toContain("AGENT_MODEL_API_KEY");
+    expect(issues.join("\n")).toContain("AGENT_MODEL_CONTEXT_TOKENS");
+    expect(parseConfig({
+      ...productionEnv(),
+      AGENT_MODEL_API: "anthropic",
+      AGENT_MODEL_BASE_URL: "https://api.example.com/v1",
+      AGENT_MODEL_API_KEY: "ключ",
+      AGENT_MODEL_CONTEXT_TOKENS: "128000",
+    }).agentModelApi).toBe("anthropic");
   });
 
   test("AGENT_MODEL_BASE_URL требует ключ и окно контекста", () => {

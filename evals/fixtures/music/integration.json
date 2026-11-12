@@ -1,0 +1,398 @@
+{
+  "remotionVersion": "4.0.538",
+  "sourceSha256": "e25c8de41a673aab0a155535a168ce095846f364a504389c2b1a7a44f54ea6e6",
+  "sourceVoice": {
+    "sha256": "d73d6c1cb2d4056a05a1fad61aa17d36b7ae773e172326a322b9f72c72e08180",
+    "text": "Музыка помогает удерживать настроение и не должна мешать речи. Сейчас спокойная мелодия становится тише, чтобы каждое слово звучало ясно. После короткого рассказа фон плавно возвращается к обычной громкости.",
+    "voice": "ru-RU-SvetlanaNeural",
+    "durationMs": 14880
+  },
+  "sourceMusic": {
+    "sha256": "d4ebb0b200c78fbcf3b97c42af0270f135a53263f6e5e944c5100134dd8e7457",
+    "trimSeconds": 20
+  },
+  "sources": [
+    {
+      "path": "public/voice/scene-01.mp3",
+      "sha256": "b0b1874ab4a4eac1eaec3d7f5bcc9c71910f47f641500c3425c495896c1a0a7c",
+      "sourceRangeSeconds": [
+        0,
+        3.72
+      ],
+      "treatment": "Real Svetlana recording excerpt, padded to the reference slot. Used ONLY to test audio routes, not asserted to pronounce the morning screenplay."
+    },
+    {
+      "path": "public/voice/scene-02.mp3",
+      "sha256": "b464f361496e2a6d51c239d5092d7942af9c9a80acaad23f0b7c52d86632bd5c",
+      "sourceRangeSeconds": [
+        3.72,
+        7.44
+      ],
+      "treatment": "Real Svetlana recording excerpt, padded to the reference slot. Used ONLY to test audio routes, not asserted to pronounce the morning screenplay."
+    },
+    {
+      "path": "public/voice/scene-03.mp3",
+      "sha256": "8cf7a8d911b5e39cfed536f90b450553a93437a50ebbef014a40f8524e473364",
+      "sourceRangeSeconds": [
+        7.44,
+        11.16
+      ],
+      "treatment": "Real Svetlana recording excerpt, padded to the reference slot. Used ONLY to test audio routes, not asserted to pronounce the morning screenplay."
+    },
+    {
+      "path": "public/voice/scene-04.mp3",
+      "sha256": "15217cea905c0409017e4fd5eea48c6035005417556158b18ab725487cb6a28f",
+      "sourceRangeSeconds": [
+        11.16,
+        14.88
+      ],
+      "treatment": "Real Svetlana recording excerpt, padded to the reference slot. Used ONLY to test audio routes, not asserted to pronounce the morning screenplay."
+    }
+  ],
+  "note": "Actual local Remotion render using genuine reference audio, not silence. Voice excerpts test the SAME audio routes but are NOT the morning narration. Behavioural speak/timing responses remain standard stubs. No subjective owner approval is claimed.",
+  "measurements": {
+    "rawVoice": {
+      "input_i": "-20.63",
+      "input_tp": "-4.36",
+      "input_lra": "4.00",
+      "input_thresh": "-31.12",
+      "output_i": "-24.71",
+      "output_tp": "-8.50",
+      "output_lra": "2.80",
+      "output_thresh": "-35.16",
+      "normalization_type": "dynamic",
+      "target_offset": "0.71"
+    },
+    "voiceFull": {
+      "input_i": "-16.08",
+      "input_tp": "-2.40",
+      "input_lra": "8.30",
+      "input_thresh": "-26.92",
+      "output_i": "-24.68",
+      "output_tp": "-11.07",
+      "output_lra": "5.20",
+      "output_thresh": "-35.33",
+      "normalization_type": "dynamic",
+      "target_offset": "0.68"
+    },
+    "voiceSpeech": {
+      "input_i": "-15.20",
+      "input_tp": "-3.48",
+      "input_lra": "0.00",
+      "input_thresh": "-25.20",
+      "output_i": "-24.00",
+      "output_tp": "-12.28",
+      "output_lra": "0.00",
+      "output_thresh": "-34.00",
+      "normalization_type": "linear",
+      "target_offset": "0.00"
+    },
+    "musicSpeech": {
+      "input_i": "-24.82",
+      "input_tp": "-18.14",
+      "input_lra": "0.00",
+      "input_thresh": "-34.82",
+      "output_i": "-24.01",
+      "output_tp": "-17.32",
+      "output_lra": "0.00",
+      "output_thresh": "-34.01",
+      "normalization_type": "linear",
+      "target_offset": "0.01"
+    },
+    "musicOutside": {
+      "input_i": "-17.76",
+      "input_tp": "-7.80",
+      "input_lra": "0.00",
+      "input_thresh": "-27.76",
+      "output_i": "-23.99",
+      "output_tp": "-14.04",
+      "output_lra": "0.00",
+      "output_thresh": "-33.99",
+      "normalization_type": "linear",
+      "target_offset": "-0.01"
+    },
+    "mix": {
+      "input_i": "-17.19",
+      "input_tp": "-2.03",
+      "input_lra": "6.30",
+      "input_thresh": "-27.46",
+      "output_i": "-25.15",
+      "output_tp": "-9.82",
+      "output_lra": "3.90",
+      "output_thresh": "-35.37",
+      "normalization_type": "dynamic",
+      "target_offset": "1.15"
+    }
+  },
+  "files": {
+    "out/voice-only.wav": {
+      "size": 3840078,
+      "sha256": "b1afb3b609030e03ab7c1b89c0defb6106538416380c27b585e46e00efba511b",
+      "probe": {
+        "streams": [
+          {
+            "index": 0,
+            "codec_name": "pcm_s16le",
+            "codec_long_name": "unknown",
+            "codec_type": "audio",
+            "codec_tag_string": "[1][0][0][0]",
+            "codec_tag": "0x0001",
+            "sample_fmt": "s16",
+            "sample_rate": "48000",
+            "channels": 2,
+            "bits_per_sample": 16,
+            "initial_padding": 0,
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/48000",
+            "duration_ts": 960000,
+            "duration": "20.000000",
+            "bit_rate": "1536000",
+            "disposition": {
+              "default": 0,
+              "dub": 0,
+              "original": 0,
+              "comment": 0,
+              "lyrics": 0,
+              "karaoke": 0,
+              "forced": 0,
+              "hearing_impaired": 0,
+              "visual_impaired": 0,
+              "clean_effects": 0,
+              "attached_pic": 0,
+              "timed_thumbnails": 0,
+              "non_diegetic": 0,
+              "captions": 0,
+              "descriptions": 0,
+              "metadata": 0,
+              "dependent": 0,
+              "still_image": 0,
+              "multilayer": 0
+            }
+          }
+        ],
+        "format": {
+          "filename": "out/voice-only.wav",
+          "nb_streams": 1,
+          "nb_programs": 0,
+          "nb_stream_groups": 0,
+          "format_name": "wav",
+          "duration": "20.000000",
+          "size": "3840078",
+          "bit_rate": "1536031",
+          "probe_score": 99,
+          "tags": {
+            "encoder": "Lavf61.7.100"
+          }
+        }
+      }
+    },
+    "out/music-only.wav": {
+      "size": 3840078,
+      "sha256": "d8c8a2f4d94d4499df507b4329c06c31347fb4389bcaf815e392ae3d2b57febb",
+      "probe": {
+        "streams": [
+          {
+            "index": 0,
+            "codec_name": "pcm_s16le",
+            "codec_long_name": "unknown",
+            "codec_type": "audio",
+            "codec_tag_string": "[1][0][0][0]",
+            "codec_tag": "0x0001",
+            "sample_fmt": "s16",
+            "sample_rate": "48000",
+            "channels": 2,
+            "bits_per_sample": 16,
+            "initial_padding": 0,
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/48000",
+            "duration_ts": 960000,
+            "duration": "20.000000",
+            "bit_rate": "1536000",
+            "disposition": {
+              "default": 0,
+              "dub": 0,
+              "original": 0,
+              "comment": 0,
+              "lyrics": 0,
+              "karaoke": 0,
+              "forced": 0,
+              "hearing_impaired": 0,
+              "visual_impaired": 0,
+              "clean_effects": 0,
+              "attached_pic": 0,
+              "timed_thumbnails": 0,
+              "non_diegetic": 0,
+              "captions": 0,
+              "descriptions": 0,
+              "metadata": 0,
+              "dependent": 0,
+              "still_image": 0,
+              "multilayer": 0
+            }
+          }
+        ],
+        "format": {
+          "filename": "out/music-only.wav",
+          "nb_streams": 1,
+          "nb_programs": 0,
+          "nb_stream_groups": 0,
+          "format_name": "wav",
+          "duration": "20.000000",
+          "size": "3840078",
+          "bit_rate": "1536031",
+          "probe_score": 99,
+          "tags": {
+            "encoder": "Lavf61.7.100"
+          }
+        }
+      }
+    },
+    "out/final.mp4": {
+      "size": 1216816,
+      "sha256": "55759e0f7f65950a5da45c6fb018f2f80cce2254d2feb006e913c6d71f619edc",
+      "probe": {
+        "streams": [
+          {
+            "index": 0,
+            "codec_name": "h264",
+            "codec_long_name": "unknown",
+            "profile": "100",
+            "codec_type": "video",
+            "codec_tag_string": "avc1",
+            "codec_tag": "0x31637661",
+            "width": 1920,
+            "height": 1080,
+            "coded_width": 1920,
+            "coded_height": 1080,
+            "closed_captions": 0,
+            "film_grain": 0,
+            "has_b_frames": 2,
+            "sample_aspect_ratio": "1:1",
+            "display_aspect_ratio": "16:9",
+            "pix_fmt": "yuv420p",
+            "level": 40,
+            "color_range": "tv",
+            "color_transfer": "iec61966-2-1",
+            "color_primaries": "bt709",
+            "chroma_location": "left",
+            "field_order": "progressive",
+            "refs": 1,
+            "is_avc": "true",
+            "nal_length_size": "4",
+            "id": "0x1",
+            "r_frame_rate": "30/1",
+            "avg_frame_rate": "30/1",
+            "time_base": "1/90000",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 1800000,
+            "duration": "20.000000",
+            "bit_rate": "159094",
+            "bits_per_raw_sample": "8",
+            "nb_frames": "600",
+            "extradata_size": 51,
+            "disposition": {
+              "default": 1,
+              "dub": 0,
+              "original": 0,
+              "comment": 0,
+              "lyrics": 0,
+              "karaoke": 0,
+              "forced": 0,
+              "hearing_impaired": 0,
+              "visual_impaired": 0,
+              "clean_effects": 0,
+              "attached_pic": 0,
+              "timed_thumbnails": 0,
+              "non_diegetic": 0,
+              "captions": 0,
+              "descriptions": 0,
+              "metadata": 0,
+              "dependent": 0,
+              "still_image": 0,
+              "multilayer": 0
+            },
+            "tags": {
+              "language": "und",
+              "handler_name": "VideoHandler",
+              "vendor_id": "[0][0][0][0]"
+            }
+          },
+          {
+            "index": 1,
+            "codec_name": "aac",
+            "codec_long_name": "unknown",
+            "profile": "1",
+            "codec_type": "audio",
+            "codec_tag_string": "mp4a",
+            "codec_tag": "0x6134706d",
+            "sample_fmt": "fltp",
+            "sample_rate": "48000",
+            "channels": 2,
+            "channel_layout": "stereo",
+            "bits_per_sample": 0,
+            "initial_padding": 0,
+            "id": "0x2",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/48000",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 960528,
+            "duration": "20.011000",
+            "bit_rate": "317375",
+            "nb_frames": "940",
+            "extradata_size": 2,
+            "disposition": {
+              "default": 1,
+              "dub": 0,
+              "original": 0,
+              "comment": 0,
+              "lyrics": 0,
+              "karaoke": 0,
+              "forced": 0,
+              "hearing_impaired": 0,
+              "visual_impaired": 0,
+              "clean_effects": 0,
+              "attached_pic": 0,
+              "timed_thumbnails": 0,
+              "non_diegetic": 0,
+              "captions": 0,
+              "descriptions": 0,
+              "metadata": 0,
+              "dependent": 0,
+              "still_image": 0,
+              "multilayer": 0
+            },
+            "tags": {
+              "language": "und",
+              "handler_name": "SoundHandler",
+              "vendor_id": "[0][0][0][0]"
+            }
+          }
+        ],
+        "format": {
+          "filename": "out/final.mp4",
+          "nb_streams": 2,
+          "nb_programs": 0,
+          "nb_stream_groups": 0,
+          "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+          "start_time": "0.000000",
+          "duration": "20.011000",
+          "size": "1216816",
+          "bit_rate": "486458",
+          "probe_score": 100,
+          "tags": {
+            "major_brand": "isom",
+            "minor_version": "512",
+            "compatible_brands": "isomiso2avc1mp41",
+            "encoder": "Lavf61.7.100",
+            "comment": "Made with Remotion 4.0.538"
+          }
+        }
+      }
+    }
+  }
+}
