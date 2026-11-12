@@ -26,19 +26,12 @@ export default Array.from({ length: 3 }, () => defineEval({
       t.check(linkedDraft, satisfies(Boolean, "ссылка на текущий проверенный черновик отправлена завершённым сообщением"));
 
       const questions = turn.toolCalls.filter(call => call.name === "ask_question");
-      if (questions.length > 0) {
-        turn.parked();
-        t.check(questions.length, satisfies(count => count === 1, "ровно один вызов ask_question"));
-        turn.calledTool("ask_question", { status: "pending", count: 1 });
-        t.check(evidence.questionAfterDraft, satisfies(Boolean, "согласование запрошено после завершения черновика"));
-        t.check(evidence.draftLinkBeforeQuestion, satisfies(Boolean, "ссылка на черновик отправлена отдельным текстом до запроса согласования"));
-        session.requireInputRequest({ toolName: "ask_question" });
-      } else {
-        turn.succeeded();
-        t.check(turn.status === "waiting" && turn.events.at(-1)?.type === "session.waiting" && turn.inputRequests.length === 0,
-          satisfies(Boolean, "ход завершён и сессия ожидает следующего сообщения пользователя"));
-        t.log("Диагностика #17: ask_question не вызван. Этот сценарий проверяет отсутствие превью после черновика (#18), а не успешность native HITL.");
-      }
+      turn.parked();
+      t.check(questions.length, satisfies(count => count === 1, "ровно один вызов ask_question"));
+      turn.calledTool("ask_question", { status: "pending", count: 1 });
+      t.check(evidence.questionAfterDraft, satisfies(Boolean, "согласование запрошено после завершения черновика"));
+      t.check(evidence.draftLinkBeforeQuestion, satisfies(Boolean, "ссылка на черновик отправлена отдельным текстом до запроса согласования"));
+      session.requireInputRequest({ toolName: "ask_question" });
     } finally {
       await session.cancel();
     }

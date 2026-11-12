@@ -173,27 +173,28 @@ test.each(["unavailable", "unauthorised-final", "duplicate-input", "duplicate-ca
   expect(results.filter(result => result.name.startsWith("satisfies(")).length).toBe(7);
 });
 
-test("#18 принимает проверенный черновик без превью в обычном ожидании, не объявляя HITL успешным", async () => {
+test("#18 требует интерактивный вопрос: проверенный черновик со ссылкой без ASK — отказ", async () => {
   const h = await draftHarness("text-only");
-  await h.run();
+  await expect(h.run()).rejects.toBeInstanceOf(EvalRequirementFailed);
   const results = await h.collector.finalize({} as EveEvalTaskResult);
-  expect(results.every(result => result.passed), JSON.stringify(results)).toBe(true);
-  expect(results.some(result => result.name === "succeeded")).toBe(true);
-  expect(results.some(result => result.name === "parked" || result.name === "requireInputRequest")).toBe(false);
-  expect(h.requireInput).not.toHaveBeenCalled();
+  expect(results.find(result => result.name === "parked")?.passed).toBe(false);
+  expect(results.find(result => result.name === "calledTool(ask_question)")?.passed).toBe(false);
+  expect(results.find(result => result.name === "requireInputRequest")?.passed).toBe(false);
+  expect(h.requireInput).toHaveBeenCalledWith({ toolName: "ask_question" });
   expect(h.respond).not.toHaveBeenCalled();
   expect(h.cancel).toHaveBeenCalledTimes(1);
-  expect(h.log).toHaveBeenCalledWith(expect.stringContaining("ask_question не вызван"));
+  expect(h.log).not.toHaveBeenCalled();
   expect(h.parkedTurn.status).toBe("waiting");
   expect(h.parkedTurn.inputRequests).toHaveLength(0);
 });
 
 test.each(["noask-final-attempt", "noask-preview", "noask-unverified", "noask-missing-link", "noask-wrong-link", "noask-fake-frame-proof", "noask-fake-image", "noask-stale-link", "noask-closed"])("отсутствие ASK не освобождает от критериев #18: %s", async mode => {
   const h = await draftHarness(mode);
-  await h.run();
+  await expect(h.run()).rejects.toBeInstanceOf(EvalRequirementFailed);
   const results = await h.collector.finalize({} as EveEvalTaskResult);
   expect(results.some(result => result.passed === false), JSON.stringify(results)).toBe(true);
-  expect(h.requireInput).not.toHaveBeenCalled();
+  expect(h.requireInput).toHaveBeenCalledWith({ toolName: "ask_question" });
+  expect(h.check.mock.invocationCallOrder.at(-1)!).toBeLessThan(h.requireInput.mock.invocationCallOrder[0]);
   expect(h.respond).not.toHaveBeenCalled();
   expect(h.cancel).toHaveBeenCalledTimes(1);
 });
