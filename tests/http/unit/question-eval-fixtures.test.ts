@@ -4,8 +4,10 @@ import type { EveEvalContext } from "eve/evals";
 import { expect, test, vi } from "vitest";
 import { parseToolStubs } from "../../../node_modules/eve/dist/src/tool-stubs/rules.js";
 import { StubPlayback } from "../../../node_modules/eve/dist/src/tool-stubs/playback.js";
+import type { EditFileResult } from "../../../agent/tools/edit_file";
+import { formatEditFileModelOutput } from "../../../lib/edit-file/apply";
 import {
-  isFinal, questionSession, questionStubs, questionVideoCommand, questionVideoContracts, REQUEST,
+  isFinal, questionFrameContracts, questionSession, questionStubs, questionVideoCommand, questionVideoContracts, REQUEST,
 } from "../../../evals/questions/fixtures";
 import {
   frameDirectory, frameName, frameOutput, questionFrames, questionFramesFor, questionProjectPath,
@@ -17,6 +19,10 @@ const hash = (value: string | Uint8Array) => createHash("sha256").update(value).
 const tools = ["bash", "read_file", "edit_file", "agent", "ask_question", "speak", "list_voices",
   "download_video", "read_page", "web_search", "set_session_preview"];
 const rules = new Map([30, 120].map(seconds => [seconds, parseToolStubs(questionStubs(seconds))]));
+
+function expectNoFixtureLeak(value: unknown) {
+  expect(JSON.stringify(value)).not.toMatch(/номинальн|подмен|фиктивн|не моделиру|не созда(?:ётся|ются|вался|вались)|\b(?:stub|fixture|evals?)\b/iu);
+}
 
 function playback(seconds = 120) {
   const player = new StubPlayback(rules.get(seconds)!);
@@ -36,7 +42,7 @@ function playback(seconds = 120) {
 
 test.each([30, 120])("%s: JSON правила помещаются в лимит, ASK остаётся настоящим", seconds => {
   const stubs = rules.get(seconds)!;
-  expect(stubs.length).toBeLessThanOrEqual(100);
+  expect(stubs).toHaveLength(98);
   expect(stubs.some(stub => stub.tool === "ask_question")).toBe(false);
   const h = playback(seconds);
   expect(h.call("ask_question", { question: "Согласуете?" }).kind).not.toBe("stub");
@@ -47,6 +53,31 @@ test.each([30, 120])("%s: JSON правила помещаются в лимит
   expect(REQUEST(seconds)).toContain(questionProjectPath(seconds));
   expect(frameName(seconds, 0)).toBe(seconds === 30 ? "element-000.jpeg" : "element-0000.jpeg");
   expect(frameName(seconds, seconds * 30 - 1)).toBe(seconds === 30 ? "element-899.jpeg" : "element-3599.jpeg");
+});
+
+test.each([30, 120])("%s: описание операций не раскрывает подмены, исходные снимки не доказывают запись", seconds => {
+  const h = playback(seconds);
+  const P = questionProjectPath(seconds);
+  const spec = h.success("read_file", { filePath: `${P}/SPEC.md` }) as { content: string };
+  expectNoFixtureLeak(REQUEST(seconds));
+  expectNoFixtureLeak(spec);
+  expect(spec.content).toContain("read_file для preview-v1.jpg и preview-v2.jpg не поддержан");
+  expect(spec.content).toContain("Чтение props-v2.json возвращает этот неизменяемый образец, не подтверждение предшествующей записи");
+  expect(spec.content).toContain("показывают исходный манифест, не состояние записей");
+  const notes = h.success("read_file", { filePath: `${P}/NOTES.md` });
+  expectNoFixtureLeak(notes);
+  const props = h.success("read_file", { filePath: `${P}/props-v2.json` });
+  h.success("edit_file", { filePath: `${P}/props-v2.json`, newString: questionProps(2) });
+  expect(h.success("read_file", { filePath: `${P}/props-v2.json` })).toEqual(props);
+  h.success("edit_file", { filePath: `${P}/NOTES.md`, newString: "Актуальные заметки", overwrite: true });
+  h.rejected("read_file", { filePath: `${P}/NOTES.md` });
+  h.rejected("read_file", { filePath: `${P}/NOTES.md` });
+  h.rejected("edit_file", { filePath: `${P}/NOTES.md`, oldString: "Кофе", newString: "Утро" });
+  for (const stub of rules.get(seconds)!) {
+    const outcomes = stub.outcomes ?? (stub.outcome ? [stub.outcome] : []);
+    expect(outcomes.length).toBeGreaterThan(0);
+    for (const outcome of outcomes) if ("throw" in outcome) expectNoFixtureLeak(outcome.throw);
+  }
 });
 
 test("манифест связывает настоящие кадры с source, props, номером и JPEG-байтами", () => {
@@ -107,6 +138,50 @@ test.each([30, 120])("%s: новый frames-2 с исходными props пок
   for (const frame of repeated) expect(h.success("read_file", { filePath: frame.path })).toEqual(frameOutput(frame));
 });
 
+test.each([30, 120])("%s: контракты кадров и пикселей совпадают с native playback для всех трёх наборов", seconds => {
+  const h = playback(seconds);
+  const contracts = questionFrameContracts(seconds);
+  expect(contracts.map(({ version, pass }) => [version, pass])).toEqual([[1, 1], [1, 2], [2, 2]]);
+  for (const batch of contracts) {
+    expect(batch.seconds).toBe(seconds);
+    expect(batch.directory).toBe(frameDirectory(batch.version, batch.pass));
+    expect(batch.frames).toEqual(questionFramesFor(seconds, batch.version, batch.pass));
+    expect(batch.render.source).toBe(new RegExp(batch.renderPattern).source);
+    expect(batch.pixels.source).toBe(new RegExp(batch.pixelsPattern).source);
+    const render = `cd ${questionProjectPath(seconds)} && npx remotion render src/index.ts Main ${batch.directory} --props=props-v${batch.version}.json --frames=${reviewFrames(seconds).join(",")} --image-format=jpeg --jpeg-quality=90`;
+    expect(batch.render.test(render)).toBe(true);
+    const rendered = h.success("bash", { command: render });
+    expect(rendered).toEqual({
+      status: "completed", exitCode: 0, stdout: batch.frames.map(frame => `Rendered ${frame.path}`).join("\n"),
+      stderr: "", truncated: false,
+    });
+    expectNoFixtureLeak(rendered);
+    for (const inputs of [`${batch.directory}/*.jpeg`, batch.frames.map(frame => frame.path).join(" ")]) {
+      const command = `python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py" ${inputs}`;
+      expect(batch.pixels.test(command)).toBe(true);
+      const report = h.success("bash", { command }) as { stdout: string };
+      expect(report.stdout.split("\n").filter(line => line.startsWith("{")).map(line => JSON.parse(line)))
+        .toEqual(batch.frames.map(({ path, extrema }) => ({ path, extrema, suspect: null })));
+    }
+    for (const invalid of [
+      render.replace(`props-v${batch.version}.json`, `props-v${batch.version === 1 ? 2 : 1}.json`),
+      render.replace(batch.directory, "out/frames-99"),
+      render.replace(reviewFrames(seconds).join(","), "0,40,80"),
+      `${render} && false`, `${render} --unknown=1`,
+    ]) {
+      expect(batch.render.test(invalid), invalid).toBe(false);
+      h.rejected("bash", { command: invalid });
+    }
+    for (const invalid of [
+      `python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py" ${batch.directory}/element-0040.jpeg`,
+      `python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py" ${batch.directory}/*.jpeg && false`,
+    ]) {
+      expect(batch.pixels.test(invalid), invalid).toBe(false);
+      h.rejected("bash", { command: invalid });
+    }
+  }
+});
+
 test("каждый абсолютный номер имеет свою запись: анимация не заменяется представителем сцены", () => {
   const frames = questionFramesFor(120, 1, 1);
   const start = frames.find(frame => frame.frame === 1200)!;
@@ -147,8 +222,15 @@ test("несогласованные props, каталоги, выборки, к
   const destination = `${questionProjectPath(120)}/props-v2.json`;
   const exact = questionProps(2);
   expect(h.success("edit_file", { filePath: destination, newString: exact })).toMatchObject({ path: destination, newContent: exact });
-  expect(h.success("edit_file", { filePath: `${questionProjectPath(120)}/NOTES.md`, newString: "Обновлённые заметки", overwrite: true }))
-    .toMatchObject({ oldContent: expect.any(String), newContent: expect.stringContaining("Номинальный снимок") });
+  const notesResult = h.success("edit_file", {
+    filePath: `${questionProjectPath(120)}/NOTES.md`, newString: "Обновлённые заметки", overwrite: true,
+  }) as unknown as EditFileResult;
+  expect(notesResult).toEqual({
+    path: `${questionProjectPath(120)}/NOTES.md`, created: false, replacements: 0,
+    oldContent: expect.any(String), newContent: expect.any(String),
+    linesAdded: expect.any(Number), linesRemoved: expect.any(Number),
+  });
+  expectNoFixtureLeak(formatEditFileModelOutput(notesResult));
   h.rejected("edit_file", { filePath: `${questionProjectPath(120)}/NOTES.md`, newString: "Обновлённые заметки" });
   const pixelCommand = `python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py" out/props-v1/frames-1/*.jpeg`;
   h.success("bash", { command: pixelCommand });
@@ -181,7 +263,9 @@ test.each([30, 120])("%s: экспорт видео узнаёт ровно те
       expect(match?.operation).toBe(operation);
       expect(match?.video).toEqual(video);
       const output = h.success("bash", { command }) as { stdout: string; exitCode: number };
-      expect(output.exitCode).toBe(0);
+      expect(output).toMatchObject({ status: "completed", exitCode: 0, stdout: expect.any(String), stderr: "", truncated: false });
+      expectNoFixtureLeak(output);
+      if (operation === "render") expect(output.stdout).toBe(`Rendered ${video.path}`);
       if (operation === "size") expect(Number(output.stdout)).toBe(video.sizeBytes);
       if (operation === "probe") expect(JSON.parse(output.stdout)).toEqual(video.metadata);
       if (operation === "probeFields") expect(output.stdout).toBe(video.probeFields);
@@ -210,11 +294,11 @@ test.each([30, 120])("%s: экспорт видео узнаёт ровно те
   }
 });
 
-test.each([30, 120])("%s: допустимые still и публикация номинальны, без подставных пикселей или решения о согласии", seconds => {
+test.each([30, 120])("%s: still и публикация возвращают успешные ответы без подставных пикселей или решения о согласии", seconds => {
   const h = playback(seconds);
   const P = questionProjectPath(seconds);
   const spec = h.success("read_file", { filePath: `${P}/SPEC.md` }) as { content: string };
-  expect(spec.content).toContain("JPEG и объект S3 не создаются");
+  expectNoFixtureLeak(spec);
   for (const video of questionVideoContracts(seconds).filter(video => !video.draft)) {
     expect(video.previewPath).toBe(`${P}/out/preview-v${video.version}.jpg`);
     expect(questionFrames.some(frame => frame.path === video.previewPath)).toBe(false);
@@ -227,8 +311,8 @@ test.each([30, 120])("%s: допустимые still и публикация н�
       const command = `cd ${P} && npx remotion still ${P}/src/index.ts Main ${video.previewPath} --props=${P}/props-v${video.version}.json --frame=${frame} --image-format=jpeg --jpeg-quality=85 --scale=0.5`;
       expect(video.stillRegExp.test(command)).toBe(true);
       const output = h.success("bash", { command }) as { stdout: string };
-      expect(output.stdout).toContain("Номинальная подмена still");
-      expect(output.stdout).toContain("JPEG не создавался; пиксели не записаны");
+      expect(output).toEqual({ status: "completed", exitCode: 0, stdout: `Rendered ${video.previewPath}`, stderr: "", truncated: false });
+      expectNoFixtureLeak(output);
       const reordered = `remotion still src/index.ts Main '${video.previewRelativePath}' --scale 0.5 --jpeg-quality 85 --image-format jpeg --frame ${frame} --props props-v${video.version}.json`;
       expect(video.stillRegExp.test(reordered)).toBe(true);
       h.success("bash", { command: reordered });
@@ -239,12 +323,15 @@ test.each([30, 120])("%s: допустимые still и публикация н�
         command.replace("--image-format=jpeg", "--image-format=png"),
         command.replace("--jpeg-quality=85", "--jpeg-quality=90"),
         command.replace("--scale=0.5", "--scale=1"),
-        command.replace(`--frame=${frame}`, "--frame=40"),
+        command.replace(`--frame=${frame}`, `--frame=${seconds * 30}`),
         `${command} --frame=0`, `${command} --unknown=1`, `${command} && false`,
       ]) {
         expect(video.stillRegExp.test(invalid), invalid).toBe(false);
         h.rejected("bash", { command: invalid });
       }
+    }
+    for (const frame of [1, 40, seconds * 25, seconds * 30 - 2]) {
+      h.success("bash", { command: `npx remotion still src/index.ts Main ${video.previewRelativePath} --props=props-v${video.version}.json --frame=${frame} --image-format=jpeg --jpeg-quality=85 --scale=0.5` });
     }
     h.success("set_session_preview", { path: `calm-morning-${seconds}/${video.previewRelativePath}` });
     h.rejected("read_file", { filePath: video.previewPath });

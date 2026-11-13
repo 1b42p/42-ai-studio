@@ -3,7 +3,7 @@ import { expect, test } from "vitest";
 import { parseToolStubs } from "../../../node_modules/eve/dist/src/tool-stubs/rules.js";
 import { StubPlayback } from "../../../node_modules/eve/dist/src/tool-stubs/playback.js";
 import { previewSession, request } from "../../../evals/preview/fixtures";
-import { frameName, frameNumbers, projectPath } from "../../../evals/preview/commands";
+import { canonicalStillPattern, frameName, frameNumbers, nominalFramePattern, projectPath, stillSelection } from "../../../evals/preview/commands";
 import { inspectedVideo, previewEvidence, reviewedBeforeVideo } from "../../../evals/preview/observations";
 import { musicSession } from "../../../evals/music/fixtures";
 import { voiceoverSession } from "../../../evals/voiceover/fixtures";
@@ -162,4 +162,67 @@ test.each([[30, false], [30, true], [120, false], [120, true]] as const)("усп
     expect(previewEvidence(events, seconds).publishedAfterFinal).toBe(true);
     expect(previewEvidence(events, seconds).draftWithoutPreview).toBe(false);
   }
+});
+
+const stillCommand = (seconds: number, frame: string, destination = "out/preview.jpg") =>
+  `npx remotion still src/index.tsx Main ${destination} --props=props-${seconds}.json --frame=${frame} --image-format=jpeg --jpeg-quality=85 --scale=0.5`;
+
+test.each([30, 120])("номинальный диапазон %s покрывает каждый целый кадр компактным ограниченным шаблоном", seconds => {
+  const pattern = nominalFramePattern(seconds);
+  expect(pattern.length).toBeLessThan(100);
+  const frames = new RegExp(`^${pattern}$`);
+  for (let frame = 0; frame < seconds * 30; frame++) expect(frames.test(String(frame)), String(frame)).toBe(true);
+  for (const invalid of ["", "-1", "-0", "0.5", "1e2", "+1", "00", "0750", String(seconds * 30), String(seconds * 30 + 1), "9999999999999999999999"]) {
+    expect(frames.test(invalid), invalid).toBe(false);
+  }
+});
+
+test.each([30, 120])("native still %s принимает любой допустимый кадр только для номинального preview.jpg", async seconds => {
+  const stubs = await capture(t => previewSession(t, seconds));
+  expect(stubs.length).toBeLessThanOrEqual(100);
+  expect(canonicalStillPattern(seconds).length).toBeLessThan(5000);
+  const playback = new StubPlayback(parseToolStubs(stubs));
+  const run = (command: string) => playback.call({ callId: command, tool: "bash", input: { command } });
+  const P = projectPath(seconds);
+  const samples = seconds === 30 ? [0, 1, 9, 10, 99, 100, 749, 750, 898, 899] : [0, 1, 999, 1000, 2999, 3000, 3598, 3599];
+  for (const frame of samples) {
+    const commands = [
+      stillCommand(seconds, String(frame)),
+      `cd '${P}' && remotion still '${P}/src/index.tsx' Main '${P}/out/preview.jpg' --scale 0.5 --jpeg-quality 85 --image-format jpeg --frame ${frame} --props '${P}/props-${seconds}.json'`,
+    ];
+    for (const command of commands) {
+      expect(run(command), command).toMatchObject({ kind: "stub", ruleId: "still-canonical", outcome: { response: { status: "completed", exitCode: 0 } } });
+      expect(stillSelection(command, seconds)).toEqual({ frame, path: `${P}/out/preview.jpg` });
+    }
+  }
+  const valid = stillCommand(seconds, String(samples.at(-1)));
+  const invalid = [
+    ...["", "-1", "1.5", "1e2", String(seconds * 30), String(seconds * 30 + 1), "9999999999999999999999", "$(echo 1)", "1;false"].map(frame => stillCommand(seconds, frame)),
+    valid.replace(`props-${seconds}.json`, `props-${seconds === 30 ? 120 : 30}.json`),
+    valid.replace("src/index.tsx", "src/Root.tsx"), valid.replace(" Main ", " Other "),
+    valid.replace("out/preview.jpg", "out/unknown.jpg"), valid.replace("out/preview.jpg", "out/preview.png"),
+    valid.replace("--image-format=jpeg", "--image-format=png"), valid.replace("--jpeg-quality=85", "--jpeg-quality=90"),
+    valid.replace("--scale=0.5", "--scale=1"), valid.replace("--scale=0.5", ""),
+    ...[`--props props-${seconds}.json`, "--frame 0", "--image-format jpeg", "--jpeg-quality 85", "--scale 0.5"].map(flag => `${valid} ${flag}`),
+    `${valid} --overwrite`, `${valid} && false`, `${valid}; true`, `${valid}\ntrue`, `echo ${valid}`,
+  ];
+  for (const command of invalid) {
+    expect(run(command), command).toMatchObject({ kind: "stub", ruleId: "unsupported-command", outcome: { throw: expect.anything() } });
+    expect(stillSelection(command, seconds), command).toBeNull();
+    expect(command).not.toMatch(new RegExp(canonicalStillPattern(seconds)));
+  }
+  for (const frame of frameNumbers(seconds)) {
+    const command = stillCommand(seconds, String(frame), `out/key-${frame}.jpg`);
+    expect(run(command)).toMatchObject({ kind: "stub", ruleId: `still-${frame}` });
+    expect(stillSelection(command, seconds)).toEqual({ frame, path: `${P}/out/key-${frame}.jpg` });
+    const mismatched = command.replace(`--frame=${frame}`, `--frame=${frame === 0 ? 1 : 0}`);
+    expect(run(mismatched)).toMatchObject({ kind: "stub", ruleId: "unsupported-command" });
+    expect(stillSelection(mismatched, seconds)).toBeNull();
+  }
+  const unrecorded = seconds === 30 ? 750 : 3000;
+  const command = stillCommand(seconds, String(unrecorded), `out/key-${unrecorded}.jpg`);
+  expect(run(command)).toMatchObject({ kind: "stub", ruleId: "unsupported-command" });
+  expect(stillSelection(command, seconds)).toBeNull();
+  expect(playback.call({ callId: "unknown-key", tool: "read_file", input: { filePath: `${P}/out/key-${unrecorded}.jpg` } }))
+    .toMatchObject({ kind: "stub", ruleId: "unknown-read", outcome: { throw: expect.anything() } });
 });

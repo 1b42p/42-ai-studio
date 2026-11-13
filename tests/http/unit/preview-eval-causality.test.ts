@@ -3,6 +3,8 @@ import { inspectedVideo, previewEvidence, reviewedBeforeVideo } from "../../../e
 import { previewFrames } from "../../../evals/preview/media-fixture";
 import { previewHistory } from "./preview-eval-support";
 import { frameName, frameNumbers, projectPath } from "../../../evals/preview/commands";
+import { formatEditFileModelOutput } from "../../../lib/edit-file/apply";
+import type { EditFileResult } from "../../../agent/tools/edit_file";
 
 test.each([30, 120])("актуальные предоставленные JPEG %s проходят без лишнего свежего рендера, но с проверкой и просмотром", async seconds => {
   const h = await previewHistory(seconds);
@@ -72,21 +74,26 @@ test("параллельные проверки всех кадров, заве�
   expect(reviewedBeforeVideo(h.events, 30)).toBe(true);
 });
 
-test.each(frameNumbers(30))("канонический still кадра %s поддержан без выдуманных пикселей preview.jpg", async frame => {
-  const h = await previewHistory();
-  h.review(); h.render(); h.inspect();
+test.each([
+  ...frameNumbers(30).map(frame => [30, frame]),
+  [30, 1], [30, 37], [30, 750], [30, 898],
+  [120, 0], [120, 3000], [120, 3599],
+])("канонический still %s секунд, кадр %s поддержан без выдуманных пикселей preview.jpg", async (seconds, frame) => {
+  const h = await previewHistory(seconds);
+  h.review(); h.render(false); h.inspect(false);
   expect(h.still(frame).failed).toBe(false);
   const published = h.publish();
   expect(published.failed).toBe(false);
-  expect(published.output).toMatchObject({ path: `${projectPath(30)}/out/preview.jpg`, contentType: "image/jpeg" });
+  expect(published.output).toMatchObject({ path: `${projectPath(seconds)}/out/preview.jpg`, contentType: "image/jpeg" });
   const size = (published.output as { size: number }).size;
   expect(size).toBeGreaterThan(0); expect(size).toBeLessThanOrEqual(1048576);
-  expect(previewEvidence(h.events, 30).stillAfterVerifiedFinal).toBe(true);
+  expect(previewEvidence(h.events, seconds).stillAfterVerifiedFinal).toBe(true);
+  if (seconds === 120) expect(previewEvidence(h.events, seconds).draftWithoutPreview).toBe(false);
   expect(previewFrames.some(frame => frame.path.endsWith("/out/preview.jpg"))).toBe(false);
-  expect(h.call("read_file", { filePath: `${projectPath(30)}/out/preview.jpg` }).failed).toBe(true);
+  expect(h.call("read_file", { filePath: `${projectPath(seconds)}/out/preview.jpg` }).failed).toBe(true);
 });
 
-test.each(["no-still", "before-final", "parallel-publication", "stale-final", "failed", "running", "pending-overwrite", "failed-overwrite", "wrong-path", "wrong-props", "wrong-quality", "wrong-scale", "unknown-frame"])("публикация не наследует неподходящий still: %s", async fault => {
+test.each(["no-still", "before-final", "parallel-publication", "stale-final", "failed", "running", "pending-overwrite", "failed-overwrite", "wrong-path", "wrong-props", "wrong-quality", "wrong-scale", "out-of-bounds"])("публикация не наследует неподходящий still: %s", async fault => {
   const h = await previewHistory();
   h.review();
   if (fault === "before-final") h.still();
@@ -108,12 +115,12 @@ test.each(["no-still", "before-final", "parallel-publication", "stale-final", "f
       const replacement = h.request("bash", { command: h.stillCommand(150) });
       if (fault === "failed-overwrite") h.complete(replacement, { status: "failed" });
     }
-    if (["wrong-props", "wrong-quality", "wrong-scale", "unknown-frame"].includes(fault)) {
+    if (["wrong-props", "wrong-quality", "wrong-scale", "out-of-bounds"].includes(fault)) {
       const replacements: Record<string, [string, string]> = {
         "wrong-props": ["props-30.json", "props-120.json"],
         "wrong-quality": ["--jpeg-quality=85", "--jpeg-quality=90"],
         "wrong-scale": ["--scale=0.5", "--scale=1"],
-        "unknown-frame": ["--frame=600", "--frame=37"],
+        "out-of-bounds": ["--frame=600", "--frame=900"],
       };
       const command = h.stillCommand().replace(...replacements[fault]);
       expect(h.bash(command).failed).toBe(true);
@@ -135,7 +142,7 @@ test("ранний still не мешает новому корректному s
   expect(previewEvidence(cached.events, 30).stillAfterVerifiedFinal).toBe(false);
 });
 
-test.each(["still-first", "checks-first", "parallel-still-first", "parallel-checks-first", "same-batch"])("после успешного финала проверки видео и still могут завершаться независимо: %s", async mode => {
+test.each(["still-first", "checks-first", "parallel-still-first", "parallel-checks-first", "same-batch"])("still требует завершённых проверок видео до своего запуска: %s", async mode => {
   const h = await previewHistory();
   h.review(); h.render();
   if (mode === "still-first") { h.still(); h.inspect(); }
@@ -156,7 +163,7 @@ test.each(["still-first", "checks-first", "parallel-still-first", "parallel-chec
     if (mode === "parallel-checks-first") h.complete(still);
   }
   h.publish();
-  expect(previewEvidence(h.events, 30).stillAfterVerifiedFinal).toBe(true);
+  expect(previewEvidence(h.events, 30).stillAfterVerifiedFinal).toBe(mode === "checks-first");
   expect(inspectedVideo(h.events, 30)).toBe(true);
   expect(reviewedBeforeVideo(h.events, 30)).toBe(true);
 });
@@ -308,6 +315,52 @@ test.each([30, 120])("первое чтение NOTES %s — настоящий 
   const snapshot = late.call("read_file", { filePath: path });
   expect((snapshot.output as { content: string }).content).toBe(content);
   expect((snapshot.output as { content: string }).content).not.toContain("Обновлённое состояние");
+});
+
+test.each([30, 120])("NOTES %s требует overwrite и возвращает полную фиксированную номинальную квитанцию", async seconds => {
+  const h = await previewHistory(seconds);
+  const path = `${projectPath(seconds)}/NOTES.md`;
+  const initial = h.call("read_file", { filePath: path }).output as { content: string };
+  const input = { filePath: path, newString: "Актуальные заметки A", overwrite: true };
+  for (const invalid of [
+    { filePath: path, newString: input.newString }, { ...input, overwrite: false },
+    { ...input, oldString: initial.content }, { ...input, newString: "" }, { ...input, newString: "x".repeat(262145) },
+  ]) expect(h.call("edit_file", invalid).failed).toBe(true);
+  const written = h.call("edit_file", input);
+  expect(written.failed).toBe(false);
+  expect(written.output).toEqual({
+    path, created: false, replacements: 0, oldContent: initial.content,
+    newContent: "Номинальный снимок записи NOTES.md; новое содержимое не моделируется.\n",
+    linesAdded: 1, linesRemoved: 21,
+  });
+  expect(formatEditFileModelOutput(written.output as unknown as EditFileResult)).toBe(
+    `Файл ${path} изменён: замен 0, добавлено 1 и удалено 21 строк.`,
+  );
+  const second = h.call("edit_file", { ...input, newString: "Другие актуальные заметки B" });
+  expect(second.failed).toBe(false);
+  expect(second.output).toEqual(written.output);
+  expect(h.call("read_file", { filePath: path }).failed).toBe(true);
+  const spec = h.call("read_file", { filePath: `${projectPath(seconds)}/SPEC.md` }).output as { content: string };
+  expect(spec.content).toContain("overwrite: true");
+  expect(spec.content).toContain("Точные замены oldString не поддержаны");
+  expect(spec.content).not.toMatch(/номинальн|фиктивн|подменены|не моделируется|MP4 не созда|S3 не созда/i);
+});
+
+test.each([30, 120])("проверка пикселей %s не раскрывает HOME в одинарных кавычках", async seconds => {
+  const h = await previewHistory(seconds);
+  const script = ".agents/skills/frame-review/scripts/check-frames.py";
+  for (const path of [`$HOME/${script}`, `"$HOME/${script}"`, `/${script}`, `'/${script}'`, `"/${script}"`, `/root/${script}`, `'/root/${script}'`]) {
+    expect(h.bash(`python3 ${path} out/frames-1/*.jpeg`).failed, path).toBe(false);
+  }
+  const invalid = `python3 '$HOME/${script}' out/frames-1/*.jpeg`;
+  expect(h.bash(invalid).failed).toBe(true);
+  const rejected = await previewHistory(seconds);
+  const check = rejected.request("bash", { command: invalid });
+  // Even a forged successful result cannot make an unrecognised invocation
+  // prove pixel inspection; the command grammar is shared with observations.
+  rejected.complete(check, { output: h.bash(h.pixelCommand).output, status: "completed" });
+  rejected.readFrames(); rejected.render();
+  expect(reviewedBeforeVideo(rejected.events, seconds)).toBe(false);
 });
 
 test.each([30, 120])("источники и props %s остаются неизменяемыми: чужая правка не получает старые JPEG как новые", async seconds => {

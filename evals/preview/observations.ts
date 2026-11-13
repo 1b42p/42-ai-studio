@@ -138,7 +138,7 @@ function completedStillFor(events: readonly EveEvalStreamEvent[], seconds: numbe
     write.completed = event.data.status === "completed" && record(output) && output.status === "completed" && output.exitCode === 0;
   }
   return latest !== null && pending.size === 0 && !latest.overlapped && latest.at > finalCompleted && latest.completed &&
-    inspectedVideo(events.slice(0, previewRequested), seconds, false);
+    inspectedVideo(events.slice(0, latest.at), seconds, false);
 }
 
 /** Request positions preserve causality even when parallel calls finish out of order. */

@@ -1,4 +1,7 @@
-import { entriesPattern, esc, optionOrders, quote } from "../music/operation-patterns";
+import { entriesPattern, esc, optionOrders, pixelInvocation, quote } from "../music/operation-patterns";
+import { nominalFramePattern } from "../support/frame-pattern";
+
+export { nominalFramePattern } from "../support/frame-pattern";
 
 export const PROJECT = "/workspace/preview-coffee";
 export const skillRootPattern = "(?:\\$HOME/|/root/|/{1,2})\\.agents/skills";
@@ -24,26 +27,37 @@ export function videoPattern(seconds: number, draft = false) {
 export function framesPattern(seconds: number) {
   return atomic(`${cli}render\\s+${pathArg("src/index.tsx", seconds)}\\s+Main\\s+${pathArg("out/frames-1", seconds)}\\s+${options([props(seconds), `--frames(?:=|\\s+)${frameNumbers(seconds).join(",")}`, "--image-format(?:=|\\s+)jpeg", "--jpeg-quality(?:=|\\s+)90"])}`, seconds);
 }
-export function stillPattern(seconds: number, frame: number, destination: string) {
+function stillWithFramePattern(seconds: number, frame: string, destination: string) {
   return atomic(`${cli}still\\s+${pathArg("src/index.tsx", seconds)}\\s+Main\\s+${pathArg(destination, seconds)}\\s+${options([props(seconds), `--frame(?:=|\\s+)${frame}`, "--image-format(?:=|\\s+)jpeg", "--jpeg-quality(?:=|\\s+)85", "--scale(?:=|\\s+)0\\.5"])}`, seconds);
 }
+export function stillPattern(seconds: number, frame: number, destination: string) {
+  return stillWithFramePattern(seconds, String(frame), destination);
+}
 export function canonicalStillPattern(seconds: number) {
-  return `(?:${frameNumbers(seconds).map(frame => stillPattern(seconds, frame, "out/preview.jpg")).join("|")})`;
+  // This nominal output has no recorded pixels. Named key-N.jpg exports below
+  // remain bound to the exact recorded frame; they cannot borrow this grammar.
+  return stillWithFramePattern(seconds, nominalFramePattern(seconds), "out/preview.jpg");
 }
 export function stillSelection(command: unknown, seconds: number) {
+  if (typeof command !== "string") return null;
+  if (matchesCommand(canonicalStillPattern(seconds), command)) {
+    const frame = /\s--frame(?:=|\s+)([0-9]+)(?=\s|$)/.exec(command)!;
+    return { frame: Number(frame[1]), path: `${projectPath(seconds)}/out/preview.jpg` };
+  }
   for (const frame of frameNumbers(seconds)) {
-    for (const destination of ["out/preview.jpg", `out/key-${frame}.jpg`]) {
-      if (matchesCommand(stillPattern(seconds, frame, destination), command)) {
-        return { frame, path: `${projectPath(seconds)}/${destination}` };
-      }
+    const destination = `out/key-${frame}.jpg`;
+    if (matchesCommand(stillPattern(seconds, frame, destination), command)) {
+      return { frame, path: `${projectPath(seconds)}/${destination}` };
     }
   }
   return null;
 }
 export function pixelPattern(paths: string[], seconds: number, glob = false) {
-  const script = quote(`${skillRootPattern}/frame-review/scripts/check-frames\\.py`);
+  // HOME expands only unquoted or double-quoted. Absolute / and /root aliases
+  // may also be single-quoted; shared pixelInvocation handles /root and HOME.
+  const invocation = `(?:${pixelInvocation}|python3?\\s+${quote("/{1,2}\\.agents/skills/frame-review/scripts/check-frames\\.py")})`;
   const inputs = paths.map(path => pathArg(path, seconds)).join("\\s+");
-  return atomic(`python3?\\s+${script}\\s+(?:${inputs}${glob ? `|${pathArg("out/frames-1", seconds)}\\/\\*\\.jpeg` : ""})`, seconds);
+  return atomic(`${invocation}\\s+(?:${inputs}${glob ? `|${pathArg("out/frames-1", seconds)}\\/\\*\\.jpeg` : ""})`, seconds);
 }
 export function isPixelCommand(command: unknown, seconds: number): boolean {
   const paths = frameNumbers(seconds).map(frame => `out/frames-1/${frameName(frame)}`);

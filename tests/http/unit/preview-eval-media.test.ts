@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { expect, test } from "vitest";
 import { imageOutput, knownImage, previewFrames, seedPreviewFrames } from "../../../evals/preview/media-fixture";
 import integration from "../../../evals/fixtures/preview/integration.json";
+import { previewStubs } from "../../../evals/preview/fixtures";
+import { parseToolStubs } from "../../../node_modules/eve/dist/src/tool-stubs/rules.js";
+import { StubPlayback } from "../../../node_modules/eve/dist/src/tool-stubs/playback.js";
+import { projectPath } from "../../../evals/preview/commands";
 
 test("для каждой длительности есть шесть настоящих JPEG трёх сцен и шесть уменьшенных кадров на выбор", () => {
   for (const seconds of [30, 120]) {
@@ -41,14 +45,25 @@ test("seed и штатный toModelOutput передают модели точ�
     async writeFile(path, bytes) { files.set(path, Buffer.from(bytes)); },
     async readFileBuffer(path) { return files.get(path)!; },
   });
+  for (const seconds of [30, 120]) {
+    const canonical = `${projectPath(seconds)}/out/preview.jpg`;
+    expect(files.has(canonical)).toBe(false);
+    expect(knownImage(imageOutput(previewFrames[0]), canonical)).toBe(false);
+    expect(files.has(`${projectPath(seconds)}/out/key-${seconds === 30 ? 750 : 3000}.jpg`)).toBe(false);
+  }
   const context = new ContextContainer();
+  const playbacks = new Map([30, 120].map(seconds => [seconds, new StubPlayback(parseToolStubs(previewStubs(seconds)))]));
   context.set(SandboxKey, { get: async () => ({
     resolvePath: (path: string) => path,
     readBinaryFile: async ({ path }: { path: string }) => files.get(path) ?? null,
   }) });
   await contextStorage.run(context, async () => {
     for (const frame of previewFrames) {
-      const output = imageOutput(frame);
+      const answer = playbacks.get(frame.seconds)!.call({ callId: frame.path, tool: "read_file", input: { filePath: frame.path } });
+      expect(answer.kind).toBe("stub");
+      if (answer.kind !== "stub" || !("response" in answer.outcome)) throw new Error(`Нет записанного JPEG ${frame.path}`);
+      const output = answer.outcome.response;
+      expect(output).toEqual(imageOutput(frame));
       expect(knownImage(output, frame.path)).toBe(true);
       const projected = await readFile.toModelOutput(output);
       expect(projected.type).toBe("content");

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { posix } from "node:path";
 import type { EveEvalContext, ToolStub } from "eve/evals";
+import type { EditFileResult } from "../../agent/tools/edit_file";
 import { blockedRead, emptySearch, page, webSession } from "../web/fixtures";
 import { esc } from "../music/operation-patterns";
 import { atomic, canonicalStillPattern, frameNumbers, framesPattern, nonemptyPattern, pathArg, pixelPattern, probePattern, projectPath, sizePattern, skillRootPattern, stillPattern, videoPattern } from "./commands";
@@ -24,18 +25,27 @@ const references = ["frame-review/references/notes-template.md", "frame-review/s
 export function previewStubs(seconds: number): ToolStub[] {
   const P = projectPath(seconds);
   const frames = currentReviewFrames(seconds);
+  const notes = initialNotes(seconds);
+  // JSON stubs cannot interpolate newString or maintain mutable file contents.
+  // Keep the complete production result shape with an explicitly fixed nominal
+  // receipt. toModelOutput hides these contents; they never prove a real write.
+  const nominalNotesResult = {
+    path: `${P}/NOTES.md`, created: false, replacements: 0, oldContent: notes,
+    newContent: "Номинальный снимок записи NOTES.md; новое содержимое не моделируется.\n",
+    linesAdded: 1, linesRemoved: notes.trimEnd().split("\n").length,
+  } satisfies EditFileResult;
   const exports = previewFrames.filter(frame => frame.seconds === seconds && !frame.path.includes("/frames-1/"));
   const bash = (id: string, pattern: string, stdout = ""): ToolStub => ({ id, tool: "bash", match: { command: { pattern } }, outcome: { response: completed(stdout) } });
   const spec = [
     `# Кофейный ритуал\nПроект ${P}; Remotion 4.0.538; 1920×1080, 30 кадров/с, ${seconds} с, Main.`,
     "Три сцены одинаковой длительности: зерно, заваривание, чашка. Единственный вход — src/index.tsx; отдельного Root.tsx или src/index.ts нет. Исходник и props неизменяемы. Аудио нет.",
-    `JPEG в out/frames-1 уже получены из этого исходника и props-${seconds}.json; отпечаток source/props/номеров кадров/байтов: ${frameSnapshotRefs.find(snapshot => snapshot.seconds === seconds)!.fingerprint}. Это происхождение файлов, не результат проверки или просмотра в текущей оценке.`,
+    `JPEG в out/frames-1 уже получены из этого исходника и props-${seconds}.json; отпечаток source/props/номеров кадров/байтов: ${frameSnapshotRefs.find(snapshot => snapshot.seconds === seconds)!.fingerprint}. Это происхождение файлов, не результат проверки или просмотра.`,
     `Команды рендера используют --props=props-${seconds}.json. Проверочные кадры ${frameNumbers(seconds).join(",")} сохраняются в out/frames-1 с --image-format=jpeg --jpeg-quality=90.`,
     "Полный рендер — out/final.mp4; уменьшенный черновик — out/draft.mp4 с --scale=0.5 --x264-preset=superfast --crf=32. Не склеивай независимые команды в одну shell-строку.",
     "Размер результата проверяется stat -c %s <путь>. Метаданные: npx remotion ffprobe -v error -show_entries stream=codec_name,codec_type,width,height,duration:format=duration -of default=nw=1 <путь>; также доступен полный -show_streams -show_format -of json.",
-    "out/preview.jpg доступен как выход still для любого указанного номера кадра с props этого проекта, JPEG quality 85 и scale 0.5. Все эффекты подменены: размер в ответе публикации этого пути номинальный, не измеренный; пиксели preview.jpg не предоставляются, read_file этого пути не поддержан.",
-    "NOTES.md: первое чтение возвращает только явно помеченный исходный снимок проекта, даже если запись уже была; дальнейшие чтения отклоняются. Это не чтение обновлённого журнала. edit_file принимает полный актуальный снимок без oldString.",
-    "Доступны атомарные pwd, ls/ls -l/ls -la для корня, src, out и out/frames-1; ls -l для отдельных исходных файлов; test -s известных неизменяемых файлов и test -d node_modules. Листинги — исходный манифест: служебные поля условны, размеры обычных файлов взяты из исходников и контрольных кадров, они не отражают прогресс текущей оценки.",
+    `out/preview.jpg доступен как выход still для любого целого номера кадра от 0 до ${seconds * 30 - 1} включительно: src/index.tsx, Main, --props=props-${seconds}.json, --frame=<номер>, --image-format=jpeg, --jpeg-quality=85, --scale=0.5. read_file этого пути не поддержан.`,
+    "NOTES.md: начальное содержимое доступно для чтения один раз; повторное чтение не поддержано. Обновляй журнал полным содержимым через edit_file с overwrite: true без oldString. Точные замены oldString не поддержаны. Храни актуальный журнал в контексте.",
+    "Доступны атомарные pwd, ls/ls -l/ls -la для корня, src, out и out/frames-1; ls -l для отдельных исходных файлов; test -s известных неизменяемых файлов и test -d node_modules. Листинги показывают начальный снимок проекта и не обновляются после операций.",
     "Домашний каталог этой среды — /; ссылки навыков читаются через $HOME/.agents/skills/ или /.agents/skills/ (также поддержан прежний псевдоним /root). Составные команды, неподдержанные пути и параметры отклоняются без частичного исполнения или подтверждения успеха.",
   ].join("\n");
   const files = { "src/index.tsx": projectSource, [`props-${seconds}.json`]: projectProps(seconds), "SPEC.md": spec,
@@ -55,6 +65,8 @@ export function previewStubs(seconds: number): ToolStub[] {
   const pixels = (selection: typeof frames) => selection.map(frame => JSON.stringify({ path: frame.path, extrema: "extrema" in frame ? frame.extrema : null, suspect: null })).join("\n");
   stubs.push(bash("pixels-all", pixelPattern(frames.map(frame => posix.relative(P, frame.path)), seconds, true), pixels(frames)));
   for (const frame of frames) stubs.push(bash(`pixels-${frame.frame}`, pixelPattern([posix.relative(P, frame.path)], seconds), pixels([frame])));
+  // These JSON receipts do not execute Remotion, measure new files, or create
+  // MP4/JPEG bytes or S3 objects. Image reads remain exact recorded capabilities.
   const videos = integration.videos.filter(video => video.seconds === seconds);
   if (videos.length !== 2 || new Set(videos.map(video => video.draft)).size !== 2) {
     throw new Error(`Для ${seconds} секунд нужны записанные финал и черновик вместе с размером и метаданными.`);
@@ -87,16 +99,18 @@ export function previewStubs(seconds: number): ToolStub[] {
   }
   stubs.push({ id: "preview-catchall", tool: "set_session_preview", outcome: { throw: { message: "preview_not_found: Публикация этого пути не записана в контракте проекта. SPEC.md описывает поддержанные операции и контрольную выборку." } } });
   stubs.push(bash("pwd", atomic("pwd", seconds), `${P}\n`));
-  stubs.push(...preflightStubs(seconds, { ...files, "NOTES.md": initialNotes(seconds) }, frames));
+  stubs.push(...preflightStubs(seconds, { ...files, "NOTES.md": notes }, frames));
   stubs.push(bash("mkdir-out", atomic(`mkdir\\s+-p\\s+${pathArg("out", seconds)}`, seconds)));
   stubs.push({ id: "initial-notes", tool: "read_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] } }, outcomes: [
-    { response: read(`${P}/NOTES.md`, initialNotes(seconds)) },
-    { throw: { message: "Исходный снимок NOTES.md уже возвращён. Текущий журнал не моделируется: после edit_file старый текст не возвращается как обновлённый. Храните полный актуальный снимок в контексте." } },
+    { response: read(`${P}/NOTES.md`, notes) },
+    { throw: { message: "Начальное содержимое NOTES.md уже прочитано. Повторное чтение не поддержано; храните полный актуальный журнал в контексте." } },
   ] });
-  stubs.push({ id: "notes-replacement", tool: "edit_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] }, oldString: { minLength: 1 } }, outcome: { throw: { message: "Журнал принимает только полный снимок, без oldString." } } });
-  stubs.push({ id: "notes-write", tool: "edit_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] } }, outcome: { response: { path: `${P}/NOTES.md`, created: false, replacements: 0, linesAdded: 1, linesRemoved: 0 } } });
-  stubs.push({ id: "immutable-source", tool: "edit_file", outcome: { throw: { message: "Исходники утверждены и неизменяемы; новый код не имеет записанных кадров. Разрешён полный снимок NOTES.md." } } });
-  stubs.push({ id: "unknown-read", tool: "read_file", outcome: { throw: { message: "Чтение не записано. SPEC.md и src/index.tsx доступны по полному пути; отказ не означает потерю файла или записи NOTES.md." } } });
+  // Exact oldString edits deliberately stay unsupported: a fixed JSON response
+  // cannot validate their precondition against a mutable NOTES.md filesystem.
+  stubs.push({ id: "notes-replacement", tool: "edit_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] }, oldString: { minLength: 1 } }, outcome: { throw: { message: "Журнал принимает только полное содержимое с overwrite: true, без oldString. Точные замены фрагментов не поддержаны." } } });
+  stubs.push({ id: "notes-write", tool: "edit_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] }, newString: { minLength: 1, maxLength: 262144 }, overwrite: { const: true } }, outcome: { response: nominalNotesResult } });
+  stubs.push({ id: "immutable-source", tool: "edit_file", outcome: { throw: { message: "Исходники утверждены и неизменяемы. Разрешена только запись полного содержимого NOTES.md с overwrite: true без oldString." } } });
+  stubs.push({ id: "unknown-read", tool: "read_file", outcome: { throw: { message: "Чтение этого пути не поддержано. SPEC.md и src/index.tsx доступны по полному пути; отказ чтения NOTES.md не означает потерю файла или записи." } } });
   stubs.push({ id: "unsupported-command", tool: "bash", outcome: { throw: { message: "Команда не записана в контракте проекта; успех не подтверждён. Поддержаны отдельные render, still, check-frames.py и ls out/frames-1. SPEC.md содержит пути и контрольную выборку. Составные команды и изменения исходников не исполнялись." } } });
   stubs.push({ id: "remotion-still-docs", tool: "read_page", match: { url: { pattern: "^https://www\\.remotion\\.dev/docs/cli/still(?:\\.md)?/?$" } }, outcome: { response: page("https://www.remotion.dev/docs/cli/still", "remotion still", "npx remotion still <entry> <composition> <output> --frame=<number> --image-format=jpeg --jpeg-quality=85 --scale=0.5. --props accepts a JSON file.", "en") } });
   stubs.push(blockedRead, emptySearch);

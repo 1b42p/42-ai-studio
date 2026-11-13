@@ -85,7 +85,7 @@ ln -s /opt/remotion/node_modules "$project/node_modules"
 Повторяй исходную команду после устранения причины: смена относительного пути на
 абсолютный или флагов CLI файл не восстанавливает. Лимит попыток — в разделе «Неудача».
 
-Chrome Headless Shell лежит в `/opt/remotion/node_modules/.remotion` и в новый проект не скачивается. `npx create-video` не запускай. Studio не открывай. Результат проверяй кадрами `npx remotion still` и `npx remotion render … --frames=…`, затем полным рендером.
+Chrome Headless Shell лежит в `/opt/remotion/node_modules/.remotion` и в новый проект не скачивается. `npx create-video` не запускай. Studio не открывай. После проверки кадров `npx remotion still` и `npx remotion render … --frames=…` выполняй видеорендер выбранного этапа из системных инструкций: черновик или финал.
 
 Пакет, которого нет в шаблоне, ставь в шаблон: `cd /opt/remotion && npx remotion add <пакет>`. В каталоге `/workspace/<имя>` не запускай `npx remotion add`, `npm install` и `npm i <пакет>`: без lockfile установка падает, а `npm` заменяет ссылку `node_modules` каталогом без браузера, и следующий рендер пойдёт за браузером на `remotion.media`.
 
@@ -111,4 +111,4 @@ Chrome Headless Shell лежит в `/opt/remotion/node_modules/.remotion` и в
 
 ## Готовый файл
 
-Файл для пользователя вставляй Markdown-ссылкой на путь в песочнице. Результаты рендера клади в `/workspace/<имя>/out/` и убирай лишнее.
+Результаты рендера клади в `/workspace/<имя>/out/`. После проверки файла выполняй выдачу по разделу «Результат этапа» системных инструкций: там определены вопрос, превью и момент отправки ссылки. Ссылка использует путь в песочнице.

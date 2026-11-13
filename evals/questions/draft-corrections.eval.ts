@@ -1,6 +1,7 @@
 import { defineEval } from "eve/evals";
 import { equals } from "eve/evals/expect";
-import { isDraft, isFinal, questionSession, questionVideoContracts, renderCommands, REQUEST, TIMEOUT } from "./fixtures";
+import { isDraft, isFinal, questionFrameContracts, questionSession, questionVideoContracts, renderCommands, REQUEST, TIMEOUT } from "./fixtures";
+import { reviewedRevisionBeforeVideo } from "./frame-observations";
 import { questionProjectPath, questionProps } from "./media-fixture";
 import { verifiedVideoLinkBeforeQuestion } from "./observations";
 
@@ -12,6 +13,7 @@ export default Array.from({ length: 3 }, () => defineEval({
     const originalVideo = videos.find(video => video.version === 1 && video.draft)!;
     const revisedVideo = { ...videos.find(video => video.version === 2 && video.draft)!,
       requiredEdit: { path: `${questionProjectPath(120)}/props-v2.json`, content: questionProps(2) } };
+    const revisedFrames = questionFrameContracts(120).find(frames => frames.version === 2)!;
     const first = await session.send(REQUEST(120));
     first.parked();
     first.notCalledTool("set_session_preview");
@@ -38,6 +40,7 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.check(next.options?.map(option => option.label), equals(["Рендерить финал", "Хочу поправить"]));
     t.check(next.requestId !== request.requestId, equals(true));
     t.check(verifiedVideoLinkBeforeQuestion(corrected.events, revisedVideo, next.requestId), equals(true));
+    t.check(reviewedRevisionBeforeVideo(corrected.events, revisedVideo, revisedFrames), equals(true));
     t.parked();
   },
 }));

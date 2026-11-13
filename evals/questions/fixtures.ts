@@ -7,6 +7,7 @@ import {
   questionProps, questionSnapshot, questionSources, reviewFrames, type PropsVersion,
 } from "./media-fixture";
 import { esc, entriesPattern, optionOrders, pixelInvocation, quote } from "../music/operation-patterns";
+import { nominalFramePattern } from "../support/frame-pattern";
 import { blockedRead, emptySearch, isolateDownload } from "../web/fixtures";
 
 export const TIMEOUT = 20 * 60 * 1000;
@@ -16,7 +17,7 @@ export const REQUEST = (seconds: number) => `Сделай ролик про ко
   `Используй уже созданный проект ${questionProjectPath(seconds)} с композицией Main; ` +
   "Графика src и тексты уже утверждены, сохраняй их; длительность каждой сцены — треть ролика. " +
   "Текст заголовка передаётся через props-v1.json: используй --props=props-v1.json при рендере кадров и видео. " +
-  "Поддерживаемые операции, подстановка props-v2.json и происхождение записанных изображений описаны в SPEC.md; Root.tsx и Coffee.tsx неизменяемы. " +
+  "Поддерживаемые операции, подстановка props-v2.json и происхождение контрольных изображений описаны в SPEC.md; Root.tsx и Coffee.tsx неизменяемы. " +
   `Контрольные кадры ${reviewFrames(seconds).join(", ")}; исходная выборка out/props-v1/frames-1, имена ${frameName(seconds, 0)} … ${frameName(seconds, seconds * 30 - 1)} (число — абсолютный номер кадра). ` +
   "Каталоги изображений содержат версию props, а номер прохода сам по себе её не меняет. Результаты сохраняй в out/. Дополнительных пожеланий нет.";
 
@@ -41,6 +42,28 @@ function commandSyntax(seconds: number) {
     atomic: (body: string) => `^(?![\\s\\S]*[\\r\\n])[ \\t]*(?:cd[ \\t]+${quote(esc(P))}[ \\t]*&&[ \\t]*)?${body}[ \\t]*$`,
   };
 }
+
+/** Exact recorded batches shared by native playback and causal evidence gates. */
+export function questionFrameContracts(seconds: number) {
+  const P = questionProjectPath(seconds);
+  const { pathArg, atomic } = commandSyntax(seconds);
+  return ([1, 2] as PropsVersion[]).flatMap(version => framePasses(version).map(pass => {
+    const directory = frameDirectory(version, pass);
+    const frames = questionFramesFor(seconds, version, pass);
+    const renderPattern = atomic(`${cli}render\\s+${pathArg("src/index.ts")}\\s+Main\\s+${pathArg(directory)}\\s+${options([
+      `--props(?:=|\\s+)${pathArg(`props-v${version}.json`)}`,
+      `--frames(?:=|\\s+)${reviewFrames(seconds).join(",")}`, "--image-format(?:=|\\s+)jpeg", "--jpeg-quality(?:=|\\s+)90",
+    ], ["--concurrency(?:=|\\s+)[12]", "--log(?:=|\\s+)error", "--overwrite"])}`);
+    const inputs = frames.map(frame => pathArg(posix.relative(P, frame.path))).join("\\s+");
+    const pixelsPattern = atomic(`${pixelInvocation}\\s+(?:${inputs}|${pathArg(directory)}/\\*\\.jpeg)`);
+    return {
+      seconds, version, pass, directory, frames, renderPattern, pixelsPattern,
+      render: new RegExp(renderPattern), pixels: new RegExp(pixelsPattern),
+    };
+  }));
+}
+
+export type QuestionFrameContract = ReturnType<typeof questionFrameContracts>[number];
 
 /** Canonical nominal MP4 capabilities, shared by playback and causal assertions. */
 export function questionVideoContracts(seconds: number) {
@@ -78,7 +101,7 @@ export function questionVideoContracts(seconds: number) {
     const previewPath = `${questionProjectPath(seconds)}/${previewRelativePath}`;
     const stillPattern = atomic(`${cli}still\\s+${pathArg("src/index.ts")}\\s+Main\\s+${pathArg(previewRelativePath)}\\s+${options([
       `--props(?:=|\\s+)${pathArg(`props-v${version}.json`)}`,
-      `--frame(?:=|\\s+)(?:${reviewFrames(seconds).join("|")})`,
+      `--frame(?:=|\\s+)${nominalFramePattern(seconds)}`,
       "--image-format(?:=|\\s+)jpeg", "--jpeg-quality(?:=|\\s+)85", "--scale(?:=|\\s+)0\\.5",
     ])}`);
     return {
@@ -112,7 +135,13 @@ export function questionVideoCommand(seconds: number, command: unknown): {
   return null;
 }
 
-/** Every effect is stubbed; ask_question alone exercises the real durable input protocol. */
+/**
+ * Every effect is stubbed; ask_question alone exercises the real durable input protocol.
+ * Video render, size, probe, still and publication return nominal JSON capabilities:
+ * they do not encode MP4, create preview JPEGs or publish S3 objects. Recorded review
+ * JPEGs retain their separate source/props/frame/byte provenance. Business gates
+ * establish operation order; realistic tool responses must not expose eval machinery.
+ */
 export function questionStubs(seconds = 120): ToolStub[] {
   const P = questionProjectPath(seconds);
   const { pathArg, atomic } = commandSyntax(seconds);
@@ -134,14 +163,14 @@ export function questionStubs(seconds = 120): ToolStub[] {
     `| Сцена | Начало | Конец |\n| Зерно | 0 | ${seconds * 10 - 1} |\n` +
     `| Приготовление | ${seconds * 10} | ${seconds * 20 - 1} |\n| Чашка | ${seconds * 20} | ${seconds * 30 - 1} |\n` +
     "Без озвучки и музыки. Исходные тексты передаются через props-v1.json.\n";
+  // Fixed JSON receipt, not persisted NOTES.md. Content placeholders retain the real
+  // result schema; edit_file's model projection omits them. Never replay stale notes.
   const nominalNotesResult = {
     path: `${P}/NOTES.md`, created: false, replacements: 0, oldContent: notes,
-    newContent: "Номинальный снимок записи NOTES.md; новое содержимое не моделируется.\n",
+    newContent: "Заметки обновлены.\n",
     linesAdded: 1, linesRemoved: notes.trimEnd().split("\n").length,
   } satisfies EditFileResult;
-  const batches = ([1, 2] as PropsVersion[]).flatMap(version => framePasses(version).map(pass => ({
-    version, pass, directory: frameDirectory(version, pass), frames: questionFramesFor(seconds, version, pass),
-  })));
+  const batches = questionFrameContracts(seconds);
   const spec = [
     `# Кофе\nПроект ${P}; Main, src/index.ts; ${seconds} секунд, 30 кадров/с, 1920×1080.`,
     "src/Root.tsx, src/Coffee.tsx и src/index.ts неизменяемы. Начальные параметры — props-v1.json.",
@@ -149,16 +178,16 @@ export function questionStubs(seconds = 120): ToolStub[] {
       const snapshot = questionSnapshot(seconds, version);
       return `Снимок v${version}: source SHA-256 ${snapshot.sourceSha256}, props SHA-256 ${snapshot.propsSha256}, fingerprint ${snapshot.fingerprint}. JSON: ${questionProps(version)}`;
     }),
-    "JPEG записаны ReactDOMServer.renderToStaticMarkup(Coffee) и Chromium, отдельно для каждого фактического номера кадра, длительности и JSON. Это неизменяемые записанные возможности, не изменяемая файловая система и не доказательство просмотра в текущем запуске.",
+    "Контрольные JPEG получены ReactDOMServer.renderToStaticMarkup(Coffee) и Chromium, отдельно для каждого фактического номера кадра, длительности и JSON.",
     ...batches.map(batch => `${batch.directory}: props-v${batch.version}.json; ${batch.frames.map(frame => posix.basename(frame.path)).join(", ")}. Повторный проход v1 сохраняет исходные пиксели и исходный заголовок.`),
     `Все команды проекта выполняются из ${P}; допускается отдельный префикс cd ${P} &&. Не объединяй независимые операции shell-цепочками.`,
-    `Изображения: npx remotion render src/index.ts Main <каталог из списка> --props=props-v<версия>.json --frames=${reviewFrames(seconds).join(",")} --image-format=jpeg --jpeg-quality=90. Другая выборка и извлечение ffmpeg не записаны. Имена element-<номер>.jpeg — абсолютные номера, а не порядковые номера извлечения.`,
+    `Изображения: npx remotion render src/index.ts Main <каталог из списка> --props=props-v<версия>.json --frames=${reviewFrames(seconds).join(",")} --image-format=jpeg --jpeg-quality=90. Другая выборка и извлечение ffmpeg не поддержаны. Имена element-<номер>.jpeg — абсолютные номера, а не порядковые номера извлечения.`,
     'Пиксели всей выборки: python3 "$HOME/.agents/skills/frame-review/scripts/check-frames.py" <каталог>/*.jpeg либо полный упорядоченный список восьми файлов. Затем файлы доступны read_file по полным путям.',
     "Выходы видео для props-v1.json: out/coffee-v1.mp4, out/coffee-v1-draft.mp4; для props-v2.json: out/coffee-v2.mp4, out/coffee-v2-draft.mp4. Команда npx remotion render src/index.ts Main <выход> --props=<соответствующий JSON>; для *-draft.mp4 обязательны --scale=0.5 --x264-preset=superfast --crf=32. Необязательные флаги: --codec=h264, --concurrency=1 или 2, --log=error, --overwrite, --muted. Для полного размера также допустимы --scale=1, --crf=0…51 и документированные --x264-preset.",
-    "Видеоэффекты полностью подменены: завершение render, размер и probe — номинальные ответы, не реальное создание или измерение MP4. Размер: stat -c %s <известный MP4>; ненулевой файл: test -s <известный MP4>. Метаданные: npx remotion ffprobe -v error -show_streams -show_format -of json <известный MP4>; также поддержан -show_entries stream=codec_name,codec_type,width,height,duration:format=duration -of default=nw=1.",
-    `Номинальная возможность still: npx remotion still src/index.ts Main out/preview-v<версия>.jpg --props=props-v<та же версия>.json --frame=<один из ${reviewFrames(seconds).join(",")}> --image-format=jpeg --jpeg-quality=85 --scale=0.5. Поддержаны только версии 1 и 2. set_session_preview принимает соответствующий полный путь ${P}/out/preview-v1.jpg или ${P}/out/preview-v2.jpg (также путь от /workspace/). Оба вызова полностью подменены: JPEG и объект S3 не создаются; размер 65536 в ответе публикации номинальный. Пиксели preview-v1.jpg и preview-v2.jpg не записаны: read_file этих путей не поддержан и не подменяется контрольным кадром.`,
-    `edit_file принимает единственную записанную подстановку props-v2.json: полный newString ${questionProps(2)} без oldString. Чтение props-v2.json возвращает этот неизменяемый образец, не подтверждение предшествующей записи. Другие тексты, версии и правки src не поддержаны.`,
-    "NOTES.md возвращает только первый исходный снимок; повторное чтение отклоняется, чтобы старые заметки не выдавались за новые. edit_file принимает полный снимок NOTES.md с overwrite: true без oldString. Ответ записи — фиксированная номинальная квитанция, не сохранённый текст; последующее чтение не моделируется. Сохраняй актуальные заметки в контексте.",
+    "Проверка файла: stat -c %s <известный MP4> для размера; test -s <известный MP4> для ненулевого файла. Метаданные: npx remotion ffprobe -v error -show_streams -show_format -of json <известный MP4>; также поддержан -show_entries stream=codec_name,codec_type,width,height,duration:format=duration -of default=nw=1.",
+    `Превью: npx remotion still src/index.ts Main out/preview-v<версия>.jpg --props=props-v<та же версия>.json --frame=<целое от 0 до ${seconds * 30 - 1}> --image-format=jpeg --jpeg-quality=85 --scale=0.5. Поддержаны только версии 1 и 2. set_session_preview принимает соответствующий полный путь ${P}/out/preview-v1.jpg или ${P}/out/preview-v2.jpg (также путь от /workspace/). read_file для preview-v1.jpg и preview-v2.jpg не поддержан; контрольные изображения доступны только по перечисленным выше путям.`,
+    `edit_file принимает подстановку props-v2.json: полный newString ${questionProps(2)} без oldString. Чтение props-v2.json возвращает этот неизменяемый образец, не подтверждение предшествующей записи. Другие тексты, версии и правки src не поддержаны.`,
+    "NOTES.md возвращает только первый исходный снимок; повторное чтение не поддержано, чтобы старые заметки не выдавались за новые. edit_file принимает полный снимок NOTES.md с overwrite: true без oldString. Сохраняй актуальные заметки в контексте.",
     "Доступны pwd, test -d node_modules, test -s неизменяемого файла, mkdir -p известного выходного каталога; ls для известных каталогов, ls -l и ls -la для корня и src, ls -l package.json показывают исходный манифест, не состояние записей. Неизвестные команды, пути и параметры отклоняются без частичного исполнения.",
     `Навыки загружаются штатным каталогом eve. read_file поддерживает вложенные справочные файлы: ${references.join(", ")}; пути $HOME/.agents/skills/, /.agents/skills/ и /root/.agents/skills/.`,
   ].join("\n");
@@ -177,24 +206,23 @@ export function questionStubs(seconds = 120): ToolStub[] {
       id: `frame-v${batch.version}-${batch.pass}-${frame.frame}`, tool: "read_file",
       match: { filePath: { enum: paths(posix.relative(P, frame.path)) } }, outcome: { response: frameOutput(frame) },
     });
-    const props = `--props(?:=|\\s+)${pathArg(`props-v${batch.version}.json`)}`;
-    stubs.push(bash(`frames-v${batch.version}-${batch.pass}`,
-      `${cli}render\\s+${pathArg("src/index.ts")}\\s+Main\\s+${pathArg(batch.directory)}\\s+${options([
-        props, `--frames(?:=|\\s+)${reviewFrames(seconds).join(",")}`, "--image-format(?:=|\\s+)jpeg", "--jpeg-quality(?:=|\\s+)90",
-      ], ["--concurrency(?:=|\\s+)[12]", "--log(?:=|\\s+)error", "--overwrite"])}`,
-      batch.frames.map(frame => `Recorded ${frame.path}`).join("\n")));
-    const inputs = batch.frames.map(frame => pathArg(posix.relative(P, frame.path))).join("\\s+");
+    stubs.push({
+      id: `frames-v${batch.version}-${batch.pass}`, tool: "bash", match: { command: { pattern: batch.renderPattern } },
+      outcome: { response: completed(batch.frames.map(frame => `Rendered ${frame.path}`).join("\n")) },
+    });
     const report = batch.frames.map(({ path, extrema }) => JSON.stringify({ path, extrema, suspect: null })).join("\n") +
       "\nПустые кадры не обнаружены. Теперь обязателен визуальный просмотр всех выбранных кадров через read_file.";
-    stubs.push(bash(`pixels-v${batch.version}-${batch.pass}`,
-      `${pixelInvocation}\\s+(?:${inputs}|${pathArg(batch.directory)}/\\*\\.jpeg)`, report));
+    stubs.push({
+      id: `pixels-v${batch.version}-${batch.pass}`, tool: "bash", match: { command: { pattern: batch.pixelsPattern } },
+      outcome: { response: completed(report) },
+    });
   }
 
   const videos = questionVideoContracts(seconds);
   for (const video of videos) {
     const suffix = `v${video.version}-${video.draft ? "small" : "full"}`;
     for (const [operation, stdout] of [
-      ["render", `Номинальная подмена render: ${video.path}`], ["size", `${video.sizeBytes}\n`],
+      ["render", `Rendered ${video.path}`], ["size", `${video.sizeBytes}\n`],
       ["nonempty", ""], ["probe", JSON.stringify(video.metadata)], ["probeFields", video.probeFields],
     ] as const) stubs.push({
       id: `${operation}-${suffix}`, tool: "bash", match: { command: { pattern: video[`${operation}Pattern`] } },
@@ -202,7 +230,7 @@ export function questionStubs(seconds = 120): ToolStub[] {
     });
     if (!video.draft) stubs.push(
       { id: `still-v${video.version}`, tool: "bash", match: { command: { pattern: video.stillPattern } },
-        outcome: { response: completed(`Номинальная подмена still: ${video.previewPath}. JPEG не создавался; пиксели не записаны.`) } },
+        outcome: { response: completed(`Rendered ${video.previewPath}`) } },
       { id: `publish-preview-v${video.version}`, tool: "set_session_preview",
         match: { path: { enum: paths(video.previewRelativePath) } },
         outcome: { response: { path: video.previewPath, size: video.previewSizeBytes, contentType: "image/jpeg" } } },
@@ -243,20 +271,20 @@ export function questionStubs(seconds = 120): ToolStub[] {
   stubs.push(
     { id: "notes", tool: "read_file", match: { filePath: { enum: paths("NOTES.md") } }, outcomes: [
       { response: read(`${P}/NOTES.md`, notes) },
-      { throw: { message: "Исходный снимок NOTES.md уже возвращён; текущее содержимое после записи не моделируется. Храните актуальные заметки в контексте." } },
+      { throw: { message: "Исходный снимок NOTES.md уже возвращён; повторное чтение не поддержано. Храните актуальные заметки в контексте." } },
     ] },
-    { id: "unknown-source", tool: "read_file", outcome: { throw: { message: "Чтение не записано. SPEC.md перечисляет точные пути; произвольные изображения и порядковые имена извлечения не имеют подтверждённых пикселей." } } },
-    { id: "reject-replacement", tool: "edit_file", match: { oldString: { minLength: 1 } }, outcome: { throw: { message: "Доступны только полные записанные подстановки без oldString; исходники неизменяемы." } } },
+    { id: "unknown-source", tool: "read_file", outcome: { throw: { message: "Чтение не поддержано. SPEC.md перечисляет точные пути; произвольные изображения и порядковые имена извлечения недоступны." } } },
+    { id: "reject-replacement", tool: "edit_file", match: { oldString: { minLength: 1 } }, outcome: { throw: { message: "Доступны только полные подстановки без oldString; исходники неизменяемы." } } },
     { id: "edit-props", tool: "edit_file", match: { filePath: { enum: paths("props-v2.json") }, newString: { const: questionProps(2) } },
       outcome: { response: { path: `${P}/props-v2.json`, created: true, replacements: 0, oldContent: null, newContent: questionProps(2), linesAdded: 1, linesRemoved: 0 } } },
     { id: "edit-notes", tool: "edit_file", match: { filePath: { enum: paths("NOTES.md") }, newString: { minLength: 1, maxLength: 262144 }, overwrite: { const: true } },
       outcome: { response: nominalNotesResult } },
-    { id: "edit", tool: "edit_file", outcome: { throw: { message: "Правка не записана. Разрешены только полный снимок NOTES.md и точный JSON подстановки props-v2.json из SPEC.md; src и прочие версии неизменяемы." } } },
-    { id: "command", tool: "bash", outcome: { throw: { message: "Команда, путь или параметры не записаны в SPEC.md. Успех, запись и пиксели не подтверждены; составные команды не исполнялись." } } },
+    { id: "edit", tool: "edit_file", outcome: { throw: { message: "Правка не поддержана. Разрешены только полный снимок NOTES.md и точный JSON подстановки props-v2.json из SPEC.md; src и прочие версии неизменяемы." } } },
+    { id: "command", tool: "bash", outcome: { throw: { message: "Команда, путь или параметры не поддержаны в SPEC.md. Составные команды не исполнялись." } } },
     { id: "copy", tool: "agent", outcome: { throw: { message: "Собери ролик основным агентом." } } },
     { id: "speech", tool: "speak", outcome: { throw: { message: "Озвучка не нужна." } } },
     { id: "voices", tool: "list_voices", outcome: { response: { voices: [] } } },
-    { id: "preview", tool: "set_session_preview", outcome: { throw: { message: "Путь публикации не записан: поддержаны только preview-v1.jpg и preview-v2.jpg этого проекта из SPEC.md." } } },
+    { id: "preview", tool: "set_session_preview", outcome: { throw: { message: "Путь публикации не поддержан: доступны только preview-v1.jpg и preview-v2.jpg этого проекта из SPEC.md." } } },
     blockedRead, emptySearch, isolateDownload,
   );
   if (stubs.length > 100) throw new Error(`Изоляция questions превышает предел 100 правил: ${stubs.length}.`);
