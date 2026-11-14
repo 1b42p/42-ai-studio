@@ -129,12 +129,15 @@ test("документы $HOME возвращают собственный ус�
   if (missing.kind === "stub") expect(missing.outcome).toHaveProperty("throw");
 });
 
+// speak's Zod schema defaults rate to 0 before executeWithToolStub (eve's
+// harness/tools.js). Bare StubPlayback does not validate the tool input or apply
+// defaults: evals/tool-stubs.mdx. Explicit invalid rates must override the default.
 test.each([{ voice: "ru-RU-DmitryNeural" }, { rate: 100 }, { rate: -10 }, { language: "en-US" }])("matcher отвергает несовместимый speak %j", async options => {
-  const result = new StubPlayback(await allMusicStubs()).call({ callId: "speech", tool: "speak", input: { text: MUSIC_SCENES[0].text, outputPath: `${P}/public/voice/scene-01`, ...options } });
+  const result = new StubPlayback(await allMusicStubs()).call({ callId: "speech", tool: "speak", input: { rate: 0, text: MUSIC_SCENES[0].text, outputPath: `${P}/public/voice/scene-01`, ...options } });
   if (result.kind === "stub") expect(result.outcome).toHaveProperty("throw"); else throw new Error("Unstubbed speech");
 });
 test.each([{}, { voice: "ru-RU-SvetlanaNeural", rate: 0 }, { language: "ru", rate: 0 }, { voice: "ru-RU-SvetlanaNeural", language: "en-US" }])("matcher принимает эквивалентный speak %j", async options => {
-  const result = new StubPlayback(await allMusicStubs()).call({ callId: "speech", tool: "speak", input: { text: MUSIC_SCENES[0].text, outputPath: `${P}/public/voice/scene-01`, ...options } });
+  const result = new StubPlayback(await allMusicStubs()).call({ callId: "speech", tool: "speak", input: { rate: 0, text: MUSIC_SCENES[0].text, outputPath: `${P}/public/voice/scene-01`, ...options } });
   if (result.kind === "stub") expect(result.outcome).toHaveProperty("response"); else throw new Error("Unstubbed speech");
 });
 

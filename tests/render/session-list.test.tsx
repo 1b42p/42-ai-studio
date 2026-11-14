@@ -33,7 +33,7 @@ function stateOf(events: readonly MessageStreamEvent[]): ConversationState {
 }
 
 function item(id: string, title: string | null, updatedAt: string): SessionListItem {
-  return { id, title, createdAt: updatedAt, updatedAt };
+  return { id, title, createdAt: updatedAt, updatedAt, preview: null };
 }
 
 const coffee = item(

@@ -39,14 +39,15 @@ function literalCommand(command: string) {
 function speechStubs(): ToolStub[] {
   const scenes = (explicit: boolean) => MUSIC_SCENES.map((scene, index): ToolStub => ({
     id: `speech-${index}-${explicit ? "explicit" : "default"}`, tool: "speak",
-    match: { text: { const: scene.text }, outputPath: { enum: pathForms(`public/voice/${sceneName(index)}`) },
+    match: { text: { const: scene.text }, rate: { const: 0 }, outputPath: { enum: pathForms(`public/voice/${sceneName(index)}`) },
       ...(explicit ? { voice: { pattern: "^\\s*ru-RU-SvetlanaNeural\\s*$" } } : {}) },
     outcome: { response: { audioPath: `${P}/public/voice/${sceneName(index)}.mp3`, timingsPath: `${P}/public/voice/${sceneName(index)}.words.json`,
       voice: VOICE, language: "ru-RU", format: "mp3", durationMs: scene.durationMs, wordCount: JSON.parse(musicWordsFile(index)).words.length,
       text: scene.text, media: { audioId: `00000000-0000-4000-8000-00000000000${index + 1}` } } },
   }));
   return [
-    reject("speech-rate", "speak", { rate: { not: { const: 0 } } }, "Эталон задан для rate=0; не меняйте обычную скорость."),
+    // speak's real schema supplies rate=0 before native stub matching. The
+    // successful rules enforce it; other rates reach speech-unsupported.
     ...scenes(true),
     reject("speech-voice", "speak", { voice: { not: { pattern: "^\\s*ru-RU-SvetlanaNeural\\s*$" } } }, "Укажите утверждённый голос Светланы."),
     reject("speech-language", "speak", { language: { not: { pattern: "^\\s*[rR][uU](?:-[rR][uU])?\\s*$" } } }, "Без явного голоса доступен русский default ru/ru-RU."),

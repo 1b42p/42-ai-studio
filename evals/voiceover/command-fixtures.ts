@@ -152,18 +152,13 @@ function unsupportedCommandStubs(): ToolStub[] {
   return [
     rejectedCommand(
       "unsupported-probe-writer",
-      "ffprobe[\\s\\S]*(?:-(?:show_packets|show_frames|select_streams|count_packets|count_frames)\\b|(?:-of|-print_format)[ =]+(?:csv|compact|xml|ini))",
-      "Записаны только метаданные двух дорожек и контейнера в json/default. Пакеты, кадры и выбор отдельной дорожки не записаны; для полной проверки используйте ffprobe -v error -show_streams -show_format -of json out/calm-morning.mp4.",
-    ),
-    rejectedCommand(
-      "unsupported-combined-inspection",
-      "(?:remotion\\s+(?:render|still|compositions|ffprobe)[\\s\\S]*remotion\\s+(?:render|still|compositions|ffprobe)|\\b(?:cat|readFile)\\s[^;&\\n]*&&\\s*[^;&\\n]*\\b(?:remotion|ffprobe)\\s|\\b(?:stat|wc)\\s[^;\\n]*&&\\s*[^;\\n]*\\bffprobe\\b|\\bffprobe\\b[\\s\\S]*&&\\s*(?:stat|wc)\\s)",
-      "Разделите составную проверку на отдельные вызовы: её полный результат не записан в контракте проекта.",
+      "(?:ffprobe[\\s\\S]*(?:-(?:show_packets|show_frames|select_streams|count_packets|count_frames)\\b|(?:-of|-print_format)[ =]+(?:csv|compact|xml|ini))|remotion\\s+(?:render|still|compositions|ffprobe)[\\s\\S]*remotion\\s+(?:render|still|compositions|ffprobe)|\\b(?:cat|readFile)\\s[^;&\\n]*&&\\s*[^;&\\n]*\\b(?:remotion|ffprobe)\\s|\\b(?:stat|wc)\\s[^;\\n]*&&\\s*[^;\\n]*\\bffprobe\\b|\\bffprobe\\b[\\s\\S]*&&\\s*(?:stat|wc)\\s)",
+      "Записаны отдельные вызовы, метаданные двух дорожек и контейнера в json/default. Разделите составную проверку; пакеты, кадры и выбор отдельной дорожки не записаны. Для полной проверки используйте ffprobe -v error -show_streams -show_format -of json out/calm-morning.mp4.",
     ),
     rejectedCommand(
       "unsupported-mixed-audio-versions",
-      "^(?=[\\s\\S]*piper_speak\\.py)(?=[\\s\\S]*scene-0?[123]-piper-v2)(?=[\\s\\S]*scene-0?[123]-piper[\\s\"';&])",
-      "Для смешанных версий используйте отдельный вызов синтеза каждой сцены, чтобы получить её собственные пути результата.",
+      "(?:^(?=[\\s\\S]*piper_speak\\.py)(?=[\\s\\S]*scene-0?[123]-piper-v2)(?=[\\s\\S]*scene-0?[123]-piper[\\s\"';&])|^(?=[\\s\\S]*(?:pip\\s+install|piper\\.download_voices))(?=[\\s\\S]*&&))",
+      "Смешанные версии синтеза и составная установка не записаны. Выполняйте проверку диска, установку, скачивание голоса и синтез разных версий отдельными вызовами, чтобы получить их собственные результаты.",
     ),
     {
       id: "invalid-multiple-probe-inputs",
@@ -295,11 +290,6 @@ function piperSetupStubs(): ToolStub[] {
   const download = `python3?\\s+-m\\s+piper\\.download_voices\\s+${escapePattern(PIPER_VOICE)}[^;&\\n]*`;
 
   return [
-    rejectedCommand(
-      "combined-piper-setup",
-      "^(?=[\\s\\S]*(?:pip\\s+install|piper\\.download_voices))(?=[\\s\\S]*&&)",
-      "Результат составной установки не записан. Выполните проверку диска, установку Piper и скачивание голоса отдельными вызовами.",
-    ),
     commandStub(
       "piper-install",
       `^\\s*${install}\\s*$`,

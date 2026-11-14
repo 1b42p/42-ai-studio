@@ -120,6 +120,13 @@
       "when": 1794416177058,
       "tag": "0016_empty_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794472027930,
+      "tag": "0017_sticky_banshee",
+      "breakpoints": true
     }
   ]
 }

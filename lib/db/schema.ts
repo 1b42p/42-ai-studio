@@ -12,6 +12,7 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 /**
@@ -76,6 +77,9 @@ export const appSessions = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     eveSessionId: text("eve_session_id").unique(),
     title: text("title"),
+    previewMediaId: uuid("preview_media_id").references((): AnyPgColumn => media.id, {
+      onDelete: "set null",
+    }),
     /**
      * Название в нижнем регистре с «ё» → «е», посчитанное в приложении.
      * `lower()` в Postgres зависит от LC_CTYPE и в локали C кириллицу не трогает.
@@ -420,6 +424,24 @@ export type NewMessageFile = typeof messageFiles.$inferInsert;
 export type MessageFileState = (typeof messageFileState.enumValues)[number];
 export type MessageFileReason = (typeof messageFileReason.enumValues)[number];
 export type ToolCallMedia = typeof toolCallMedia.$inferSelect;
+
+/**
+ * Результат установки превью переживает удаление заменённого media.
+ * Иначе повтор прерванного старого шага мог бы вернуть прежнюю картинку.
+ */
+export const sessionPreviewCalls = pgTable("session_preview_calls", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  appSessionId: uuid("app_session_id").notNull()
+    .references(() => appSessions.id, { onDelete: "cascade" }),
+  callId: text("call_id").notNull(),
+  sandboxPath: text("sandbox_path").notNull(),
+  result: jsonb("result").$type<{ path: string; size: number; contentType: string }>().notNull(),
+  /** Без FK: удалённое превью не должно стирать квитанцию или цель очистки. */
+  replacedMediaId: uuid("replaced_media_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("session_preview_calls_identity_idx").on(table.appSessionId, table.callId, table.sandboxPath),
+]);
 
 /** Состояние фоновой команды `bash` из задания eve. */
 export const bashJobStatus = pgEnum("bash_job_status", [

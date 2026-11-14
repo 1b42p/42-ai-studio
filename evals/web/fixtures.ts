@@ -27,7 +27,12 @@ export function readStub(id: string, url: string, title: string, content: string
   };
 }
 
-const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices", "download_video"] as const;
+const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices", "download_video", "set_session_preview"] as const;
+
+export const isolatePreview: ToolStub = {
+  id: "isolate-preview", tool: "set_session_preview",
+  outcome: { response: { path: "/workspace/out/preview.jpg", size: 42000, contentType: "image/jpeg" } },
+};
 
 export const isolateDownload: ToolStub = {
   id: "isolate-download",
@@ -64,6 +69,7 @@ const isolationStubs: readonly ToolStub[] = [
   },
   { id: "isolate-voices", tool: "list_voices", outcome: { response: { voices: [] } } },
   isolateDownload,
+  isolatePreview,
 ];
 
 /** Любой неожиданный URL тоже перехватывается: реального HTTP-чтения нет. */
@@ -78,9 +84,10 @@ export const emptySearch: ToolStub = {
 };
 
 /** Fail closed при появлении нового инструмента: ни одного вызова без подмены. */
-export async function webSession(t: EveEvalContext, webStubs: readonly ToolStub[]) {
+export async function webSession(t: EveEvalContext, webStubs: readonly ToolStub[], { allowNativeQuestion = false }: { allowNativeQuestion?: boolean } = {}) {
   const provided = new Set(webStubs.filter((stub) => stub.match === undefined).map((stub) => stub.tool));
-  const stubs = [...webStubs, ...isolationStubs.filter((stub) => !provided.has(stub.tool))];
+  const stubs = [...webStubs, ...isolationStubs.filter((stub) => !provided.has(stub.tool))]
+    .filter((stub) => !allowNativeQuestion || stub.tool !== "ask_question");
   const response = await t.target.fetch("/eve/v1/info");
   if (!response.ok) throw new Error(`Не удалось получить инструменты для изоляции: ${response.status}`);
   const info = await response.json() as { tools?: { static?: { name: string }[]; dynamic?: unknown[] } };
@@ -90,10 +97,12 @@ export async function webSession(t: EveEvalContext, webStubs: readonly ToolStub[
     throw new Error("В целевом агенте нет read_page и web_search.");
   }
   const covered = new Set(stubs.filter((stub) => stub.match === undefined).map((stub) => stub.tool));
+  if (allowNativeQuestion) covered.add("ask_question"); // JSON stubs cannot park a workflow on native input.
   const uncovered = tools.filter(({ name }) => !covered.has(name));
   if (uncovered.length > 0 || (info.tools?.dynamic?.length ?? 0) > 0) {
     throw new Error(`Не все инструменты изолированы подменами: ${uncovered.map(({ name }) => name).join(", ")}`);
   }
+  if (stubs.length > 100) throw new Error("Изоляция превышает предел 100 правил подмены.");
   return t.session({ stubs });
 }
 
