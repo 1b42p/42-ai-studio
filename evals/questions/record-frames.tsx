@@ -20,6 +20,7 @@ const browser = await chromium.launch({ executablePath, headless: true });
 const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
 const frames: QuestionFrame[] = [];
 const snapshots: QuestionSnapshot[] = [];
+type Bounds = Pick<DOMRect, "left" | "right" | "top" | "bottom">;
 try {
   if (samples) mkdirSync(samples, { recursive: true });
   for (const seconds of questionDurations) for (const version of [1, 2] as PropsVersion[]) {
@@ -32,6 +33,37 @@ try {
       await page.setContent("<!doctype html><html><head><meta charset=\"utf-8\"></head><body style=\"margin:0\">" +
         renderToStaticMarkup(<Coffee scene={scene} frame={frame} title={title} />) + "</body></html>");
       await page.evaluate(() => document.fonts.ready.then(() => undefined));
+      const layout = await page.evaluate(() => {
+        const text = [...document.querySelectorAll("div")].filter(element =>
+          [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()));
+        return { drawing: document.querySelector("svg")!.getBoundingClientRect().toJSON() as Bounds,
+          text: text.map(element => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            return { content: element.textContent, fontSize: parseFloat(getComputedStyle(element).fontSize),
+              box: element.getBoundingClientRect().toJSON() as Bounds,
+              scrollWidth: element.scrollWidth, clientWidth: element.clientWidth,
+              scrollHeight: element.scrollHeight, clientHeight: element.clientHeight,
+              lines: [...range.getClientRects()].map(rect => rect.toJSON() as Bounds) };
+          }) };
+      });
+      if (layout.text.length !== 2) throw new Error("Ожидались заголовок и пояснение.");
+      const ratio = 1920 / 1080;
+      for (const [index, text] of layout.text.entries()) {
+        const minimum = (index === 0 ? 84 : 44) * ratio;
+        const box = text.box;
+        if (text.fontSize < minimum || box.left < 80 * ratio || box.right > 1920 - 80 * ratio ||
+          box.top < 100 * ratio || box.bottom > 1080 - 100 * ratio ||
+          text.scrollWidth > text.clientWidth || text.scrollHeight > text.clientHeight) {
+          throw new Error(`Небезопасная типографика: ${JSON.stringify(text)}`);
+        }
+      }
+      const overlaps = (a: Bounds, b: Bounds) =>
+        a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      if (layout.text[0].lines.some(title => layout.text[1].lines.some(body => overlaps(title, body))) ||
+        layout.text.some(text => text.lines.some(line => overlaps(line, layout.drawing)))) {
+        throw new Error("Текст пересекается с пояснением или иллюстрацией.");
+      }
       const image = await page.screenshot({ type: "jpeg", quality: 90, animations: "disabled" });
       const base64 = image.toString("base64");
       const decoded = await page.evaluate(async (value) => {

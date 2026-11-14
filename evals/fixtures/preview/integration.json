@@ -1,11 +1,17 @@
 {
-  "sourceSha256": "25607f617bdc44cef536c05f1979ac032a9f9193ab1840e07fec2c40eda7be03",
+  "sourceSha256": "e615d5f9281e650d54d5bf316d1cb231dad5d9428c0f3e1acd5ac6fec1b0fb0b",
   "videos": [
     {
       "seconds": 30,
       "draft": false,
       "path": "out/final.mp4",
-      "size": 359944,
+      "size": 328096,
+      "sha256": "95005d9cba47a4caa5970c0cef4b6011424e7abc55bb7da007cafd2e1c236d85",
+      "renderOptions": {
+        "codec": "h264",
+        "scale": 1,
+        "concurrency": 2
+      },
       "probe": {
         "streams": [
           {
@@ -24,11 +30,12 @@
             "has_b_frames": 2,
             "sample_aspect_ratio": "1:1",
             "display_aspect_ratio": "16:9",
-            "pix_fmt": "yuvj420p",
+            "pix_fmt": "yuv420p",
             "level": 40,
-            "color_range": "pc",
-            "color_space": "bt470bg",
-            "chroma_location": "center",
+            "color_range": "tv",
+            "color_transfer": "iec61966-2-1",
+            "color_primaries": "bt709",
+            "chroma_location": "left",
             "field_order": "progressive",
             "is_avc": "true",
             "nal_length_size": "4",
@@ -40,7 +47,7 @@
             "start_time": "0.000000",
             "duration_ts": 2700000,
             "duration": "30.000000",
-            "bit_rate": "92735",
+            "bit_rate": "84367",
             "bits_per_raw_sample": "8",
             "nb_frames": "900",
             "extradata_size": 51,
@@ -68,12 +75,7 @@
             "tags": {
               "language": "und",
               "handler_name": "VideoHandler"
-            },
-            "side_data_list": [
-              {
-                "side_data_type": "ICC Profile"
-              }
-            ]
+            }
           }
         ],
         "format": {
@@ -85,8 +87,8 @@
           "format_long_name": "QuickTime / MOV",
           "start_time": "0.000000",
           "duration": "30.000000",
-          "size": "359944",
-          "bit_rate": "95985",
+          "size": "328096",
+          "bit_rate": "87492",
           "probe_score": 100,
           "tags": {
             "major_brand": "isom",
@@ -96,19 +98,14 @@
             "comment": "Made with Remotion 4.0.538"
           }
         }
-      },
-      "renderOptions": {
-        "codec": "h264",
-        "scale": 1,
-        "concurrency": 2
       }
     },
     {
       "seconds": 30,
       "draft": true,
       "path": "out/draft.mp4",
-      "size": 96518,
-      "sha256": "4d4f4a6d580ea18fd04ac0acaf8348eb3297a113d023b1a55637c96ec184462f",
+      "size": 102426,
+      "sha256": "440ae291b9e815d1be8cf6dc0dcd226c59d174f86dc57153e25a6f98c0bf8289",
       "renderOptions": {
         "codec": "h264",
         "scale": 0.5,
@@ -134,11 +131,12 @@
             "has_b_frames": 2,
             "sample_aspect_ratio": "1:1",
             "display_aspect_ratio": "16:9",
-            "pix_fmt": "yuvj420p",
+            "pix_fmt": "yuv420p",
             "level": 31,
-            "color_range": "pc",
-            "color_space": "bt470bg",
-            "chroma_location": "center",
+            "color_range": "tv",
+            "color_transfer": "iec61966-2-1",
+            "color_primaries": "bt709",
+            "chroma_location": "left",
             "field_order": "progressive",
             "is_avc": "true",
             "nal_length_size": "4",
@@ -150,7 +148,7 @@
             "start_time": "0.000000",
             "duration_ts": 2700000,
             "duration": "30.000000",
-            "bit_rate": "22489",
+            "bit_rate": "24189",
             "bits_per_raw_sample": "8",
             "nb_frames": "900",
             "extradata_size": 50,
@@ -178,12 +176,7 @@
             "tags": {
               "language": "und",
               "handler_name": "VideoHandler"
-            },
-            "side_data_list": [
-              {
-                "side_data_type": "ICC Profile"
-              }
-            ]
+            }
           }
         ],
         "format": {
@@ -195,8 +188,8 @@
           "format_long_name": "QuickTime / MOV",
           "start_time": "0.000000",
           "duration": "30.000000",
-          "size": "96518",
-          "bit_rate": "25738",
+          "size": "102426",
+          "bit_rate": "27313",
           "probe_score": 100,
           "tags": {
             "major_brand": "isom",
@@ -212,8 +205,8 @@
       "seconds": 120,
       "draft": false,
       "path": "out/final.mp4",
-      "size": 1082809,
-      "sha256": "d0b8c76cd78864a8b0d74a44d1ce36091ddc1e51a1b81e19328f20b1a48704dc",
+      "size": 956106,
+      "sha256": "ceb4b0570ba65145b07ac955d890dc1dc82f632fbfea4e4a06df129ce08829fa",
       "renderOptions": {
         "codec": "h264",
         "scale": 1,
@@ -237,11 +230,12 @@
             "has_b_frames": 2,
             "sample_aspect_ratio": "1:1",
             "display_aspect_ratio": "16:9",
-            "pix_fmt": "yuvj420p",
+            "pix_fmt": "yuv420p",
             "level": 40,
-            "color_range": "pc",
-            "color_space": "bt470bg",
-            "chroma_location": "center",
+            "color_range": "tv",
+            "color_transfer": "iec61966-2-1",
+            "color_primaries": "bt709",
+            "chroma_location": "left",
             "field_order": "progressive",
             "is_avc": "true",
             "nal_length_size": "4",
@@ -253,7 +247,7 @@
             "start_time": "0.000000",
             "duration_ts": 10800000,
             "duration": "120.000000",
-            "bit_rate": "69217",
+            "bit_rate": "60802",
             "bits_per_raw_sample": "8",
             "nb_frames": "3600",
             "extradata_size": 51,
@@ -281,12 +275,7 @@
             "tags": {
               "language": "und",
               "handler_name": "VideoHandler"
-            },
-            "side_data_list": [
-              {
-                "side_data_type": "ICC Profile"
-              }
-            ]
+            }
           }
         ],
         "format": {
@@ -298,8 +287,8 @@
           "format_long_name": "QuickTime / MOV",
           "start_time": "0.000000",
           "duration": "120.000000",
-          "size": "1082809",
-          "bit_rate": "72187",
+          "size": "956106",
+          "bit_rate": "63740",
           "probe_score": 100,
           "tags": {
             "major_brand": "isom",
@@ -315,8 +304,8 @@
       "seconds": 120,
       "draft": true,
       "path": "out/draft.mp4",
-      "size": 322564,
-      "sha256": "7c6aed6b60786db9ade5a33f47ba0c945c09f8d3548c042c27e4223e63d63108",
+      "size": 304163,
+      "sha256": "65c0bf2b2b77a8466e323eb0eb1390c3bec73adda5605a841038b5e101b87ad0",
       "renderOptions": {
         "codec": "h264",
         "scale": 0.5,
@@ -342,11 +331,12 @@
             "has_b_frames": 2,
             "sample_aspect_ratio": "1:1",
             "display_aspect_ratio": "16:9",
-            "pix_fmt": "yuvj420p",
+            "pix_fmt": "yuv420p",
             "level": 31,
-            "color_range": "pc",
-            "color_space": "bt470bg",
-            "chroma_location": "center",
+            "color_range": "tv",
+            "color_transfer": "iec61966-2-1",
+            "color_primaries": "bt709",
+            "chroma_location": "left",
             "field_order": "progressive",
             "is_avc": "true",
             "nal_length_size": "4",
@@ -358,7 +348,7 @@
             "start_time": "0.000000",
             "duration_ts": 10800000,
             "duration": "120.000000",
-            "bit_rate": "18535",
+            "bit_rate": "17339",
             "bits_per_raw_sample": "8",
             "nb_frames": "3600",
             "extradata_size": 50,
@@ -386,12 +376,7 @@
             "tags": {
               "language": "und",
               "handler_name": "VideoHandler"
-            },
-            "side_data_list": [
-              {
-                "side_data_type": "ICC Profile"
-              }
-            ]
+            }
           }
         ],
         "format": {
@@ -403,8 +388,8 @@
           "format_long_name": "QuickTime / MOV",
           "start_time": "0.000000",
           "duration": "120.000000",
-          "size": "322564",
-          "bit_rate": "21504",
+          "size": "304163",
+          "bit_rate": "20277",
           "probe_score": 100,
           "tags": {
             "major_brand": "isom",
