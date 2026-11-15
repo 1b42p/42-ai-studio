@@ -4,7 +4,10 @@ import { getDb } from "../db/client";
 import { users } from "../db/schema";
 import type { Settings, SettingsPatch } from "./schema";
 
-const settingsColumns = { customInstructions: users.customInstructions };
+const settingsColumns = {
+  customInstructions: users.customInstructions,
+  memoryEnabled: users.memoryEnabled,
+};
 
 export async function getSettings(userId: string): Promise<Settings> {
   const [settings] = await getDb()

@@ -157,6 +157,15 @@ npx shadcn@latest mcp init --client claude   # подключить MCP-серв
 - `agent/instrumentation/local.ts` удаляет `gen_ai.system_instructions` и `ai.prompt` из локального экспорта трасс; метаданные, остальные диагностические атрибуты и Workflow retention не меняются. Новый экспортёр должен исключать те же поля.
 - Фикстурная команда `/prompt` выводит `system` и `user` из `mockModel.messages` блоками `[роль]`, разделёнными `---`; system целиком, user до 8000 знаков с пометкой об усечении. Assistant/tool пропускаются. Перед разбором всех команд снимается обёртка до последней строки `Caller message:`.
 
+### Память пользователя
+
+- `users.memory_enabled` — boolean not null, по умолчанию false; `GET`/`PATCH /api/settings` передают `memoryEnabled`, можно вместе с `customInstructions`. Раздел `MemorySection` между указаниями и аккаунтом: оптимистический переключатель, блокировка ожидания, откат и предупреждение при ошибке.
+- Слот `agent/memory.ts` — `memory`, namespace `studio-memory-v1`, провайдер `agent/lib/user-memory.ts`. Область вычисляется на каждом ходу из `auth.current ?? auth.initiator`, только `studio`/`user`; свежий флаг из базы выключает слот через `null`, иначе `["user", users.id]`. Копии наследуют эти правила. Провайдер проверяет кортеж и UUID до базы; ключ хранения — UUID из `scope.value`, не deployment-зависимый digest.
+- `user_memory`: bigserial `id`, `user_id` → users CASCADE, `text`, `created_at`; unique(user_id,text), index(user_id,id). `memory__save` нормализует пробелы и проверяет 1–500 кодовых точек внутри execute. Под `pg_advisory_xact_lock(3, hashtext(userId::text))` проверяет duplicate прежде предела 100; limit отдаёт пять старейших записей `oldest`. `memory__remove` ограничивает DELETE пользователем из области.
+- Recall на `turn.started` и `compaction.completed` возвращает сообщение `id: "memory"` роли user до 4000 кодовых точек; записи по id, при переполнении целый новый суффикс и число показанных. Изначально пустая память — null; после удаления последней записи ранее опубликованный блок заменяется сообщением «Сохранённых предпочтений нет.»: null не удаляет предыдущий id в eve. `lib/memory/text.ts` — чистые нормализация и сборка, `lib/memory/store.ts` — хранение.
+- `memory_recall_snapshots`: `operation_id` text PK, `user_id` → users CASCADE, nullable `content`, `created_at` с индексом. Первый recall под той же блокировкой сохраняет готовый текст; повтор возвращает снимок даже после изменения записей. При вставке удаляются снимки старше суток. Capture не подключён: сохраняет только модель инструментом. Память — данные, сохраняются только устойчивые предпочтения о роликах, не внешние факты и не секреты.
+- Проверки изоляции eval допускают только точный framework-манифест обёртки слота `memory` (`evals/support/disabled-eval-memory-manifest.ts`): у `studio-eval` его область null до базы, провайдер и инструменты не вызываются. Это не разрешение на произвольные dynamic-инструменты или `memory__save`/`memory__remove`; HTTP-проверка подтверждает отсутствие записей и снимков от eval.
+
 ## Авторизация
 
 - Eve channel закрыт по умолчанию; для production-браузера нужен `agent/channels/eve.ts` с AuthFn.
