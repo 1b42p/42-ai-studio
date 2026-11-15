@@ -89,6 +89,7 @@ describe("принципал аутентификатора", () => {
     customInstructions: "",
     isOperator: true,
     isBlocked: false,
+    deletionRequestedAt: null,
     createdAt: new Date(),
     lastLoginAt: null,
   } satisfies User;

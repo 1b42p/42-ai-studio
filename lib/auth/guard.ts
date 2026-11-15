@@ -1,6 +1,6 @@
 /** Проверка пользователя на сервере: страницы и обработчики маршрутов. */
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 
 import type { User } from "../db/schema";
@@ -43,6 +43,28 @@ export async function requireApiUser(request: Request): Promise<User | Response>
   const user = await getUserFromRequest(request);
   if (user === null) return errorResponse(401, "unauthenticated", "Требуется вход");
   if (user.isBlocked) return errorResponse(403, "forbidden", "Доступ закрыт");
+  return user;
+}
+
+/**
+ * Страховка страниц `/admin`: кроме входа нужен флаг оператора из базы.
+ * Не оператор видит обычную страницу 404 — существование админки не
+ * раскрывается. Проверка стоит до вывода, поэтому статус ответа — 404.
+ */
+export async function requireOperator(nextPath: string): Promise<User> {
+  const user = await requireUser(nextPath);
+  if (!user.isOperator) notFound();
+  return user;
+}
+
+/**
+ * Страховка обработчиков `/api/admin/*`: без входа 401, заблокированному 403
+ * «Доступ закрыт», вошедшему без флага — 403 «Нужны права оператора».
+ */
+export async function requireOperatorApi(request: Request): Promise<User | Response> {
+  const user = await requireApiUser(request);
+  if (user instanceof Response) return user;
+  if (!user.isOperator) return errorResponse(403, "forbidden", "Нужны права оператора");
   return user;
 }
 

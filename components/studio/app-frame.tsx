@@ -3,20 +3,22 @@
 import { usePathname } from "next/navigation";
 
 import { AppShell } from "@/components/studio/app-shell";
-import { navItems } from "@/components/studio/nav";
-import { UserMenu } from "@/components/studio/user-menu";
+import type { NavItem } from "@/components/studio/nav";
 import { logout } from "@/components/studio/settings/logout";
+import { UserMenu } from "@/components/studio/user-menu";
 import type { PublicUser } from "@/lib/auth/user";
 
 /**
  * Клиентская оболочка приложения: знает текущий путь и обработчик выхода.
- * Сама раскладка `AppShell` остаётся свободной от Next.js и тестируется без
- * маршрутизатора.
+ * Пункты навигации приходят с сервера уже отфильтрованными по праву
+ * оператора; сам признак оператора в `AppShell` не попадает.
  */
 export function AppFrame({
+  navItems,
   user,
   children,
 }: {
+  navItems: NavItem[];
   user: PublicUser | null;
   children: React.ReactNode;
 }) {

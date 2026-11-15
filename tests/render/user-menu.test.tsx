@@ -4,7 +4,6 @@ import { page } from "vitest/browser";
 import { AppShell } from "@/components/studio/app-shell";
 import { navItems } from "@/components/studio/nav";
 import { UserMenu } from "@/components/studio/user-menu";
-import { SettingsIcon } from "lucide-react";
 import type { PublicUser } from "@/lib/auth/user";
 
 import { expectNoHorizontalScroll, renderOnDesktop, renderOnPhone } from "./support/render";
@@ -56,7 +55,7 @@ test("дополнительные пункты меню ведут в наст�
         <UserMenu
           user={user}
           onLogout={() => {}}
-          items={[{ title: "Настройки", href: "/settings", icon: SettingsIcon }]}
+          items={[{ title: "Настройки", href: "/settings", icon: "settings" }]}
         />
       }
     >
