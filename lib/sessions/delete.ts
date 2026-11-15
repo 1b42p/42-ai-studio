@@ -177,11 +177,15 @@ export async function deleteSessionData(appSessionId: string): Promise<SessionDe
       const [sandbox] = await query(sql!<{
         id: string; daytonaSandboxId: string; state: string;
         keyId: string; encrypted: string; keyDeletedAt: Date | null;
+        pendingDeletion: boolean;
       }[]>`select s.id, s.daytona_sandbox_id as "daytonaSandboxId", s.state,
-        k.id as "keyId", k.api_key_encrypted as encrypted, k.deleted_at as "keyDeletedAt"
+        k.id as "keyId", k.api_key_encrypted as encrypted, k.deleted_at as "keyDeletedAt",
+        exists (select 1 from pending_sandbox_deletions p
+          where p.daytona_key_id = s.daytona_key_id
+            and p.daytona_sandbox_id = s.daytona_sandbox_id) as "pendingDeletion"
         from sandboxes s join daytona_keys k on k.id = s.daytona_key_id
         where s.app_session_id = ${appSessionId}`, stepSignal);
-      if (!sandbox || sandbox.state === "gone") return;
+      if (!sandbox || (sandbox.state === "gone" && !sandbox.pendingDeletion)) return;
       if (!(sandbox.keyDeletedAt && sandbox.encrypted === DELETED_KEY_MARKER)) {
         const secret = decryptSecret(sandbox.encrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE);
         const identity = sandbox.daytonaSandboxId ||
@@ -196,6 +200,9 @@ export async function deleteSessionData(appSessionId: string): Promise<SessionDe
           if (!isMissingSandbox(error)) throw error;
         }
       }
+      await query(sql!`delete from pending_sandbox_deletions
+        where daytona_key_id = ${sandbox.keyId}
+          and daytona_sandbox_id = ${sandbox.daytonaSandboxId}`, stepSignal);
       await query(sql!`update sandboxes set state = 'gone', starting_since = null,
         starting_kind = null, launch_started_at = null
         where id = ${sandbox.id}`, stepSignal);

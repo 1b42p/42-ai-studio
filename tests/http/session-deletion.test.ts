@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { createServer } from "node:http";
+import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { eq } from "drizzle-orm";
+import { SandboxSessionGoneError } from "eve/sandbox/provider";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { signInternalToken } from "../../lib/auth/internal-tokens";
@@ -11,9 +13,10 @@ import { loadConfig } from "../../lib/config";
 import { getSqlClient } from "../../lib/db/client";
 import {
   agentSessions, appSessions, bashJobs, daytonaKeys, media, messageFiles,
-  queueEntries, sandboxes, toolCallMedia, type User,
+  pendingSandboxDeletions, queueEntries, sandboxes, toolCallMedia, type User,
 } from "../../lib/db/schema";
-import { DELETED_KEY_MARKER } from "../../agent/lib/daytona-key-pool";
+import { DELETED_KEY_MARKER, deleteKey } from "../../agent/lib/daytona-key-pool";
+import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
 import { fetchApp, startApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, eveClientAs, readStreamUntil, sendAndWait } from "./support/chat";
@@ -302,6 +305,50 @@ describe("удаление всех данных сессии", () => {
     expect((await remove(target.id, target.user)).status).toBe(204);
     expect((await fakeSandbox.counters()).deleted).toBe(1);
   }, 90_000);
+
+  for (const retry of [false, true]) {
+    test(`gone после отказа удаления ключа: машина удаляется${retry ? " при повторе" : ""}`, async () => {
+      const target = await fixture({ sandbox: true, files: true });
+      const [sandbox] = await db().select().from(sandboxes)
+        .where(eq(sandboxes.appSessionId, target.id));
+      await fakeSandbox.failNextDelete("unavailable");
+      expect(await deleteKey(target.key!.id)).toEqual({ remaining: 1 });
+      await expect(createDaytonaLifecycle().resume({
+        kind: "session",
+        session: {
+          id: target.eveId,
+          auth: { current: null, initiator: null },
+          turn: { id: randomUUID(), sequence: 0 },
+        },
+        storagePath: loadConfig().fakeSandboxDir!,
+        resolveProjectPath: (filename) => path.resolve(filename),
+      }, { templateKey: "deletion-test", dockerfile: "", files: [] }, {
+        keyId: target.key!.id,
+        sandboxId: sandbox.daytonaSandboxId,
+      })).rejects.toBeInstanceOf(SandboxSessionGoneError);
+      expect((await db().select().from(sandboxes)
+        .where(eq(sandboxes.appSessionId, target.id)))[0].state).toBe("gone");
+      expect(await db().select().from(pendingSandboxDeletions)
+        .where(eq(pendingSandboxDeletions.daytonaKeyId, target.key!.id))).toHaveLength(1);
+      expect((await fakeSandbox.counters()).deleted).toBe(0);
+
+      if (retry) {
+        await fakeSandbox.failNextDelete("unavailable");
+        expect((await remove(target.id, target.user)).status).toBe(502);
+        expect((await row(target.id))!.deletedAt).toBeInstanceOf(Date);
+        expect(await s3().listKeys(target.prefix)).toHaveLength(4);
+        expect(await db().select().from(pendingSandboxDeletions)
+          .where(eq(pendingSandboxDeletions.daytonaKeyId, target.key!.id))).toHaveLength(1);
+      }
+      expect((await remove(target.id, target.user)).status).toBe(204);
+      expect((await fakeSandbox.counters()).deleted).toBe(1);
+      await expect(access(join(loadConfig().fakeSandboxDir!, "machines", sandbox.daytonaSandboxId))).rejects.toThrow();
+      expect(await db().select().from(pendingSandboxDeletions)
+        .where(eq(pendingSandboxDeletions.daytonaKeyId, target.key!.id))).toHaveLength(0);
+      expect(await row(target.id)).toBeUndefined();
+      expect(await s3().listKeys(target.prefix)).toEqual([]);
+    }, 90_000);
+  }
 
   test("ключ с маркером deleted: шаг Daytona пропускается", async () => {
     const target = await fixture({ sandbox: true });
