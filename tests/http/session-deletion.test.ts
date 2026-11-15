@@ -13,7 +13,7 @@ import { loadConfig } from "../../lib/config";
 import { getSqlClient } from "../../lib/db/client";
 import {
   agentSessions, appSessions, bashJobs, daytonaKeys, media, messageFiles,
-  pendingSandboxDeletions, queueEntries, sandboxes, toolCallMedia, type User,
+  pendingSandboxDeletions, queueEntries, sandboxes, sessionPreviewCalls, toolCallMedia, type User,
 } from "../../lib/db/schema";
 import { DELETED_KEY_MARKER, deleteKey } from "../../agent/lib/daytona-key-pool";
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
@@ -71,12 +71,13 @@ async function fixture(options: { sandbox?: boolean; files?: boolean } = {}) {
       if (kind === "tool_media") await db().insert(toolCallMedia).values({
         appSessionId: id, callId: "media-call", sandboxPath: "/workspace/preview.png", mediaId,
       });
-      // #18 может появиться позднее: цикл media ↔ preview проверяется, как
-      // только колонка существует, без отключения остальных проверок каскада.
       if (kind === "preview") {
-        const column = await getSqlClient()`select 1 from information_schema.columns
-          where table_schema = 'public' and table_name = 'app_sessions' and column_name = 'preview_media_id'`;
-        if (column.length) await getSqlClient()`update app_sessions set preview_media_id = ${mediaId} where id = ${id}`;
+        await db().update(appSessions).set({ previewMediaId: mediaId })
+          .where(eq(appSessions.id, id));
+        await db().insert(sessionPreviewCalls).values({
+          appSessionId: id, callId: "preview-call", sandboxPath: "/workspace/preview.jpg",
+          result: { path: "out/preview.jpg", size: 4, contentType: "image/jpeg" },
+        });
       }
     }
   }

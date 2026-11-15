@@ -42,6 +42,8 @@ export interface CopySandboxFileOptions {
   contentType?: string;
   storage?: Storage;
   abortSignal?: AbortSignal;
+  /** Уже проверенный небольшой файл: публикуются именно эти байты, без повторного чтения. */
+  validatedBytes?: Uint8Array;
 }
 
 export interface CopiedSandboxFile {
@@ -95,6 +97,31 @@ export async function copySandboxFile(
   const path = insideWorkspace(options.path);
   const sandbox = options.sandbox;
   const signal = options.abortSignal;
+
+  if (options.validatedBytes !== undefined) {
+    const bytes = options.validatedBytes;
+    if (bytes.byteLength > options.maxBytes) {
+      throw new MediaCopyError("too_large", "Файл больше предела");
+    }
+    const originalName = fileNameForPath(path);
+    const contentType = options.contentType ?? contentTypeForPath(originalName);
+    const objectKey = mediaObjectKey({
+      userId: options.userId,
+      appSessionId: options.appSessionId,
+      kind: options.kind ?? "message_file",
+      name: originalName,
+    });
+    const storage = options.storage ?? getStorage();
+    try {
+      await requireLiveMediaSession(options.appSessionId);
+      await storage.putObject(objectKey, bytes, contentType);
+      await requireLiveMediaSession(options.appSessionId);
+    } catch (error) {
+      await storage.deleteObject(objectKey).catch(() => undefined);
+      throw new MediaCopyError("copy_failed", "Не удалось сохранить файл", { cause: error });
+    }
+    return { objectKey, contentType, sizeBytes: bytes.byteLength, originalName };
+  }
 
   const real = await sandbox.run({
     command: `realpath -- ${shellQuote(path)}`,

@@ -20,6 +20,7 @@ export interface SessionListItem {
   readonly title: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly preview: { readonly mediaId: string } | null;
 }
 
 export interface SessionListPage {
@@ -112,12 +113,14 @@ function toItem(row: {
   title: string | null;
   createdAt: Date;
   updatedAt: Date;
+  previewMediaId: string | null;
 }): SessionListItem {
   return {
     id: row.id,
     title: row.title,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    preview: row.previewMediaId === null ? null : { mediaId: row.previewMediaId },
   };
 }
 
@@ -157,6 +160,7 @@ export async function listUserSessions(
       title: appSessions.title,
       createdAt: appSessions.createdAt,
       updatedAt: appSessions.updatedAt,
+      previewMediaId: appSessions.previewMediaId,
     })
     .from(appSessions)
     .where(and(...conditions))

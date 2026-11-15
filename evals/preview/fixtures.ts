@@ -1,0 +1,124 @@
+import { readFileSync } from "node:fs";
+import { posix } from "node:path";
+import type { EveEvalContext, ToolStub } from "eve/evals";
+import type { EditFileResult } from "../../agent/tools/edit_file";
+import { blockedRead, emptySearch, page, webSession } from "../web/fixtures";
+import { esc } from "../music/operation-patterns";
+import { atomic, canonicalStillPattern, frameNumbers, framesPattern, nonemptyPattern, pathArg, pixelPattern, probePattern, projectPath, sizePattern, skillRootPattern, stillPattern, videoPattern } from "./commands";
+import { currentReviewFrames, imageOutput, previewFrames } from "./media-fixture";
+import integration from "../fixtures/preview/integration.json";
+import { frameSnapshotRefs, initialNotes, projectPackage, projectProps, projectSource } from "./project-fixture";
+import { preflightStubs } from "./preflight";
+
+export const TIMEOUT = 20 * 60 * 1000;
+const read = (path: string, content: string) => ({ path, content, totalLines: content.split("\n").length, truncated: false });
+const completed = (stdout = "") => ({ status: "completed", exitCode: 0, stdout, stderr: "", truncated: false });
+export const request = (seconds: number) => [
+  `Сделай ролик о спокойном утреннем кофейном ритуале для взрослых, ${seconds} секунд, 16:9, 1920×1080, 30 кадров/с, по-русски, без звука, озвучки и музыки.`,
+  `Используй подготовленный проект ${projectPath(seconds)}, композиция Main, параметры props-${seconds}.json. Графика трёх сцен и тексты уже утверждены; исходники и параметры сохраняй.`,
+  `Контрольная выборка проекта: ${frameNumbers(seconds).join(", ")}; каталог out/frames-1, имена element-NNNN.jpeg. Это неизменяемый подготовленный проект, операции и доступные файлы описаны в SPEC.md.`,
+  "Результаты сохраняй в out/. Дополнительных пожеланий нет.",
+].join("\n");
+
+const references = ["frame-review/references/notes-template.md", "frame-review/scripts/check-frames.py"];
+
+export function previewStubs(seconds: number): ToolStub[] {
+  const P = projectPath(seconds);
+  const frames = currentReviewFrames(seconds);
+  const notes = initialNotes(seconds);
+  // JSON stubs cannot interpolate newString or maintain mutable file contents.
+  // Keep the complete production result shape with an explicitly fixed nominal
+  // receipt. toModelOutput hides these contents; they never prove a real write.
+  const nominalNotesResult = {
+    path: `${P}/NOTES.md`, created: false, replacements: 0, oldContent: notes,
+    newContent: "Номинальный снимок записи NOTES.md; новое содержимое не моделируется.\n",
+    linesAdded: 1, linesRemoved: notes.trimEnd().split("\n").length,
+  } satisfies EditFileResult;
+  const exports = previewFrames.filter(frame => frame.seconds === seconds && !frame.path.includes("/frames-1/"));
+  const bash = (id: string, pattern: string, stdout = ""): ToolStub => ({ id, tool: "bash", match: { command: { pattern } }, outcome: { response: completed(stdout) } });
+  const spec = [
+    `# Кофейный ритуал\nПроект ${P}; Remotion 4.0.538; 1920×1080, 30 кадров/с, ${seconds} с, Main.`,
+    "Три сцены одинаковой длительности: зерно, заваривание, чашка. Единственный вход — src/index.tsx; отдельного Root.tsx или src/index.ts нет. Исходник и props неизменяемы. Аудио нет.",
+    `JPEG в out/frames-1 уже получены из этого исходника и props-${seconds}.json; отпечаток source/props/номеров кадров/байтов: ${frameSnapshotRefs.find(snapshot => snapshot.seconds === seconds)!.fingerprint}. Это происхождение файлов, не результат проверки или просмотра.`,
+    `Команды рендера используют --props=props-${seconds}.json. Проверочные кадры ${frameNumbers(seconds).join(",")} сохраняются в out/frames-1 с --image-format=jpeg --jpeg-quality=90.`,
+    "Полный рендер — out/final.mp4; уменьшенный черновик — out/draft.mp4 с --scale=0.5 --x264-preset=superfast --crf=32. Не склеивай независимые команды в одну shell-строку.",
+    "Размер результата проверяется stat -c %s <путь>. Метаданные: npx remotion ffprobe -v error -show_entries stream=codec_name,codec_type,width,height,duration:format=duration -of default=nw=1 <путь>; также доступен полный -show_streams -show_format -of json.",
+    `out/preview.jpg доступен как выход still для любого целого номера кадра от 0 до ${seconds * 30 - 1} включительно: src/index.tsx, Main, --props=props-${seconds}.json, --frame=<номер>, --image-format=jpeg, --jpeg-quality=85, --scale=0.5. read_file этого пути не поддержан.`,
+    "NOTES.md: начальное содержимое доступно для чтения один раз; повторное чтение не поддержано. Обновляй журнал полным содержимым через edit_file с overwrite: true без oldString. Точные замены oldString не поддержаны. Храни актуальный журнал в контексте.",
+    "Доступны атомарные pwd, ls/ls -l/ls -la для корня, src, out и out/frames-1; ls -l для отдельных исходных файлов; test -s известных неизменяемых файлов и test -d node_modules. Листинги показывают начальный снимок проекта и не обновляются после операций.",
+    "Домашний каталог этой среды — /; ссылки навыков читаются через $HOME/.agents/skills/ или /.agents/skills/ (также поддержан прежний псевдоним /root). Составные команды, неподдержанные пути и параметры отклоняются без частичного исполнения или подтверждения успеха.",
+  ].join("\n");
+  const files = { "src/index.tsx": projectSource, [`props-${seconds}.json`]: projectProps(seconds), "SPEC.md": spec,
+    "package.json": projectPackage };
+  const stubs: ToolStub[] = Object.entries(files).map(([path, content]) => ({ id: `file-${path}`, tool: "read_file", match: { filePath: { enum: [`${P}/${path}`, `preview-coffee-${seconds}/${path}`] } }, outcome: { response: read(`${P}/${path}`, content) } }));
+  for (const path of references) {
+    stubs.push({ id: `reference-${path}`, tool: "read_file", match: { filePath: { pattern: `^${skillRootPattern}/${esc(path)}$` } }, outcome: { response: read(`/.agents/skills/${path}`, readFileSync(`agent/skills/${path}`, "utf8")) } });
+  }
+  // Named exports are recorded pixel responses for the immutable render
+  // capability, not initial project assets. The byte cache is not a mutable
+  // filesystem model; reading it never substitutes for a new matching still.
+  for (const frame of [...frames, ...exports]) {
+    const relative = posix.relative(P, frame.path);
+    stubs.push({ id: `image-${relative}`, tool: "read_file", match: { filePath: { enum: [frame.path, `preview-coffee-${seconds}/${relative}`] } }, outcome: { response: imageOutput(frame) } });
+  }
+  stubs.push(bash("frames-render", framesPattern(seconds), frames.map(frame => `Rendered ${frame.path}`).join("\n")));
+  const pixels = (selection: typeof frames) => selection.map(frame => JSON.stringify({ path: frame.path, extrema: "extrema" in frame ? frame.extrema : null, suspect: null })).join("\n");
+  stubs.push(bash("pixels-all", pixelPattern(frames.map(frame => posix.relative(P, frame.path)), seconds, true), pixels(frames)));
+  for (const frame of frames) stubs.push(bash(`pixels-${frame.frame}`, pixelPattern([posix.relative(P, frame.path)], seconds), pixels([frame])));
+  // These JSON receipts do not execute Remotion, measure new files, or create
+  // MP4/JPEG bytes or S3 objects. Image reads remain exact recorded capabilities.
+  const videos = integration.videos.filter(video => video.seconds === seconds);
+  if (videos.length !== 2 || new Set(videos.map(video => video.draft)).size !== 2) {
+    throw new Error(`Для ${seconds} секунд нужны записанные финал и черновик вместе с размером и метаданными.`);
+  }
+  for (const video of videos) {
+    const mode = video.draft ? "draft" : "final";
+    stubs.push(bash(`${mode}-render`, videoPattern(seconds, video.draft), `Rendered ${video.path}`));
+    stubs.push(bash(`video-probe-${mode}`, probePattern(seconds, video.draft), JSON.stringify(video.probe)));
+    const selected = video.probe.streams.flatMap(stream => [
+      `codec_name=${stream.codec_name}`, `codec_type=${stream.codec_type}`,
+      `width=${stream.width}`, `height=${stream.height}`, `duration=${stream.duration}`,
+    ]);
+    stubs.push(bash(`video-probe-selected-${mode}`, probePattern(seconds, video.draft, "selected-default"), [...selected, `duration=${video.probe.format.duration}`, ""].join("\n")));
+    stubs.push(bash(`video-size-${mode}`, sizePattern(seconds, video.draft), `${video.size}\n`));
+    stubs.push(bash(`video-nonempty-${mode}`, nonemptyPattern(seconds, video.draft)));
+  }
+  for (const frame of exports) {
+    const relative = posix.relative(P, frame.path);
+    stubs.push(bash(`still-${frame.frame}`, stillPattern(seconds, frame.frame, relative), `Rendered ${frame.path}`));
+  }
+  stubs.push(bash("still-canonical", canonicalStillPattern(seconds), `Rendered ${P}/out/preview.jpg`));
+  // All effects are stubbed. This size is a nominal valid sample, not a
+  // measurement of a seeded image: arbitrary selected frames have no canonical
+  // pixel payload. read_file for preview.jpg deliberately remains unsupported.
+  stubs.push({ id: "publish-canonical", tool: "set_session_preview",
+    match: { path: { enum: [`${P}/out/preview.jpg`, `preview-coffee-${seconds}/out/preview.jpg`] } },
+    outcome: { response: { path: `${P}/out/preview.jpg`, size: 65536, contentType: "image/jpeg" } } });
+  for (const frame of [...frames, ...exports]) {
+    stubs.push({ id: `publish-${posix.basename(frame.path)}`, tool: "set_session_preview", match: { path: { enum: [frame.path, `preview-coffee-${seconds}/${posix.relative(P, frame.path)}`] } }, outcome: { response: { path: frame.path, size: frame.size, contentType: "image/jpeg" } } });
+  }
+  stubs.push({ id: "preview-catchall", tool: "set_session_preview", outcome: { throw: { message: "preview_not_found: Публикация этого пути не записана в контракте проекта. SPEC.md описывает поддержанные операции и контрольную выборку." } } });
+  stubs.push(bash("pwd", atomic("pwd", seconds), `${P}\n`));
+  stubs.push(...preflightStubs(seconds, { ...files, "NOTES.md": notes }, frames));
+  stubs.push(bash("mkdir-out", atomic(`mkdir\\s+-p\\s+${pathArg("out", seconds)}`, seconds)));
+  stubs.push({ id: "initial-notes", tool: "read_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] } }, outcomes: [
+    { response: read(`${P}/NOTES.md`, notes) },
+    { throw: { message: "Начальное содержимое NOTES.md уже прочитано. Повторное чтение не поддержано; храните полный актуальный журнал в контексте." } },
+  ] });
+  // Exact oldString edits deliberately stay unsupported: a fixed JSON response
+  // cannot validate their precondition against a mutable NOTES.md filesystem.
+  stubs.push({ id: "notes-replacement", tool: "edit_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] }, oldString: { minLength: 1 } }, outcome: { throw: { message: "Журнал принимает только полное содержимое с overwrite: true, без oldString. Точные замены фрагментов не поддержаны." } } });
+  stubs.push({ id: "notes-write", tool: "edit_file", match: { filePath: { enum: [`${P}/NOTES.md`, `preview-coffee-${seconds}/NOTES.md`] }, newString: { minLength: 1, maxLength: 262144 }, overwrite: { const: true } }, outcome: { response: nominalNotesResult } });
+  stubs.push({ id: "immutable-source", tool: "edit_file", outcome: { throw: { message: "Исходники утверждены и неизменяемы. Разрешена только запись полного содержимого NOTES.md с overwrite: true без oldString." } } });
+  stubs.push({ id: "unknown-read", tool: "read_file", outcome: { throw: { message: "Чтение этого пути не поддержано. SPEC.md и src/index.tsx доступны по полному пути; отказ чтения NOTES.md не означает потерю файла или записи." } } });
+  stubs.push({ id: "unsupported-command", tool: "bash", outcome: { throw: { message: "Команда не записана в контракте проекта; успех не подтверждён. Поддержаны отдельные render, still, check-frames.py и ls out/frames-1. SPEC.md содержит пути и контрольную выборку. Составные команды и изменения исходников не исполнялись." } } });
+  stubs.push({ id: "remotion-still-docs", tool: "read_page", match: { url: { pattern: "^https://www\\.remotion\\.dev/docs/cli/still(?:\\.md)?/?$" } }, outcome: { response: page("https://www.remotion.dev/docs/cli/still", "remotion still", "npx remotion still <entry> <composition> <output> --frame=<number> --image-format=jpeg --jpeg-quality=85 --scale=0.5. --props accepts a JSON file.", "en") } });
+  stubs.push(blockedRead, emptySearch);
+  return stubs;
+}
+
+export async function previewSession(t: EveEvalContext, seconds: number) {
+  const health = await t.target.fetch("/api/health");
+  if (!health.headers.get("x-studio-eval-runtime")) throw new Error("Оценкам превью нужен APP_STUB_EVAL_SANDBOX=1 на выделенном сервере.");
+  return webSession(t, previewStubs(seconds), { allowNativeQuestion: seconds === 120 });
+}

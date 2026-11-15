@@ -1,6 +1,6 @@
 {
-  "id": "1c2a1513-f983-41f9-9291-72f44fc6d58f",
-  "prevId": "ceee19f8-7204-40ee-94e9-d6403bd4793e",
+  "id": "0bf8bbac-0cb3-4fdc-95a6-3fc42189edd7",
+  "prevId": "9a51bbf3-4026-4903-bfee-07daad79c1ec",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -128,6 +128,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "preview_media_id": {
+          "name": "preview_media_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "title_search": {
           "name": "title_search",
           "type": "text",
@@ -236,6 +242,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "app_sessions_preview_media_id_media_id_fk": {
+          "name": "app_sessions_preview_media_id_media_id_fk",
+          "tableFrom": "app_sessions",
+          "tableTo": "media",
+          "columnsFrom": [
+            "preview_media_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1717,6 +1736,105 @@
         "session_events_app_session_id_app_sessions_id_fk": {
           "name": "session_events_app_session_id_app_sessions_id_fk",
           "tableFrom": "session_events",
+          "tableTo": "app_sessions",
+          "columnsFrom": [
+            "app_session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.session_preview_calls": {
+      "name": "session_preview_calls",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "app_session_id": {
+          "name": "app_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "call_id": {
+          "name": "call_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sandbox_path": {
+          "name": "sandbox_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "result": {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "replaced_media_id": {
+          "name": "replaced_media_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "session_preview_calls_identity_idx": {
+          "name": "session_preview_calls_identity_idx",
+          "columns": [
+            {
+              "expression": "app_session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "call_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sandbox_path",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "session_preview_calls_app_session_id_app_sessions_id_fk": {
+          "name": "session_preview_calls_app_session_id_app_sessions_id_fk",
+          "tableFrom": "session_preview_calls",
           "tableTo": "app_sessions",
           "columnsFrom": [
             "app_session_id"

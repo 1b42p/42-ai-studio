@@ -67,6 +67,17 @@ class InterleavedStorage extends Storage {
     super(loadConfig());
   }
 
+  override async putObject(
+    key: string,
+    body: Uint8Array | string,
+    contentType?: string,
+  ): Promise<void> {
+    this.writes++;
+    await this.beforeWrite();
+    await super.putObject(key, body, contentType);
+    await this.afterWrite();
+  }
+
   override async putStream(
     key: string,
     body: ReadableStream<Uint8Array>,
@@ -184,6 +195,25 @@ describe("медиа удалённой сессии", () => {
     expect(storage.writes).toBe(0);
     expect(await s3().listKeys(prefix)).toEqual([]);
   });
+
+  for (const duringUpload of [false, true]) {
+    test(`проверенный снимок превью: удаление ${duringUpload ? "во время" : "до"} загрузки не оставляет объект`, async () => {
+      const { user, id, prefix, sandbox } = await fixture();
+      if (!duringUpload) await softDelete(id);
+      const storage = new InterleavedStorage(async () => {}, async () => {
+        await softDelete(id);
+        await s3().deletePrefix(prefix);
+      });
+      await expect(copySandboxFile({
+        sandbox, path: "out/preview.jpg", maxBytes: 100,
+        userId: user.id, appSessionId: id, storage,
+        kind: "preview", contentType: "image/jpeg",
+        validatedBytes: new Uint8Array([255, 216, 255, 217]),
+      })).rejects.toMatchObject({ reason: "copy_failed" });
+      expect(storage.writes).toBe(duringUpload ? 1 : 0);
+      expect(await s3().listKeys(prefix)).toEqual([]);
+    });
+  }
 
   for (const deletion of ["soft", "physical"] as const) {
     for (const kind of ["message_file", "tool_media", "preview"] as const) {
