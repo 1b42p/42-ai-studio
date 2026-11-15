@@ -3,6 +3,8 @@ import { NewChat } from "@/components/studio/chat/new-chat";
 import { requireUser } from "@/lib/auth/guard";
 import { listUserSessions, parseSessionListSearchParams } from "@/lib/sessions/list";
 
+export const maxDuration = 125;
+
 function queryValue(value: string | string[] | undefined): string {
   if (typeof value === "string") return value;
   if (Array.isArray(value) && typeof value[0] === "string") return value[0];

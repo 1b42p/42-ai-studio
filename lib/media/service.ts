@@ -1,8 +1,8 @@
 /** Чтение медиа и файлов сообщений для HTTP-маршрутов (#8). */
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
-import { media, messageFiles, type Media } from "@/lib/db/schema";
+import { appSessions, media, messageFiles, type Media } from "@/lib/db/schema";
 
 import { fileNameForPath, isStaleCopying } from "./files";
 import type { MessageFileView } from "./types";
@@ -10,11 +10,12 @@ import type { MessageFileView } from "./types";
 /** Медиа пользователя; чужое и несуществующее неразличимы. */
 export async function findMediaForUser(id: string, userId: string): Promise<Media | null> {
   const [record] = await getDb()
-    .select()
+    .select({ media })
     .from(media)
-    .where(eq(media.id, id))
+    .innerJoin(appSessions, eq(appSessions.id, media.appSessionId))
+    .where(and(eq(media.id, id), eq(media.userId, userId), isNull(appSessions.deletedAt)))
     .limit(1);
-  return record !== undefined && record.userId === userId ? record : null;
+  return record?.media ?? null;
 }
 
 /**
@@ -35,8 +36,9 @@ export async function listSessionFiles(appSessionId: string): Promise<MessageFil
       sizeBytes: media.sizeBytes,
     })
     .from(messageFiles)
+    .innerJoin(appSessions, eq(appSessions.id, messageFiles.appSessionId))
     .leftJoin(media, eq(media.id, messageFiles.mediaId))
-    .where(eq(messageFiles.appSessionId, appSessionId))
+    .where(and(eq(messageFiles.appSessionId, appSessionId), isNull(appSessions.deletedAt)))
     .orderBy(messageFiles.createdAt, messageFiles.id);
 
   const now = Date.now();

@@ -11,7 +11,7 @@ import { errorResponse } from "@/lib/http/errors";
 import { readBashJob } from "@/lib/sandbox/job-service";
 import { JOB_ID_PATTERN } from "@/lib/sandbox/job-types";
 import { isUuid } from "@/lib/sessions/access";
-import { findAppSessionForUser } from "@/lib/sessions/service";
+import { findUserSession } from "@/lib/sessions/service";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +29,7 @@ export async function GET(
   const { id, jobId } = await context.params;
   if (!isUuid(id)) return errorResponse(404, "not_found", "Сессия не найдена");
 
-  const session = await findAppSessionForUser(id, user.id);
+  const session = await findUserSession(user.id, id);
   if (session === null) return errorResponse(404, "not_found", "Сессия не найдена");
   if (!JOB_ID_PATTERN.test(jobId)) {
     return errorResponse(400, "invalid_request", "Некорректный идентификатор задания");

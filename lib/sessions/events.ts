@@ -10,7 +10,7 @@
  */
 import type { MessageStreamEvent } from "eve/client";
 import { sessions } from "eve/server";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { runningBashJob } from "../sandbox/bash-jobs";
 import { getDb } from "../db/client";
@@ -111,10 +111,13 @@ export async function recordBashJob(
 ): Promise<void> {
   const row = bashJobRow(appSessionId, event);
   if (row === null) return;
-  await getDb()
-    .insert(bashJobs)
-    .values(row)
-    .onConflictDoNothing({ target: [bashJobs.appSessionId, bashJobs.jobId] });
+  await getDb().transaction(async (tx) => {
+    const [session] = await tx.select({ id: appSessions.id }).from(appSessions)
+      .where(and(eq(appSessions.id, appSessionId), isNull(appSessions.deletedAt))).for("update");
+    if (!session) return;
+    await tx.insert(bashJobs).values(row)
+      .onConflictDoNothing({ target: [bashJobs.appSessionId, bashJobs.jobId] });
+  });
 }
 
 function eventId(event: MessageStreamEvent): string | null {
@@ -155,7 +158,7 @@ export async function syncAppSession(
       const updated = await tx
         .update(appSessions)
         .set({ streamCursor: nextCursor, ...(touch ? { updatedAt: sql`now()` } : {}) })
-        .where(and(eq(appSessions.id, appSessionId), eq(appSessions.streamCursor, cursor)))
+        .where(and(eq(appSessions.id, appSessionId), eq(appSessions.streamCursor, cursor), isNull(appSessions.deletedAt)))
         .returning({ id: appSessions.id });
       if (updated.length === 0) return false;
 

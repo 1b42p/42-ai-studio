@@ -10,11 +10,11 @@ import type { NextRequest } from "next/server";
 
 import { checkOrigin, requireApiUser } from "@/lib/auth/guard";
 import { loadConfig } from "@/lib/config";
-import { getDb } from "@/lib/db/client";
 import { media } from "@/lib/db/schema";
 import { errorResponse } from "@/lib/http/errors";
+import { MediaSessionGoneError, withLiveMediaSession } from "@/lib/media/live-session";
 import { getStorage } from "@/lib/s3";
-import { findAppSessionForUser } from "@/lib/sessions/service";
+import { findUserSession } from "@/lib/sessions/service";
 import { isUuid } from "@/lib/sessions/access";
 import { uploadObjectKey } from "@/lib/uploads/keys";
 import { formatUploadLimit, UPLOAD_URL_TTL_SECONDS } from "@/lib/uploads/limits";
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!isUuid(appSessionId)) {
     return errorResponse(404, "not_found", SESSION_NOT_FOUND_MESSAGE);
   }
-  const session = await findAppSessionForUser(appSessionId, user.id);
+  const session = await findUserSession(user.id, appSessionId);
   if (session === null) return errorResponse(404, "not_found", SESSION_NOT_FOUND_MESSAGE);
 
   const id = randomUUID();
@@ -67,16 +67,29 @@ export async function POST(request: NextRequest): Promise<Response> {
     expiresIn: UPLOAD_URL_TTL_SECONDS,
   });
 
-  await getDb().insert(media).values({
-    id,
-    userId: user.id,
-    appSessionId,
-    kind: "upload",
-    objectKey,
-    contentType,
-    sizeBytes,
-    originalName: uploadOriginalName(name),
-  });
+  try {
+    await withLiveMediaSession(appSessionId, async (tx) =>
+      tx.insert(media).values({
+        id,
+        userId: user.id,
+        appSessionId,
+        kind: "upload",
+        objectKey,
+        contentType,
+        sizeBytes,
+        originalName: uploadOriginalName(name),
+      }),
+    );
+  } catch (error) {
+    if (error instanceof MediaSessionGoneError) {
+      return errorResponse(404, "not_found", SESSION_NOT_FOUND_MESSAGE);
+    }
+    throw error;
+  }
+
+  if ((await findUserSession(user.id, appSessionId)) === null) {
+    return errorResponse(404, "not_found", SESSION_NOT_FOUND_MESSAGE);
+  }
 
   return Response.json(
     {

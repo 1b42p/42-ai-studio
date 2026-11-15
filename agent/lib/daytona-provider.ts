@@ -75,7 +75,10 @@ async function boundSession(
   const deadline = Date.now() + 10_000;
   do {
     const [session] = await getDb().select().from(appSessions).where(eq(appSessions.eveSessionId, eveSessionId));
-    if (session !== undefined) return session;
+    if (session !== undefined) {
+      if (session.deletedAt !== null) throw new StudioSandboxError("session_not_bound");
+      return session;
+    }
     await setTimeout(500);
   } while (Date.now() < deadline);
   throw new StudioSandboxError("session_not_bound");
@@ -256,7 +259,7 @@ async function connected(machine: DaytonaMachine, appSessionId: string, wait: Sa
       lastActiveAt: new Date(), daytonaActivityAt: machine.lastActivityAt ?? null, stoppedAt: null,
       waitGeneration: wait.generation, launchStartedAt: null })
     .where(and(identity, sqlExpression`exists (select 1 from app_sessions
-      where id = ${appSessionId} and sandbox_wait_generation = ${wait.generation})`))
+       where id = ${appSessionId} and deleted_at is null and sandbox_wait_generation = ${wait.generation})`))
     .returning({ id: sandboxes.id });
   if (!updated.length) throw new StudioSandboxError("sandbox_wait_cancelled");
   const connection = machine.connect({
@@ -440,6 +443,9 @@ export function createDaytonaLifecycle() {
         try {
           await sql`select pg_advisory_lock(1, hashtext(${session.id}::text))`;
           locked = true;
+          if (await findAppSessionById(session.id) === null) {
+            throw new StudioSandboxError("session_not_bound");
+          }
           await assertSandboxWait(wait);
           const [existing] = await sql<{ id: string; daytonaKeyId: string; daytonaSandboxId: string; state: StoredState }[]>`
             select id, daytona_key_id as "daytonaKeyId", daytona_sandbox_id as "daytonaSandboxId", state
@@ -608,8 +614,11 @@ export function createDaytonaLifecycle() {
               const lock = await getLockSqlClient().reserve();
               let locked = false;
               try {
-                await lock`select pg_advisory_lock(1, hashtext(${session.id}::text))`;
-                locked = true;
+                 await lock`select pg_advisory_lock(1, hashtext(${session.id}::text))`;
+                 locked = true;
+                 if (await findAppSessionById(session.id) === null) {
+                   throw new StudioSandboxError("session_not_bound");
+                 }
                 return await liveMachine(
                   backend, state.sandboxId,
                   () => beginSandboxLaunch(wait),
@@ -645,6 +654,9 @@ export function createDaytonaLifecycle() {
       options.abortSignal?.throwIfAborted();
       const [session] = await getDb().select().from(appSessions).where(eq(appSessions.eveSessionId, ctx.session.id));
       if (session === undefined) return;
+      // При удалении приложения машина убирается под блокировкой явной
+      // операции. Хук reset не должен гоняться с ней и поглощать её отказ.
+      if (session.deletedAt !== null) return;
       const [row] = await getDb().select().from(sandboxes).where(eq(sandboxes.appSessionId, session.id));
       const target = state ?? (row ? { keyId: row.daytonaKeyId, sandboxId: row.daytonaSandboxId } : null);
       if (target === null) return;

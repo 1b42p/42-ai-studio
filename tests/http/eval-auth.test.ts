@@ -1,13 +1,15 @@
 /** Eval-принципал проверяется через настоящий HTTP, хуки и тестовую БД. */
 import { Client } from "eve/client";
+import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, inject, test } from "vitest";
 
 import { authenticateEval } from "../../agent/lib/eval-auth";
 import { loadConfig } from "../../lib/config";
+import { appSessions } from "../../lib/db/schema";
 import { appOutput, fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, eveClientAs, waitForStoredEvents } from "./support/chat";
-import { createUser } from "./support/db";
+import { createUser, db } from "./support/db";
 
 function evalToken(): string {
   const token = loadConfig().eveEvalAuthToken;
@@ -136,6 +138,28 @@ describe("локальный eval bearer по HTTP", () => {
     });
     expect(denied.status).toBe(403);
     expect(await denied.json()).toMatchObject({ code: "session_forbidden" });
+  }, 90_000);
+
+  test("метка удаления не превращает пользовательский корень или копию в eval-сессию", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const userClient = await eveClientAs(user, id);
+    const created = await userClient.sessions.create({ message: '/tool agent {"message":"привет"}' });
+    const root = await created.response.result();
+    const copy = root.events.find((event) => event.type === "agent.started");
+    if (copy === undefined) throw new Error("Пользовательская копия не объявлена");
+    await waitForStoredEvents(user, id, (events) => events.some((event) => event.payload.type === "session.waiting"));
+    await db().update(appSessions).set({ deletedAt: new Date() }).where(eq(appSessions.id, id));
+    for (const sid of [root.sessionId, copy.data.sessionId]) {
+      const stream = await request(`/eve/v1/session/${sid}/stream?follow=false`);
+      expect(stream.status).toBe(403);
+      expect(await stream.json()).toMatchObject({ code: "session_forbidden" });
+      const write = await request(`/eve/v1/session/${sid}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "не менять историю" }),
+      });
+      expect(write.status).toBe(403);
+    }
   }, 90_000);
 });
 

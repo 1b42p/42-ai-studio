@@ -13,6 +13,7 @@ import { getStorage, type Storage } from "@/lib/s3";
 
 import { contentTypeForPath, fileNameForPath } from "./files";
 import { mediaObjectKey } from "./keys";
+import { requireLiveMediaSession } from "./live-session";
 import { resolveSandboxFilePath } from "./sandbox-path";
 
 export type MediaCopyReason = "not_found" | "outside_workspace" | "too_large" | "copy_failed";
@@ -137,17 +138,26 @@ export async function copySandboxFile(
   const limited = limitedStream(source, options.maxBytes);
 
   try {
+    await requireLiveMediaSession(options.appSessionId);
     await storage.putStream(objectKey, limited.stream, contentType);
+    // Удаление могло очистить префикс, пока поток ещё загружался.
+    await requireLiveMediaSession(options.appSessionId);
   } catch (error) {
     // Не оставляем часть объекта, если поток оборвался или превысил предел.
-    await storage.deleteObject(objectKey).catch(() => undefined);
+    try {
+      await storage.deleteObject(objectKey);
+    } catch (cleanupError) {
+      throw new MediaCopyError("copy_failed", "Не удалось удалить незавершённую копию", {
+        cause: new AggregateError([error, cleanupError]),
+      });
+    }
     if (error instanceof MediaCopyError) throw error;
     throw new MediaCopyError("copy_failed", "Не удалось сохранить файл", { cause: error });
   }
 
   const sizeBytes = limited.bytes();
   if (sizeBytes > options.maxBytes) {
-    await storage.deleteObject(objectKey).catch(() => undefined);
+    await storage.deleteObject(objectKey);
     throw new MediaCopyError("too_large", "Файл больше предела");
   }
 

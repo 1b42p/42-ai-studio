@@ -7,17 +7,18 @@
  * заголовку `x-studio-session-id`, на остальных маршрутах — по привязке
  * идентификатора сессии eve к сессии приложения этого пользователя.
  */
-import { ForbiddenError, type AuthFn, type AuthResult } from "eve/channels/auth";
+import { extractBearerToken, ForbiddenError, UnauthenticatedError, type AuthFn, type AuthResult } from "eve/channels/auth";
 import { eveChannel } from "eve/channels/eve";
+import { decodeJwt, errors } from "jose";
 
 import { fetchUserAttachment } from "@/agent/lib/attachment-fetch";
 import { authenticateEval } from "../lib/eval-auth";
 import { getUserFromRequest } from "@/lib/auth/request";
+import { verifyInternalToken } from "@/lib/auth/internal-tokens";
 import { loadConfig, readUploadMaxBytes } from "@/lib/config";
 import type { User } from "@/lib/db/schema";
 import { removeSandboxQueueEntry } from "@/lib/sandbox/queue-state";
-import { findAgentSessionByEveId } from "@/lib/sessions/agent-sessions";
-import { findAppSessionByEveId } from "@/lib/sessions/service";
+import { isUserEveSession } from "@/lib/sessions/agent-sessions";
 import {
   APP_SESSION_HEADER,
   assertEveSessionAccess,
@@ -27,6 +28,34 @@ import {
 } from "@/lib/sessions/access";
 
 const INFO_ROUTE_PATH = "/eve/v1/info";
+
+/** Непроверенный iss выбирает ветку, но никогда не даёт полномочий. */
+async function authenticateInternal(request: Request): Promise<AuthResult | null> {
+  const token = extractBearerToken(request.headers.get("authorization"));
+  if (!token) return null;
+  try {
+    if (decodeJwt(token).iss !== "studio-app") return null;
+  } catch {
+    return null;
+  }
+
+  let payload;
+  try {
+    payload = await verifyInternalToken(token);
+  } catch (error) {
+    if (!(error instanceof errors.JOSEError)) throw error;
+    throw new UnauthenticatedError({ code: "invalid_internal_token", message: "Служебный токен недействителен" });
+  }
+
+  const route = /^\/eve\/v1\/session\/([^/]+)\/(cancel|reset)$/.exec(new URL(request.url).pathname);
+  if (payload.purpose !== "eve_session_end" || typeof payload.sid !== "string" ||
+    request.method !== "POST" || route === null || route[1] !== payload.sid) {
+    throw new ForbiddenError({ code: "internal_token_forbidden", message: "Служебный токен не разрешает этот запрос" });
+  }
+  return {
+    authenticator: "studio-internal", principalType: "service", principalId: "studio-app", attributes: {},
+  };
+}
 
 /** Кто пришёл: пользователь по cookie `studio_session` или никто. */
 async function resolveAuthenticatedUser(request: Request): Promise<User | null> {
@@ -77,15 +106,15 @@ export function sessionAuthFor(
 export function studioAuth(): AuthFn<Request> {
   return async (request): Promise<AuthResult | null> => {
     const config = loadConfig();
+    const internalPrincipal = await authenticateInternal(request);
+    if (internalPrincipal !== null) return internalPrincipal;
     const evalPrincipal = authenticateEval(request, config);
     if (evalPrincipal !== null) {
       const route = parseEveRoute(request.method, request.url);
       // Eval-token не даёт доступ к пользовательским корням и копиям.
       // Только чтение: оценки не создают строки в пользовательской БД.
       if (route.kind === "session") {
-        const root = await findAppSessionByEveId(route.sessionId);
-        const copy = root === null ? await findAgentSessionByEveId(route.sessionId) : null;
-        if (root !== null || copy !== null) {
+        if (await isUserEveSession(route.sessionId)) {
           throw new ForbiddenError({ code: "session_forbidden", message: "Сессия недоступна" });
         }
       }

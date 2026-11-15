@@ -1,6 +1,19 @@
 import { expect, test } from "vitest";
 import { startApp } from "./support/app";
 
+test.each([undefined, "", "short", "x".repeat(31)])(
+  "сервер не запускается без надёжного INTERNAL_API_SECRET (%s)", async (value) => {
+    const app = await startApp({ env: { INTERNAL_API_SECRET: value }, expectExit: true });
+    try {
+      expect(await app.exited).not.toBe(0);
+      expect(app.output()).toContain("INTERNAL_API_SECRET");
+      if (value) expect(app.output().includes(value)).toBe(false);
+    } finally {
+      await app.stop();
+    }
+  },
+);
+
 test.each([undefined, "", "invalid-base64", Buffer.alloc(31).toString("base64")])(
   "сервер не запускается с некорректным SECRETS_ENCRYPTION_KEY (%s)",
   async (value) => {

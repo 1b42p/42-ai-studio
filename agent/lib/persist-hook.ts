@@ -135,6 +135,7 @@ export function createPersistEventHandler(
           console.warn("[sessions] сессию eve не к чему привязать", {
             eveSessionId: ctx.session.id,
           });
+          ctx.cancel();
           return;
         }
         const confirmed = await deps.syncAndConfirm(appSession.id, event.meta?.id ?? null);

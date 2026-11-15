@@ -7,7 +7,7 @@
  * пишет синхронизатор событий, а канал по ней проверяет доступ.
  */
 import type { MessageStreamEvent } from "eve/client";
-import { and, eq, gt, isNotNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "../db/client";
 import { agentSessions, appSessions, sessionEvents } from "../db/schema";
@@ -27,6 +27,16 @@ export interface CopySessionBinding {
   readonly id: string;
   readonly appSessionId: string;
   readonly userId: string;
+}
+
+/** Изоляция оценок включает помеченные сессии, пока reset ещё не завершён. */
+export async function isUserEveSession(eveSessionId: string): Promise<boolean> {
+  const [root] = await getDb().select({ id: appSessions.id }).from(appSessions)
+    .where(eq(appSessions.eveSessionId, eveSessionId)).limit(1);
+  if (root) return true;
+  const [copy] = await getDb().select({ id: agentSessions.id }).from(agentSessions)
+    .where(eq(agentSessions.eveSessionId, eveSessionId)).limit(1);
+  return copy !== undefined;
 }
 
 /**
@@ -64,7 +74,7 @@ export async function findAgentSessionByEveId(
     })
     .from(agentSessions)
     .innerJoin(appSessions, eq(agentSessions.appSessionId, appSessions.id))
-    .where(eq(agentSessions.eveSessionId, eveSessionId))
+    .where(and(eq(agentSessions.eveSessionId, eveSessionId), isNull(appSessions.deletedAt)))
     .limit(1);
   return row ?? null;
 }
@@ -103,6 +113,7 @@ export async function hasRecentSessionActivity(
     .where(
       and(
         eq(appSessions.userId, userId),
+        isNull(appSessions.deletedAt),
         isNotNull(appSessions.eveSessionId),
         gt(
           sessionEvents.createdAt,

@@ -170,18 +170,40 @@ export class Storage {
   }
 
   /** Удаление всех объектов по префиксу (с постраничным обходом списка). */
-  async deletePrefix(prefix: string): Promise<number> {
-    const keys = await this.listKeys(prefix);
-    for (let index = 0; index < keys.length; index += 1000) {
-      const chunk = keys.slice(index, index + 1000);
-      await this.client.send(
-        new DeleteObjectsCommand({
+  async deletePrefix(prefix: string, options: { signal?: AbortSignal } = {}): Promise<number> {
+    let continuationToken: string | undefined;
+    let deleted = 0;
+    do {
+      // Один предел покрывает и чтение страницы, и удаление всех её ключей.
+      const timeout = AbortSignal.timeout(60_000);
+      const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+      signal.throwIfAborted();
+      const page = await this.client.send(new ListObjectsV2Command({
+        Bucket: this.bucket,
+        Prefix: prefix,
+        MaxKeys: 1000,
+        ContinuationToken: continuationToken,
+      }), { abortSignal: signal });
+      const keys = (page.Contents ?? []).flatMap((item) => item.Key === undefined ? [] : [item.Key]);
+      for (let index = 0; index < keys.length; index += 1000) {
+        signal.throwIfAborted();
+        const chunk = keys.slice(index, index + 1000);
+        const result = await this.client.send(new DeleteObjectsCommand({
           Bucket: this.bucket,
           Delete: { Objects: chunk.map((Key) => ({ Key })) },
-        }),
-      );
-    }
-    return keys.length;
+        }), { abortSignal: signal });
+        if (result.Errors?.length) {
+          throw new StorageDeletionError(result.Errors.map((error) => ({
+            key: error.Key ?? "", code: error.Code ?? "Unknown",
+          })));
+        }
+        deleted += chunk.length;
+      }
+      signal.throwIfAborted();
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+      if (page.IsTruncated && !continuationToken) throw new Error("S3 returned no continuation token");
+    } while (continuationToken !== undefined);
+    return deleted;
   }
 
   /** Подписанная ссылка на чтение (с необязательным именем файла для скачивания). */
@@ -214,6 +236,14 @@ export class Storage {
       expiresIn: options.expiresIn ?? 3600,
       signableHeaders: new Set(["content-type"]),
     });
+  }
+}
+
+/** Частичный отказ DeleteObjects даже при HTTP 200 нельзя считать успехом. */
+export class StorageDeletionError extends Error {
+  constructor(readonly failures: ReadonlyArray<{ key: string; code: string }>) {
+    super(`S3 could not delete objects: ${failures.map(({ key, code }) => `${key} (${code})`).join(", ")}`);
+    this.name = "StorageDeletionError";
   }
 }
 

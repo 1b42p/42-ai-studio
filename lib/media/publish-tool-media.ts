@@ -5,17 +5,18 @@
  *
  * Модуль общий: его вызывают инструменты через `@/lib/media/publish-tool-media`.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { SandboxSession } from "eve/sandbox";
 
 import { loadConfig } from "@/lib/config";
 import { getDb } from "@/lib/db/client";
-import { media, toolCallMedia } from "@/lib/db/schema";
+import { appSessions, media, toolCallMedia } from "@/lib/db/schema";
 import { getStorage, type Storage } from "@/lib/s3";
 import { findAppSessionByEveId } from "@/lib/sessions/service";
 
 import { copySandboxFile, MediaCopyError, type MediaCopyReason } from "./copy";
 import { resolveSandboxFilePath } from "./sandbox-path";
+import { MediaSessionGoneError, withLiveMediaSession } from "./live-session";
 
 export type ToolMediaKind = "tool_media" | "preview";
 export type PublishToolMediaReason = "no_session" | MediaCopyReason;
@@ -60,11 +61,13 @@ async function existingMediaId(
   const [row] = await getDb()
     .select({ mediaId: toolCallMedia.mediaId })
     .from(toolCallMedia)
+    .innerJoin(appSessions, eq(appSessions.id, toolCallMedia.appSessionId))
     .where(
       and(
         eq(toolCallMedia.appSessionId, appSessionId),
         eq(toolCallMedia.callId, callId),
         eq(toolCallMedia.sandboxPath, sandboxPath),
+        isNull(appSessions.deletedAt),
       ),
     )
     .limit(1);
@@ -114,43 +117,70 @@ export async function publishToolMedia(
     });
   }
 
-  const db = getDb();
-  const [created] = await db
-    .insert(media)
-    .values({
-      userId: session.userId,
-      appSessionId: session.id,
-      kind,
-      objectKey: copied.objectKey,
-      contentType: copied.contentType,
-      sizeBytes: copied.sizeBytes,
-      originalName: copied.originalName,
-    })
-    .returning({ id: media.id });
-  if (created === undefined) {
-    throw new PublishToolMediaError("copy_failed", "Строка media не создана");
+  try {
+    const result = await withLiveMediaSession(session.id, async (tx) => {
+      const [created] = await tx
+        .insert(media)
+        .values({
+          userId: session.userId,
+          appSessionId: session.id,
+          kind,
+          objectKey: copied.objectKey,
+          contentType: copied.contentType,
+          sizeBytes: copied.sizeBytes,
+          originalName: copied.originalName,
+        })
+        .returning({ id: media.id });
+      if (created === undefined) {
+        throw new PublishToolMediaError("copy_failed", "Строка media не создана");
+      }
+
+      const [linked] = await tx
+        .insert(toolCallMedia)
+        .values({
+          appSessionId: session.id,
+          callId: ctx.callId,
+          sandboxPath: path.path,
+          mediaId: created.id,
+        })
+        .onConflictDoNothing()
+        .returning({ mediaId: toolCallMedia.mediaId });
+
+      if (linked !== undefined) return { mediaId: linked.mediaId, redundant: false };
+
+      // Параллельный повтор шага успел первым: оставляем одну строку media
+      // и не оставляем второй объект в S3.
+      const [winner] = await tx
+        .select({ mediaId: toolCallMedia.mediaId })
+        .from(toolCallMedia)
+        .innerJoin(appSessions, eq(appSessions.id, toolCallMedia.appSessionId))
+        .where(
+          and(
+            eq(toolCallMedia.appSessionId, session.id),
+            eq(toolCallMedia.callId, ctx.callId),
+            eq(toolCallMedia.sandboxPath, path.path),
+            isNull(appSessions.deletedAt),
+          ),
+        );
+      await tx.delete(media).where(eq(media.id, created.id));
+      if (winner === undefined) {
+        throw new PublishToolMediaError("copy_failed", "Связь с вызовом не создана");
+      }
+      return { mediaId: winner.mediaId, redundant: true };
+    });
+    if (result.redundant) {
+      await (dependencies.storage ?? getStorage()).deleteObject(copied.objectKey);
+    }
+    return { mediaId: result.mediaId };
+  } catch (error) {
+    // В том числе FK/INSERT после физического удаления сессии. SQL откатился,
+    // но объект создан вне транзакции и требует отдельной компенсации.
+    await (dependencies.storage ?? getStorage()).deleteObject(copied.objectKey);
+    if (error instanceof PublishToolMediaError) throw error;
+    throw new PublishToolMediaError(
+      error instanceof MediaSessionGoneError ? "no_session" : "copy_failed",
+      "Не удалось сохранить файл",
+      { cause: error },
+    );
   }
-
-  const [linked] = await db
-    .insert(toolCallMedia)
-    .values({
-      appSessionId: session.id,
-      callId: ctx.callId,
-      sandboxPath: path.path,
-      mediaId: created.id,
-    })
-    .onConflictDoNothing()
-    .returning({ mediaId: toolCallMedia.mediaId });
-
-  if (linked !== undefined) return { mediaId: linked.mediaId };
-
-  // Параллельный повтор шага успел первым: оставляем одну строку media
-  // и не оставляем второй объект в S3.
-  const winner = await existingMediaId(session.id, ctx.callId, path.path);
-  await db.delete(media).where(eq(media.id, created.id));
-  await (dependencies.storage ?? getStorage()).deleteObject(copied.objectKey).catch(() => undefined);
-  if (winner === null) {
-    throw new PublishToolMediaError("copy_failed", "Связь с вызовом не создана");
-  }
-  return { mediaId: winner };
 }

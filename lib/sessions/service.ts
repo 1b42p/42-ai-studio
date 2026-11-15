@@ -32,19 +32,20 @@ export async function createAppSession(userId: string): Promise<AppSession> {
 
 /** Сессия по идентификатору приложения, без проверки владельца. */
 export async function findAppSessionById(id: string): Promise<AppSession | null> {
-  const [row] = await getDb().select().from(appSessions).where(eq(appSessions.id, id)).limit(1);
+  const [row] = await getDb().select().from(appSessions)
+    .where(and(eq(appSessions.id, id), isNull(appSessions.deletedAt))).limit(1);
   return row ?? null;
 }
 
 /** Сессия этого пользователя; чужая и несуществующая неразличимы. */
-export async function findAppSessionForUser(
-  id: string,
+export async function findUserSession(
   userId: string,
+  id: string,
 ): Promise<AppSession | null> {
   const [row] = await getDb()
     .select()
     .from(appSessions)
-    .where(and(eq(appSessions.id, id), eq(appSessions.userId, userId)))
+    .where(and(eq(appSessions.id, id), eq(appSessions.userId, userId), isNull(appSessions.deletedAt)))
     .limit(1);
   return row ?? null;
 }
@@ -54,7 +55,7 @@ export async function findAppSessionByEveId(eveSessionId: string): Promise<AppSe
   const [row] = await getDb()
     .select()
     .from(appSessions)
-    .where(eq(appSessions.eveSessionId, eveSessionId))
+    .where(and(eq(appSessions.eveSessionId, eveSessionId), isNull(appSessions.deletedAt)))
     .limit(1);
   return row ?? null;
 }
@@ -75,6 +76,7 @@ export async function claimSessionStart(
       and(
         eq(appSessions.id, appSessionId),
         eq(appSessions.userId, userId),
+        isNull(appSessions.deletedAt),
         isNull(appSessions.eveSessionId),
         or(
           isNull(appSessions.startRequestedAt),
@@ -102,6 +104,7 @@ export async function bindAppSession(
       and(
         eq(appSessions.id, appSessionId),
         eq(appSessions.userId, userId),
+        isNull(appSessions.deletedAt),
         isNull(appSessions.eveSessionId),
       ),
     )
@@ -117,6 +120,7 @@ export async function findStartingAppSession(userId: string): Promise<AppSession
     .where(
       and(
         eq(appSessions.userId, userId),
+        isNull(appSessions.deletedAt),
         isNull(appSessions.eveSessionId),
         gt(appSessions.startRequestedAt, sql`now() - interval '60 seconds'`),
       ),
@@ -146,7 +150,7 @@ export async function readSessionEvents(
       const [session] = await tx
         .select({ streamCursor: appSessions.streamCursor })
         .from(appSessions)
-        .where(eq(appSessions.id, appSessionId))
+        .where(and(eq(appSessions.id, appSessionId), isNull(appSessions.deletedAt)))
         .limit(1);
       if (session === undefined) return null;
 
@@ -179,7 +183,7 @@ export async function setTitleIfEmpty(
   await tx
     .update(appSessions)
     .set({ title, titleSearch: titleSearchKey(title) })
-    .where(and(eq(appSessions.id, appSessionId), isNull(appSessions.title)));
+    .where(and(eq(appSessions.id, appSessionId), isNull(appSessions.title), isNull(appSessions.deletedAt)));
 }
 
 /** Сохранено ли событие с этим `meta.id`. */

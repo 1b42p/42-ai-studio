@@ -10,6 +10,9 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { SessionsEmptyState } from "@/components/studio/sessions-empty-state";
+import { DeleteSessionButton } from "@/components/studio/sessions/delete-session-button";
+import { DeleteSessionDialog } from "@/components/studio/sessions/delete-session-dialog";
+import { useSessionDeletion } from "@/components/studio/sessions/use-session-deletion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
@@ -21,6 +24,7 @@ import {
 } from "@/components/ui/input-group";
 import {
   Item,
+  ItemActions,
   ItemContent,
   ItemDescription,
   ItemGroup,
@@ -101,6 +105,8 @@ export interface SessionListProps {
   /** Первая страница не собралась: показываем ошибку, а не пустой список. */
   initialError?: boolean;
   request: (input: SessionListQuery) => Promise<SessionListPage>;
+  /** Подмена DELETE для отрисовки без сервера; штатный запрос — в контроллере. */
+  deleteRequest?: (id: string) => Promise<void>;
   /** Для проверок. Страница не передаёт: берётся текущий момент и пояс браузера. */
   now?: Date;
   timeZone?: string;
@@ -116,6 +122,7 @@ export function SessionList({
   initialQuery,
   initialError = false,
   request,
+  deleteRequest,
   now,
   timeZone,
 }: SessionListProps) {
@@ -130,6 +137,16 @@ export function SessionList({
   const requestRef = useRef(request);
   requestRef.current = request;
   const generation = useRef(0);
+  // Не возвращаем удалённую строку из ответа поиска, начатого до удаления.
+  const deletedIds = useRef(new Set<string>());
+  const deleteFocus = useRef<HTMLElement | null>(null);
+  const deletion = useSessionDeletion({
+    request: deleteRequest,
+    onDeleted(id) {
+      deletedIds.current.add(id);
+      setItems((previous) => previous.filter((item) => item.id !== id));
+    },
+  });
 
   const load = (query: string, cursor: string | undefined, nextPurpose: "search" | "more") => {
     const current = generation.current + 1;
@@ -147,8 +164,9 @@ export function SessionList({
       .current({ q: query, cursor })
       .then((page) => {
         if (generation.current !== current) return;
+        const visible = page.items.filter((item) => !deletedIds.current.has(item.id));
         setItems((currentItems) =>
-          nextPurpose === "more" ? [...currentItems, ...page.items] : page.items,
+          nextPurpose === "more" ? [...currentItems, ...visible] : visible,
         );
         setNextCursor(page.nextCursor);
         setStatus("idle");
@@ -221,19 +239,33 @@ export function SessionList({
       {!searching && items.length > 0 ? (
         <ItemGroup>
           {items.map((item) => (
-            <Item key={item.id} render={<a href={`/s/${item.id}`} />}>
-              <ItemMedia
-                className="aspect-video w-24 rounded-md bg-muted md:w-40"
-                variant="icon"
+            <Item className="flex-nowrap" key={item.id} role="listitem">
+              <Item
+                className="min-w-0 flex-1 flex-nowrap p-0"
+                render={<a href={`/s/${item.id}`} />}
               >
-                <ClapperboardIcon />
-              </ItemMedia>
-              <ItemContent className="min-w-0">
-                <ItemTitle className="line-clamp-none w-full min-w-0 truncate">
-                  {item.title ?? "Без названия"}
-                </ItemTitle>
-                <SessionWhen now={now} timeZone={timeZone} value={item.updatedAt} />
-              </ItemContent>
+                <ItemMedia
+                  className="aspect-video w-24 rounded-md bg-muted md:w-40"
+                  variant="icon"
+                >
+                  <ClapperboardIcon />
+                </ItemMedia>
+                <ItemContent className="min-w-0">
+                  <ItemTitle className="line-clamp-none w-full min-w-0 truncate">
+                    {item.title ?? "Без названия"}
+                  </ItemTitle>
+                  <SessionWhen now={now} timeZone={timeZone} value={item.updatedAt} />
+                </ItemContent>
+              </Item>
+              <ItemActions>
+                <DeleteSessionButton
+                  title={item.title ?? "Без названия"}
+                  onClick={() => {
+                    deleteFocus.current = document.activeElement as HTMLElement;
+                    deletion.open({ id: item.id, title: item.title ?? "Без названия" });
+                  }}
+                />
+              </ItemActions>
             </Item>
           ))}
         </ItemGroup>
@@ -275,6 +307,14 @@ export function SessionList({
           Показать ещё
         </Button>
       ) : null}
+      <DeleteSessionDialog
+        finalFocus={deleteFocus}
+        onClose={deletion.close}
+        onConfirm={() => void deletion.confirm()}
+        open={deletion.target !== null}
+        state={deletion.state}
+        title={deletion.target?.title ?? ""}
+      />
     </section>
   );
 }
