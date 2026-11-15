@@ -2,6 +2,9 @@
 
 import { LogOutIcon } from "lucide-react";
 
+import type { NavItem } from "@/components/studio/nav";
+import { useLogout } from "@/components/studio/use-logout";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -18,10 +21,11 @@ export interface UserMenuProps {
   user: PublicUser;
   /** Выход: запрос к `/api/auth/logout` и переход на `/login`. */
   onLogout: () => void | Promise<void>;
+  items?: readonly Pick<NavItem, "title" | "href" | "icon">[];
 }
 
 /** Инициалы для аватара: первые буквы первых двух слов. */
-function initialsOf(name: string): string {
+export function initialsOf(name: string): string {
   const words = name.trim().split(/\s+/).filter((word) => word.length > 0);
   if (words.length === 0) return "?";
   const letters = words.slice(0, 2).map((word) => Array.from(word)[0] ?? "");
@@ -32,7 +36,8 @@ function initialsOf(name: string): string {
  * Блок пользователя внизу боковой панели: аватар, имя, `@username` и меню
  * с выходом. Длинное имя усекается и не расширяет панель.
  */
-export function UserMenu({ user, onLogout }: UserMenuProps) {
+export function UserMenu({ user, onLogout, items = [] }: UserMenuProps) {
+  const { pending, failed, logout } = useLogout(onLogout);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -55,7 +60,23 @@ export function UserMenu({ user, onLogout }: UserMenuProps) {
       <DropdownMenuContent align="start" side="top" className="w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="truncate">{user.name}</DropdownMenuLabel>
-          <DropdownMenuItem variant="destructive" onClick={() => void onLogout()}>
+          {items.map(({ title, href, icon: Icon }) => (
+            <DropdownMenuItem key={href} render={<a href={href} />}>
+              <Icon />
+              {title}
+            </DropdownMenuItem>
+          ))}
+          {failed ? (
+            <Alert variant="destructive">
+              <AlertDescription>Не удалось выйти. Попробуйте ещё раз.</AlertDescription>
+            </Alert>
+          ) : null}
+          <DropdownMenuItem
+            variant="destructive"
+            disabled={pending}
+            closeOnClick={false}
+            onClick={() => void logout()}
+          >
             <LogOutIcon />
             Выйти
           </DropdownMenuItem>

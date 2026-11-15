@@ -134,6 +134,13 @@
       "when": 1794756588503,
       "tag": "0018_session_deletion",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794758229448,
+      "tag": "0019_user_settings",
+      "breakpoints": true
     }
   ]
 }

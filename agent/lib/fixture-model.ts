@@ -7,11 +7,12 @@
  *   после результата инструмента модель отвечает «готово»;
  * - `/slow <секунды> <текст>` — ответ `Эхо: <текст>` через указанное время
  *   (от 1 до 120 секунд);
+ * - `/prompt` — системные и пользовательские сообщения запроса;
  * - иначе — `Эхо: <текст>`.
  *
  * Логика вынесена в чистую функцию, чтобы проверять её без eve и сети.
  */
-import type { MockModelRequest, MockModelResponse } from "eve/evals";
+import type { MockModelMessage, MockModelRequest, MockModelResponse } from "eve/evals";
 
 import { sleep } from "@/lib/sleep";
 
@@ -30,6 +31,7 @@ const SLOW_MAX_SECONDS = 120;
 /** Разобранная команда фикстурной модели. */
 export type FixtureCommand =
   | { readonly kind: "echo"; readonly text: string }
+  | { readonly kind: "prompt" }
   | { readonly kind: "invalid-json" }
   | { readonly kind: "slow"; readonly seconds: number; readonly text: string }
   | { readonly kind: "tool"; readonly name: string; readonly input: unknown };
@@ -74,7 +76,7 @@ function parseSlowCommand(message: string): FixtureCommand {
 }
 
 /** Маркер, которым eve предваряет сообщение вызывающего в копии агента. */
-const SUBAGENT_MESSAGE_MARKER = "\nCaller message:\n";
+const SUBAGENT_MESSAGE_MARKER = /^Caller message:\r?\n/gm;
 
 /**
  * Сообщение, которое копия получает от eve, обёрнуто в описание роли. Для
@@ -82,17 +84,34 @@ const SUBAGENT_MESSAGE_MARKER = "\nCaller message:\n";
  * обёртку, а команда `/tool` внутри неё не распознавалась бы.
  */
 export function unwrapSubagentMessage(message: string): string {
-  const index = message.lastIndexOf(SUBAGENT_MESSAGE_MARKER);
-  if (index === -1) return message;
-  return message.slice(index + SUBAGENT_MESSAGE_MARKER.length);
+  let start = 0;
+  for (const match of message.matchAll(SUBAGENT_MESSAGE_MARKER)) {
+    start = match.index + match[0].length;
+  }
+  return message.slice(start);
 }
 
 /** Разбирает последнее сообщение пользователя в команду фикстуры. */
 export function parseFixtureCommand(message: string): FixtureCommand {
   const text = unwrapSubagentMessage(message);
+  if (startsWithCommand(text, "/prompt")) return { kind: "prompt" };
   if (startsWithCommand(text, "/tool")) return parseToolCommand(text);
   if (startsWithCommand(text, "/slow")) return parseSlowCommand(text);
   return { kind: "echo", text };
+}
+
+/** Системный контекст целиком; история ответов не размножается при повторе команды. */
+export function buildFixturePrompt(messages: readonly MockModelMessage[]): string {
+  const userLimit = 8000;
+  return messages
+    .filter((message) => message.role === "system" || message.role === "user")
+    .map((message) => {
+      const text = message.role === "user" && message.text.length > userLimit
+        ? `${message.text.slice(0, userLimit)}…[усечено ${message.text.length - userLimit} знаков]`
+        : message.text;
+      return `[${message.role}]\n${text}`;
+    })
+    .join("\n---\n");
 }
 
 /**
@@ -133,6 +152,8 @@ export async function respondToFixture(request: MockModelRequest): Promise<MockM
   const command = parseFixtureCommand(message);
 
   switch (command.kind) {
+    case "prompt":
+      return { text: buildFixturePrompt(request.messages) };
     case "invalid-json":
       return { text: FIXTURE_INVALID_JSON };
     case "tool":

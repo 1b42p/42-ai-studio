@@ -86,6 +86,7 @@ describe("принципал аутентификатора", () => {
     name: "Оператор",
     username: null,
     photoUrl: null,
+    customInstructions: "",
     isOperator: true,
     isBlocked: false,
     createdAt: new Date(),

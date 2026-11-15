@@ -29,6 +29,7 @@ export const users = pgTable("users", {
   name: text("name").notNull(),
   username: text("username"),
   photoUrl: text("photo_url"),
+  customInstructions: text("custom_instructions").notNull().default(""),
   isOperator: boolean("is_operator").notNull().default(false),
   isBlocked: boolean("is_blocked").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

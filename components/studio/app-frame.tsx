@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { AppShell } from "@/components/studio/app-shell";
 import { navItems } from "@/components/studio/nav";
 import { UserMenu } from "@/components/studio/user-menu";
+import { logout } from "@/components/studio/settings/logout";
 import type { PublicUser } from "@/lib/auth/user";
 
 /**
@@ -21,16 +22,17 @@ export function AppFrame({
 }) {
   const pathname = usePathname();
 
-  const logout = async () => {
-    const response = await fetch("/api/auth/logout", { method: "POST" });
-    if (response.ok) window.location.assign("/login");
-  };
-
   return (
     <AppShell
       navItems={navItems}
       pathname={pathname}
-      userSlot={user === null ? undefined : <UserMenu user={user} onLogout={logout} />}
+      userSlot={user === null ? undefined : (
+        <UserMenu
+          user={user}
+          onLogout={logout}
+          items={navItems.filter((item) => item.href === "/settings")}
+        />
+      )}
     >
       {children}
     </AppShell>

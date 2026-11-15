@@ -4,6 +4,7 @@ import { page } from "vitest/browser";
 import { AppShell } from "@/components/studio/app-shell";
 import { navItems } from "@/components/studio/nav";
 import { UserMenu } from "@/components/studio/user-menu";
+import { SettingsIcon } from "lucide-react";
 import type { PublicUser } from "@/lib/auth/user";
 
 import { expectNoHorizontalScroll, renderOnDesktop, renderOnPhone } from "./support/render";
@@ -44,6 +45,37 @@ test("пункт «Выйти» вызывает обработчик", async ()
   await page.getByRole("menuitem", { name: "Выйти" }).click();
 
   expect(onLogout).toHaveBeenCalledTimes(1);
+});
+
+test("дополнительные пункты меню ведут в настройки и сохраняют выход", async () => {
+  await renderOnDesktop(
+    <AppShell
+      navItems={navItems}
+      pathname="/s"
+      userSlot={
+        <UserMenu
+          user={user}
+          onLogout={() => {}}
+          items={[{ title: "Настройки", href: "/settings", icon: SettingsIcon }]}
+        />
+      }
+    >
+      Содержимое
+    </AppShell>,
+  );
+  await page.getByRole("button", { name: "Аккаунт Иван Петров" }).click();
+  await expect.element(page.getByRole("menuitem", { name: "Настройки" })).toHaveAttribute("href", "/settings");
+  await expect.element(page.getByRole("menuitem", { name: "Выйти" })).toBeVisible();
+});
+
+test("ошибка выхода остаётся видимой и позволяет повторить", async () => {
+  const onLogout = vi.fn().mockRejectedValueOnce(new Error("failed")).mockResolvedValueOnce(undefined);
+  await renderOnDesktop(shell(user, onLogout));
+  await page.getByRole("button", { name: "Аккаунт Иван Петров" }).click();
+  await page.getByRole("menuitem", { name: "Выйти" }).click();
+  await expect.element(page.getByRole("alert")).toHaveTextContent("Не удалось выйти. Попробуйте ещё раз.");
+  await page.getByRole("menuitem", { name: "Выйти" }).click();
+  expect(onLogout).toHaveBeenCalledTimes(2);
 });
 
 test("имя в 200 символов не даёт горизонтальной прокрутки", async () => {

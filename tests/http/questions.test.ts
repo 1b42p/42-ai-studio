@@ -32,7 +32,8 @@ test("каталог публикует ask_question и статические �
   const info = await response.json();
   expect(info.tools.static.some((tool: { name: string }) => tool.name === "ask_question")).toBe(true);
   const text = info.instructions.static.map((entry: { content: string }) => entry.content).join("\n");
-  expect(text).toContain("# Длинные ролики");
+  expect(text).toContain("# Результат этапа");
+  expect(text).toContain("больше 60 секунд — черновик.");
   expect(text).toContain("- `ask_question` —");
   expect(readFileSync("agent/instructions.md", "utf8").trimEnd().split("\n").length).toBeLessThanOrEqual(200);
 });
