@@ -178,17 +178,26 @@ describe("доступ", () => {
   test("чужой Origin не меняет данные", async () => {
     const operator = await createUser({ isOperator: true });
     const target = await createUser();
-    const before = await db().select().from(users).where(eq(users.id, target.id));
+
+    const deniedPatch = await api(`/api/admin/users/${target.id}`, {
+      user: operator,
+      method: "PATCH",
+      body: { blocked: true },
+      origin: "https://evil.example",
+    });
+    expect(deniedPatch.status).toBe(403);
+    const [before] = await db().select().from(users).where(eq(users.id, target.id));
+    expect(before.isBlocked).toBe(false);
+    expect(before.deletionRequestedAt).toBeNull();
 
     const blocked = await patch(target.id, operator, true);
     expect(blocked.status).toBe(200);
-    const blockedRow = await db().select().from(users).where(eq(users.id, target.id));
-    expect(blockedRow[0].isBlocked).toBe(true);
+    const [blockedRow] = await db().select().from(users).where(eq(users.id, target.id));
+    expect(blockedRow.isBlocked).toBe(true);
 
     expect((await remove(target.id, operator, "https://evil.example")).status).toBe(403);
     expect(await db().select().from(users).where(eq(users.id, target.id))).toHaveLength(1);
-    expect(blockedRow[0].deletionRequestedAt).toBeNull();
-    expect(before.length).toBe(1);
+    expect(blockedRow.deletionRequestedAt).toBeNull();
   });
 });
 
@@ -205,6 +214,7 @@ describe("выдача права", () => {
     expect(result.cookie).not.toBeNull();
     expect(result.user?.isOperator).toBe(true);
     expect(result.user?.name).toBe(DEFAULT_PROFILE.name);
+    expect(result.user?.photoUrl).toBe(DEFAULT_PROFILE.picture);
   });
 
   test("команды из README выполняются на тестовой базе", async () => {
@@ -320,6 +330,15 @@ describe("список", () => {
     const single = await listPage(operator, { userId: target.id });
     expect(single.body.items.map((item: { id: string }) => item.id)).toEqual([target.id]);
     expect(single.body.totals.users).toBe(5);
+
+    const ignoredSearch = await listPage(operator, {
+      userId: target.id,
+      q: "несуществующий",
+    });
+    expect(ignoredSearch.body.items.map((item: { id: string }) => item.id)).toEqual([
+      target.id,
+    ]);
+    expect(ignoredSearch.body.nextCursor).toBeNull();
 
     const filtered = await listPage(operator, { q: "несуществующий" });
     expect(filtered.body.items).toEqual([]);

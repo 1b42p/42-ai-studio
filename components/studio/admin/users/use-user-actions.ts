@@ -84,7 +84,7 @@ export function useUserActions({
         }
 
         let previous: AdminUserDeleteResponse | null = null;
-        for (let attempt = 0; attempt < 30; attempt += 1) {
+        for (;;) {
           const response = await deleteRequest(action.user.id);
           if (response.done) {
             pending.current = false;
@@ -110,9 +110,6 @@ export function useUserActions({
           }
           previous = response;
         }
-        throw new AdminUsersError(
-          "Не удалось полностью удалить пользователя. Повторите удаление.",
-        );
       } catch (error) {
         setState({
           status: "error",

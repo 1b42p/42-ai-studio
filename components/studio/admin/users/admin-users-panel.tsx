@@ -51,7 +51,6 @@ const EMPTY_TOTALS: AdminUsersTotals = { users: 0, operators: 0, blocked: 0 };
 export interface AdminUsersPanelProps {
   readonly initialPage: AdminUsersPage;
   readonly initialUserId?: string | null;
-  readonly initialQuery?: string;
   /** Первая страница не собралась: показываем ошибку, а не пустой список. */
   readonly initialError?: boolean;
   request?: (input: AdminUsersQuery) => Promise<AdminUsersPage>;
@@ -70,7 +69,6 @@ export interface AdminUsersPanelProps {
 export function AdminUsersPanel({
   initialPage,
   initialUserId = null,
-  initialQuery = "",
   initialError = false,
   request = fetchAdminUsers,
   blockRequest = patchAdminUser,
@@ -79,8 +77,8 @@ export function AdminUsersPanel({
   now,
   timeZone,
 }: AdminUsersPanelProps) {
-  const [queryInput, setQueryInput] = useState(initialQuery);
-  const [appliedQuery, setAppliedQuery] = useState(initialQuery);
+  const [queryInput, setQueryInput] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [items, setItems] = useState<readonly AdminUserItem[]>(
     initialError ? [] : initialPage.items,
   );

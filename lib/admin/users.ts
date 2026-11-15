@@ -171,24 +171,28 @@ async function totals(): Promise<AdminUsersTotals> {
 
 export async function listAdminUsers(request: AdminUsersRequest): Promise<AdminUsersPage> {
   const conditions: SQL[] = [];
-  if (request.userId !== null) conditions.push(eq(users.id, request.userId));
-  if (request.q !== "") {
-    conditions.push(
-      sql`(
-        strpos(${users.telegramId}::text, ${request.q}) = 1
-        or strpos(lower(${users.username}), lower(${request.q})) > 0
-      )`,
-    );
-  }
-  if (request.cursor !== null) {
-    const older = or(
-      lt(users.createdAt, request.cursor.createdAt),
-      and(
-        eq(users.createdAt, request.cursor.createdAt),
-        lt(users.id, request.cursor.id),
-      ),
-    );
-    if (older !== undefined) conditions.push(older);
+  if (request.userId !== null) {
+    // `userId` возвращает только эту строку: поиск и курсор не ограничивают её.
+    conditions.push(eq(users.id, request.userId));
+  } else {
+    if (request.q !== "") {
+      conditions.push(
+        sql`(
+          strpos(${users.telegramId}::text, ${request.q}) = 1
+          or strpos(lower(${users.username}), lower(${request.q})) > 0
+        )`,
+      );
+    }
+    if (request.cursor !== null) {
+      const older = or(
+        lt(users.createdAt, request.cursor.createdAt),
+        and(
+          eq(users.createdAt, request.cursor.createdAt),
+          lt(users.id, request.cursor.id),
+        ),
+      );
+      if (older !== undefined) conditions.push(older);
+    }
   }
 
   const [rows, counts] = await Promise.all([

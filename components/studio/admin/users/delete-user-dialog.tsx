@@ -40,7 +40,7 @@ export function DeleteUserDialog({
   const pending = state.status === "pending";
   const failed = state.status === "error";
   const progress = state.status === "pending" ? state.progress : undefined;
-  const match = user !== null && confirmation.trim() === user.telegramId;
+  const match = user !== null && confirmation === user.telegramId;
   const label = user?.deletionRequestedAt !== null && user?.deletionRequestedAt !== undefined
     ? "Продолжить удаление"
     : "Удалить";

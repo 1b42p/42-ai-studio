@@ -31,10 +31,6 @@ export type DeleteUserResult =
 export interface DeleteUserOptions {
   /** Подмена хранилища S3 для проверки шага очистки. */
   readonly storage?: Pick<Storage, "deletePrefix">;
-  /** Подмена удаления одной сессии. */
-  readonly deleteSession?: (id: string) => Promise<SessionDeletionResult>;
-  /** Часы для бюджета пачки. */
-  readonly now?: () => number;
 }
 
 interface Target {
@@ -74,8 +70,6 @@ export async function deleteUserData(
   options: DeleteUserOptions = {},
 ): Promise<DeleteUserResult> {
   const config = loadConfig();
-  const now = options.now ?? Date.now;
-  const deleteSession = options.deleteSession ?? deleteSessionData;
   const storage = options.storage ?? getStorage();
   // Отдельный пул из одного соединения: сеансовая блокировка не занимает общий
   // пул на время сетевых шагов удаления.
@@ -123,15 +117,15 @@ export async function deleteUserData(
       order by (deleted_at is null) desc, created_at, id
       limit ${SESSIONS_PER_BATCH}`;
 
-    const deadline = now() + BATCH_BUDGET_MS;
+    const deadline = Date.now() + BATCH_BUDGET_MS;
     const failed = new Set<string>();
     let deleted = 0;
 
     for (const session of batch) {
-      if (now() >= deadline) break;
+      if (Date.now() >= deadline) break;
       let result: SessionDeletionResult;
       try {
-        result = await deleteSession(session.id);
+        result = await deleteSessionData(session.id);
       } catch (error) {
         failed.add(session.id);
         console.warn("[admin:user] session delete failed", {
@@ -151,6 +145,12 @@ export async function deleteUserData(
     const remaining = remainingRow?.remaining ?? 0;
 
     if (failed.size > 0) {
+      console.warn("[admin:user] delete incomplete", {
+        operatorId,
+        userId,
+        reason: "sessions",
+        failed: failed.size,
+      });
       return {
         status: "failed",
         message: `Не удалось удалить часть данных (сессий: ${failed.size}). Повторите удаление.`,
@@ -165,8 +165,10 @@ export async function deleteUserData(
     try {
       await storage.deletePrefix(`u/${userId}/`, { signal });
     } catch (error) {
-      console.warn("[admin:user] storage delete failed", {
+      console.warn("[admin:user] delete incomplete", {
+        operatorId,
         userId,
+        reason: "storage",
         status: errorStatus(error),
       });
       return {
@@ -189,6 +191,7 @@ export async function deleteUserData(
     console.warn("[admin:user] delete incomplete", {
       operatorId,
       userId,
+      reason: "unexpected",
       status: errorStatus(error),
     });
     return {

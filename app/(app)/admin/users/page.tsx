@@ -14,7 +14,7 @@ const EMPTY_PAGE: AdminUsersPage = {
 };
 
 /** Раздел «Пользователи»: первая страница собрана на сервере, фильтр — `userId`. */
-export default async function AdminUsersPage({
+export default async function AdminUsersRoute({
   searchParams,
 }: {
   searchParams: Promise<{ userId?: string | string[] }>;

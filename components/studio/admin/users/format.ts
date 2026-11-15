@@ -1,4 +1,4 @@
-/** Подписи админки: инициалы, даты в браузере и статусы. */
+/** Инициалы для аватара пользователя в списке админки. */
 
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean);

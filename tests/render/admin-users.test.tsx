@@ -331,6 +331,8 @@ test("удаление: кнопка активна только при точн
   await expect.element(action).toBeDisabled();
   await input.fill("123");
   await expect.element(action).toBeDisabled();
+  await input.fill("123456789 ");
+  await expect.element(action).toBeDisabled();
   await input.fill("123456789");
   await expect.element(action).toBeEnabled();
   await action.click();
