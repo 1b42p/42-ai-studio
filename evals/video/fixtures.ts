@@ -1,6 +1,7 @@
 import type { EveEvalContext, ToolStub } from "eve/evals";
 import { blockedRead, emptySearch, isolateDownload, isolatePreview } from "../web/fixtures";
 import { resumableSession } from "../support/resumable-session";
+import { isDisabledEvalMemoryResolverManifest } from "../support/disabled-eval-memory-manifest";
 
 export const VIDEO_REQUEST = "Сделай 30-секундный вертикальный ролик 9:16 о пользе утренней зарядки, без озвучки, три сцены.";
 export const VIDEO_EVAL_TIMEOUT_MS = 60 * 60 * 1000;
@@ -45,8 +46,9 @@ export async function videoSession(t: EveEvalContext, { caseId, renderFails = fa
   const covered = new Set(stubs.filter((stub) => stub.match === undefined).map((stub) => stub.tool));
   for (const name of ["bash", "read_file", "edit_file"]) covered.add(name);
   const uncovered = tools.filter(({ name }) => !covered.has(name));
-  if (uncovered.length > 0 || info.tools.dynamic.length > 0) {
-    throw new Error(`Не все инструменты изолированы подменами: ${uncovered.map(({ name }) => name).join(", ")}; dynamic: ${info.tools.dynamic.length}`);
+  const uncoveredDynamic = info.tools.dynamic.filter(tool => !isDisabledEvalMemoryResolverManifest(tool));
+  if (uncovered.length > 0 || uncoveredDynamic.length > 0) {
+    throw new Error(`Не все инструменты изолированы подменами: ${uncovered.map(({ name }) => name).join(", ")}; dynamic: ${uncoveredDynamic.length}`);
   }
   // eve__skill не подменяется: инструкции загружаются из настоящих навыков агента.
   const headers = {

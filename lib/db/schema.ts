@@ -30,6 +30,7 @@ export const users = pgTable("users", {
   username: text("username"),
   photoUrl: text("photo_url"),
   customInstructions: text("custom_instructions").notNull().default(""),
+  memoryEnabled: boolean("memory_enabled").notNull().default(false),
   isOperator: boolean("is_operator").notNull().default(false),
   isBlocked: boolean("is_blocked").notNull().default(false),
   /**
@@ -44,6 +45,31 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
 });
+
+export const userMemory = pgTable(
+  "user_memory",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("user_memory_user_text_unique").on(table.userId, table.text),
+    index("user_memory_user_id_idx").on(table.userId, table.id),
+  ],
+);
+
+export const memoryRecallSnapshots = pgTable(
+  "memory_recall_snapshots",
+  {
+    operationId: text("operation_id").primaryKey(),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    content: text("content"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("memory_recall_snapshots_created_at_idx").on(table.createdAt)],
+);
 
 /**
  * Серверные сессии входа. В базе лежит только SHA-256 токена из cookie,

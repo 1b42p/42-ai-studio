@@ -17,12 +17,14 @@ import {
   authSessions,
   bashJobs,
   media,
+  memoryRecallSnapshots,
   messageFiles,
   queueEntries,
   sandboxes,
   sessionEvents,
   sessionPreviewCalls,
   toolCallMedia,
+  userMemory,
   users,
   type User,
 } from "../../lib/db/schema";
@@ -585,6 +587,15 @@ async function seedDeletionFixture(): Promise<DeletionFixture> {
     appSessionId: sessions[3]!.id,
     userId: target.id,
     need: "create",
+  });
+  await db().insert(userMemory).values({
+    userId: target.id,
+    text: "Любит короткие ролики",
+  });
+  await db().insert(memoryRecallSnapshots).values({
+    operationId: `measure-${randomUUID()}`,
+    userId: target.id,
+    content: "Сохранённые предпочтения",
   });
 
   const otherSession = await createSessionAs(other);
