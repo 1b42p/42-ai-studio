@@ -1,4 +1,5 @@
 import type { EveEvalContext, ToolStub } from "eve/evals";
+import { isDisabledEvalMemoryResolverManifest } from "../support/disabled-eval-memory-manifest";
 
 export const ARTICLE_URL = "https://example.com/articles/morning-walk";
 export const SOURCE_URLS = [
@@ -99,7 +100,7 @@ export async function webSession(t: EveEvalContext, webStubs: readonly ToolStub[
   const covered = new Set(stubs.filter((stub) => stub.match === undefined).map((stub) => stub.tool));
   if (allowNativeQuestion) covered.add("ask_question"); // JSON stubs cannot park a workflow on native input.
   const uncovered = tools.filter(({ name }) => !covered.has(name));
-  if (uncovered.length > 0 || (info.tools?.dynamic?.length ?? 0) > 0) {
+  if (uncovered.length > 0 || info.tools?.dynamic?.some(tool => !isDisabledEvalMemoryResolverManifest(tool))) {
     throw new Error(`Не все инструменты изолированы подменами: ${uncovered.map(({ name }) => name).join(", ")}`);
   }
   if (stubs.length > 100) throw new Error("Изоляция превышает предел 100 правил подмены.");
