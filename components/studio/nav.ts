@@ -1,4 +1,4 @@
-import { MessagesSquareIcon, type LucideIcon } from "lucide-react";
+import { MessagesSquareIcon, SettingsIcon, type LucideIcon } from "lucide-react";
 
 /** Пункт боковой навигации приложения. */
 export interface NavItem {
@@ -11,12 +11,17 @@ export interface NavItem {
 
 /**
  * Единственный список пунктов навигации на весь проект.
- * «Настройки» добавит #26, «Админку» (`requires: "operator"`) — #30.
+ * «Админку» (`requires: "operator"`) добавит #30.
  */
 export const navItems: NavItem[] = [
   {
     title: "Сессии",
     href: "/s",
     icon: MessagesSquareIcon,
+  },
+  {
+    title: "Настройки",
+    href: "/settings",
+    icon: SettingsIcon,
   },
 ];
