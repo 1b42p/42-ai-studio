@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { appSessions, media, sessionPreviewCalls, toolCallMedia } from "@/lib/db/schema";
@@ -127,7 +127,10 @@ export async function setSessionPreview(
 
   const committed = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(appSessions)
-      .where(and(eq(appSessions.id, session.id), eq(appSessions.userId, session.userId)))
+      .where(and(
+        eq(appSessions.id, session.id), eq(appSessions.userId, session.userId),
+        isNull(appSessions.deletedAt),
+      ))
       .for("update");
     if (current === undefined) throw previewError("preview_no_session");
     const [existing] = await tx.select().from(sessionPreviewCalls).where(identity);

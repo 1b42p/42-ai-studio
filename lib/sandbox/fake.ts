@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import type { SandboxConnection } from "eve/sandbox/provider";
 import { loadConfig } from "@/lib/config";
+import { DaytonaConflictError, DaytonaNotFoundError } from "@daytona/sdk";
 
 import {
   FakeStore,
@@ -33,7 +34,7 @@ export interface FakeMachine {
   refreshActivity(): Promise<void>;
   configureLifecycle(): Promise<void>;
   recover(): Promise<void>;
-  delete(): Promise<void>;
+  delete(timeout?: number, wait?: boolean, signal?: AbortSignal): Promise<void>;
   connect(callbacks: ConnectionCallbacks): SandboxConnection;
   readJobDirectory(jobId: string): Promise<JobDirectoryReading>;
 }
@@ -102,10 +103,20 @@ class FakeMachineHandle implements FakeMachine {
     await this.configureLifecycle();
   }
 
-  async delete(): Promise<void> {
+  async delete(timeout = 300, wait = true, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     try {
       if (this.state === "destroyed") return;
+      await this.store.transaction((data) => {
+        this.store.find(data, this.id).calls.push({ op: "delete", timeout, wait, at: Date.now() });
+      }, signal);
       const failure = await this.store.consumeDeleteFailure();
+      signal?.throwIfAborted();
+      if (failure === "conflict") throw new DaytonaConflictError("Sandbox state change in progress", 409);
+      if (failure === "not_found") {
+        await this.store.setState(this.id, "destroyed");
+        throw new DaytonaNotFoundError("Sandbox not found", 404);
+      }
       if (failure !== undefined) {
         throw Object.assign(new Error(`Fake Daytona delete ${failure}`), {
           status: failure === "unavailable" ? 503 : 400,
@@ -303,7 +314,7 @@ export function getFakeBackend(directory: string, apiKey: string, resources: Fak
       const record = (await store.listMachines(apiKey)).find((machine) =>
         machine.id === idOrName || machine.name === idOrName,
       );
-      if (record === undefined) throw Object.assign(new Error("Fake Daytona: not found"), { status: 404 });
+       if (record === undefined) throw new DaytonaNotFoundError("Fake Daytona: not found", 404);
       return new FakeMachineHandle(store, record);
     },
     create: async ({ name, appSessionId }: { name: string; appSessionId: string }): Promise<FakeMachine> => {

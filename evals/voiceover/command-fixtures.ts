@@ -107,7 +107,11 @@ function piperBatchStubs(): ToolStub[] {
         return `(?${operator}[\\s\\S]*${piperCommand(index, version)})`;
       });
       const mask = indices.reduce((value, index) => value | (1 << index), 0);
-      const pattern = "^(?=[\\s\\S]*piper_speak\\.py)" + clauses.join("");
+      const batchPattern = "^(?=[\\s\\S]*piper_speak\\.py)" + clauses.join("");
+      const pattern =
+        mask === 7
+          ? `(?:${batchPattern}|${piperLoopPattern(version)})`
+          : batchPattern;
       const stdout = indices
         .map((index) => piperReceipt(index, version))
         .join("\n");
@@ -117,35 +121,29 @@ function piperBatchStubs(): ToolStub[] {
   );
 }
 
-function piperLoopStubs(): ToolStub[] {
-  return AUDIO_VERSIONS.map((version) => {
-    const root = escapePattern(PROJECT);
-    const changeDirectory = `(?:cd\\s+${shellToken(root)}\\s*&&\\s*)?`;
-    const loop =
-      "for\\s+([a-zA-Z_]\\w*)\\s+in\\s+(?:01\\s+02\\s+03|\\{01\\.\\.03\\})[;\\n]\\s*do\\s+";
-    const script = `python3?\\s+${COMMAND_PART}*piper_speak\\.py["']?`;
-    const variable = "\\$(?:\\{\\1\\}|\\1)";
-    const textFile = `["']?(?:${root}/)?voice/scene-${variable}\\.txt["']?(?:\\s|;|$)`;
-    const output = `["']?(?:${root}/)?public/voice/scene-${variable}-piper${version}["']?(?:\\s|;|$)`;
-    const readsScene = `(?=${COMMAND_PART}*--text-file(?:=|\\s+)${textFile})`;
-    const writesScene = `(?=${COMMAND_PART}*--out(?:=|\\s+)${output})`;
-    const usesVoice = `(?=${COMMAND_PART}*--voice(?:=|\\s+)${shellToken(escapePattern(PIPER_VOICE))})`;
-    const end = `${COMMAND_PART}*[;\\n]\\s*done\\s*$`;
-    const pattern =
-      "^\\s*" +
-      changeDirectory +
-      loop +
-      script +
-      usesVoice +
-      readsScene +
-      writesScene +
-      end;
-    const stdout = [0, 1, 2]
-      .map((index) => piperReceipt(index, version))
-      .join("\n");
-
-    return commandStub(`piper-loop${version}`, pattern, stdout);
-  });
+function piperLoopPattern(version: string): string {
+  const root = escapePattern(PROJECT);
+  const changeDirectory = `(?:cd\\s+${shellToken(root)}\\s*&&\\s*)?`;
+  const loop =
+    "for\\s+([a-zA-Z_]\\w*)\\s+in\\s+(?:01\\s+02\\s+03|\\{01\\.\\.03\\})[;\\n]\\s*do\\s+";
+  const script = `python3?\\s+${COMMAND_PART}*piper_speak\\.py["']?`;
+  const variable = "\\$(?:\\{\\1\\}|\\1)";
+  const textFile = `["']?(?:${root}/)?voice/scene-${variable}\\.txt["']?(?:\\s|;|$)`;
+  const output = `["']?(?:${root}/)?public/voice/scene-${variable}-piper${version}["']?(?:\\s|;|$)`;
+  const readsScene = `(?=${COMMAND_PART}*--text-file(?:=|\\s+)${textFile})`;
+  const writesScene = `(?=${COMMAND_PART}*--out(?:=|\\s+)${output})`;
+  const usesVoice = `(?=${COMMAND_PART}*--voice(?:=|\\s+)${shellToken(escapePattern(PIPER_VOICE))})`;
+  const end = `${COMMAND_PART}*[;\\n]\\s*done\\s*$`;
+  return (
+    "^\\s*" +
+    changeDirectory +
+    loop +
+    script +
+    usesVoice +
+    readsScene +
+    writesScene +
+    end
+  );
 }
 
 function unsupportedCommandStubs(): ToolStub[] {
@@ -337,7 +335,7 @@ function environmentStubs(fallback: boolean): ToolStub[] {
 export function mediaStubs(fallback: boolean): ToolStub[] {
   return [
     ...unsupportedCommandStubs(),
-    ...(fallback ? [...piperBatchStubs(), ...piperLoopStubs()] : []),
+    ...(fallback ? piperBatchStubs() : []),
     ...audioStubs(fallback),
     ...videoInspectionStubs(),
     ...reviewStubs(),

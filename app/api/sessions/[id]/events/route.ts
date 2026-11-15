@@ -7,7 +7,7 @@ import type { NextRequest } from "next/server";
 import { requireApiUser } from "@/lib/auth/guard";
 import { errorResponse } from "@/lib/http/errors";
 import { isUuid } from "@/lib/sessions/access";
-import { findAppSessionForUser, readSessionEvents } from "@/lib/sessions/service";
+import { findUserSession, readSessionEvents } from "@/lib/sessions/service";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +46,7 @@ export async function GET(
     );
   }
 
-  const session = await findAppSessionForUser(id, user.id);
+  const session = await findUserSession(user.id, id);
   if (session === null) return errorResponse(404, "not_found", "Сессия не найдена");
 
   const result = await readSessionEvents(id, { after, limit });

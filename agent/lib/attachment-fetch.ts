@@ -7,11 +7,10 @@
  * увидит модель. Строки `media` без объекта и с другим размером — тоже отказ.
  */
 import { attachmentError, type FetchFileContext } from "eve/channels";
-import { eq } from "drizzle-orm";
 
 import { loadConfig } from "@/lib/config";
-import { getDb } from "@/lib/db/client";
-import { media } from "@/lib/db/schema";
+import { findMediaForUser } from "@/lib/media/service";
+import { findAppSessionById } from "@/lib/sessions/service";
 import { mediaIdFromAppMediaUrl } from "@/lib/media/media-url";
 import { getStorage } from "@/lib/s3";
 
@@ -35,13 +34,9 @@ export async function fetchUserAttachment(
   const mediaId = mediaIdFromAppMediaUrl(url, config.appUrl);
   if (mediaId === null) throw attachmentError(ATTACHMENT_UNAVAILABLE);
 
-  const [record] = await getDb()
-    .select()
-    .from(media)
-    .where(eq(media.id, mediaId))
-    .limit(1);
+  const record = await findMediaForUser(mediaId, current.principalId);
   if (
-    record === undefined ||
+    record === null ||
     record.userId !== current.principalId ||
     record.kind !== "upload"
   ) {
@@ -56,6 +51,9 @@ export async function fetchUserAttachment(
   }
 
   const bytes = await storage.getObject(record.objectKey);
+  if ((await findAppSessionById(record.appSessionId)) === null) {
+    throw attachmentError(ATTACHMENT_UNAVAILABLE);
+  }
   return {
     // Без копии: у процесса eve и так пик в несколько размеров файла.
     bytes: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength),

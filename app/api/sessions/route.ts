@@ -13,6 +13,7 @@ import { listUserSessions, parseSessionListSearchParams } from "@/lib/sessions/l
 import { createAppSession } from "@/lib/sessions/service";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 125;
 
 export async function GET(request: NextRequest): Promise<Response> {
   const user = await requireApiUser(request);

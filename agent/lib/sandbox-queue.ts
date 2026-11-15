@@ -33,7 +33,8 @@ function backend(key: DaytonaKey) {
 
 function liveEntries() {
   return getDb().select().from(queueEntries)
-    .where(gt(queueEntries.heartbeatAt, new Date(Date.now() - LIVE_MS)))
+    .where(and(gt(queueEntries.heartbeatAt, new Date(Date.now() - LIVE_MS)),
+      sql`exists (select 1 from app_sessions where id = ${queueEntries.appSessionId} and deleted_at is null)`))
     .orderBy(asc(queueEntries.enqueuedAt), asc(queueEntries.id));
 }
 
@@ -42,7 +43,8 @@ export async function reconcileSandboxStates(): Promise<Map<string, DaytonaMachi
   const db = getDb();
   const [entries, rows, keys] = await Promise.all([
     liveEntries(), db.select({ sandbox: sandboxes, eveSessionId: appSessions.eveSessionId })
-      .from(sandboxes).innerJoin(appSessions, eq(appSessions.id, sandboxes.appSessionId)),
+      .from(sandboxes).innerJoin(appSessions, eq(appSessions.id, sandboxes.appSessionId))
+      .where(isNull(appSessions.deletedAt)),
     db.select().from(daytonaKeys),
   ]);
   const keyIds = new Set([
@@ -150,38 +152,54 @@ async function leaseDispatcher(): Promise<string | null> {
 
 async function activeRows() {
   return getDb().select({ sandbox: sandboxes, userId: appSessions.userId })
-    .from(sandboxes).innerJoin(appSessions, eq(appSessions.id, sandboxes.appSessionId));
+    .from(sandboxes).innerJoin(appSessions, eq(appSessions.id, sandboxes.appSessionId))
+    .where(isNull(appSessions.deletedAt));
 }
 
-async function stopMachine(row: Sandbox, machine: DaytonaMachine): Promise<boolean> {
-  // Повторно проверить события прямо перед остановкой, не только в начале прохода.
-  if (await sessionIsBusy(row.appSessionId, machine)) return false;
+/** Остановка и архивация используют один барьер с удалением и началом шага. */
+async function claimMachineMaintenance(
+  row: Sandbox,
+  machine: DaytonaMachine,
+  state: "started" | "stopped",
+): Promise<string | null> {
   const token = randomUUID();
   const claimed = await getSqlClient().begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(20261111, hashtext(${row.appSessionId}))`;
     return tx`update sandboxes set maintenance_token = ${token},
       maintenance_until = now() + interval '330 seconds'
-      where id = ${row.id} and state = 'started' and daytona_sandbox_id = ${machine.id}
+      where id = ${row.id} and state = ${state} and daytona_sandbox_id = ${machine.id}
       and (maintenance_until is null or maintenance_until < now())
-      and exists (select 1 from app_sessions where id = ${row.appSessionId}
-        and sandbox_work_state <> 'active')
+       and exists (select 1 from app_sessions where id = ${row.appSessionId}
+         and deleted_at is null and sandbox_work_state <> 'active')
       and not exists (select 1 from sandbox_workers where app_session_id = ${row.appSessionId}
         and state = 'active') returning id`;
   });
-  if (!claimed.length) return false;
+  return claimed.length ? token : null;
+}
+
+async function releaseMachineMaintenance(row: Sandbox, token: string): Promise<void> {
+  await getDb().update(sandboxes).set({ maintenanceToken: null, maintenanceUntil: null })
+    .where(and(eq(sandboxes.id, row.id), eq(sandboxes.maintenanceToken, token)));
+}
+
+async function stopMachine(row: Sandbox, machine: DaytonaMachine): Promise<boolean> {
+  // Повторно проверить события прямо перед остановкой, не только в начале прохода.
+  if (await sessionIsBusy(row.appSessionId, machine)) return false;
+  const token = await claimMachineMaintenance(row, machine, "started");
+  if (token === null) return false;
   try {
     await machine.stop();
     if (machine.state !== "stopped") return false;
     await getDb().update(sandboxes).set({ state: "stopped", stoppedAt: new Date(),
       startingSince: null, startingKind: null })
-      .where(and(eq(sandboxes.id, row.id), eq(sandboxes.daytonaSandboxId, machine.id)));
+      .where(and(eq(sandboxes.id, row.id), eq(sandboxes.daytonaSandboxId, machine.id),
+        eq(sandboxes.maintenanceToken, token)));
     return true;
   } catch (error) {
     console.warn("[sandbox:queue] stop_failed", errorStatus(error) ?? "transport");
     return false;
   } finally {
-    await getDb().update(sandboxes).set({ maintenanceToken: null, maintenanceUntil: null })
-      .where(and(eq(sandboxes.id, row.id), eq(sandboxes.maintenanceToken, token)));
+    await releaseMachineMaintenance(row, token);
   }
 }
 
@@ -226,15 +244,20 @@ async function reclaim(entry: QueueEntry, machines: Map<string, DaytonaMachine>)
     for (const { sandbox: row } of stopped) {
       const machine = machines.get(row.appSessionId);
       if (!machine || machine.state !== "stopped" || await sessionIsBusy(row.appSessionId, machine)) continue;
+      const token = await claimMachineMaintenance(row, machine, "stopped");
+      if (token === null) continue;
       try {
         await machine.archive();
         // Только подтверждённый archived означает освобождённый диск.
         if ((machine as DaytonaMachine).state === "archived") {
-          await db.update(sandboxes).set({ state: "archived" }).where(eq(sandboxes.id, row.id));
+          await db.update(sandboxes).set({ state: "archived" })
+            .where(and(eq(sandboxes.id, row.id), eq(sandboxes.maintenanceToken, token)));
         }
         return true;
       } catch (error) {
         console.warn("[sandbox:queue] archive_failed", errorStatus(error) ?? "transport");
+      } finally {
+        await releaseMachineMaintenance(row, token);
       }
       return false;
     }
@@ -324,7 +347,7 @@ export async function awaitSlot(
     await tx`select pg_advisory_xact_lock(20261110, 24)`;
     const [current] = await tx<{ generation: number }[]>`
       select sandbox_wait_generation as generation from app_sessions where id = ${session.id}
-        and user_id = ${session.userId}`;
+         and user_id = ${session.userId} and deleted_at is null`;
     if (!current || (options.wait && current.generation !== options.wait.generation)) {
       throw new StudioSandboxError("sandbox_wait_cancelled");
     }

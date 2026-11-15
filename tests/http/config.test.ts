@@ -21,6 +21,7 @@ function validEnv(): EnvRecord {
     TEST_APP_PORT: "3100",
     NEXT_DIST_DIR: ".next-test-3100",
     SESSION_SECRET: "test-session-secret-0123456789abcdef",
+    INTERNAL_API_SECRET: "test-internal-secret-0123456789abcdef",
     SECRETS_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     FAKE_SANDBOX_DIR: ".tmp/fake-sandbox",
     NODE_ENV: "test",
@@ -38,6 +39,31 @@ function issuesOf(env: EnvRecord): readonly string[] {
 }
 
 describe("parseConfig", () => {
+  test("служебный секрет обязателен и содержит не меньше 32 символов", () => {
+    for (const value of [undefined, "", "short", "x".repeat(31)]) {
+      const issues = issuesOf({ ...validEnv(), INTERNAL_API_SECRET: value });
+      expect(issues).toHaveLength(1);
+      expect(issues[0]).toContain("INTERNAL_API_SECRET");
+      if (value) expect(issues[0]).not.toContain(value);
+    }
+    expect(parseConfig({ ...validEnv(), INTERNAL_API_SECRET: "x".repeat(32) }).internalApiSecret)
+      .toBe("x".repeat(32));
+  });
+
+  test("служебный адрес по умолчанию использует loopback и PORT, а не APP_URL", () => {
+    expect(parseConfig(validEnv()).internalAppUrl).toBe("http://127.0.0.1:3000");
+    expect(parseConfig({ ...validEnv(), PORT: "3199" }).internalAppUrl).toBe("http://127.0.0.1:3199");
+    expect(parseConfig({ ...validEnv(), INTERNAL_APP_URL: "https://internal.example.com" }).internalAppUrl)
+      .toBe("https://internal.example.com");
+    expect(parseConfig({ ...validEnv(), INTERNAL_APP_URL: "" }).internalAppUrl).toBe("http://127.0.0.1:3000");
+  });
+
+  test.each(["not-url", "ftp://internal.example.com", "http://user:password@localhost:3000", "http://localhost:3000/?token=x", "http://localhost:3000/#fragment"])(
+    "отвергает некорректный служебный адрес %s", (value) => {
+      expect(issuesOf({ ...validEnv(), INTERNAL_APP_URL: value }).join()).toContain("INTERNAL_APP_URL");
+    },
+  );
+
   test("проверяет интервалы очереди и жизненного цикла песочниц", () => {
     expect(parseConfig(validEnv())).toMatchObject({
       sandboxIdleStopMinutes: 15, sandboxArchiveAfterDays: 7,

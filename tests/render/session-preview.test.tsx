@@ -85,6 +85,31 @@ for (const [viewport, renderList, width, height] of [
     ]);
     await page.screenshot({ path: `../../.vitest/attachments/issue18-${viewport}-${theme}.png` });
   });
+
+  test(`${viewport}: удаление сессии с превью убирает только её строку`, async () => {
+    const deleted: string[] = [];
+    await commands.sessionPreviewMedia("release");
+    await renderList(
+      <SessionList
+        deleteRequest={async (id) => { deleted.push(id); }}
+        initialPage={{ items: previewSessions, nextCursor: null }}
+        initialQuery=""
+        request={async () => ({ items: previewSessions, nextCursor: null })}
+      />,
+    );
+    const button = page.getByRole("button", {
+      name: "Удалить сессию «Горизонтальный ролик»",
+    });
+    const landscape = page.getByRole("link", { name: /^Горизонтальный ролик/ });
+    await expect.element(landscape).toBeVisible();
+    expect(button.element().closest("a")).toBeNull();
+    await button.click();
+    await page.getByRole("button", { name: "Удалить", exact: true }).click();
+    expect(deleted).toEqual(["landscape"]);
+    await expect.element(landscape).not.toBeInTheDocument();
+    await expect.element(page.getByRole("link", { name: /^Вертикальный ролик/ })).toBeVisible();
+    expectNoHorizontalScroll();
+  });
 }
 
 function preview(mediaId: string | null) {

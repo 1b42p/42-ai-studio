@@ -88,6 +88,7 @@ export const appSessions = pgTable(
     streamCursor: integer("stream_cursor").notNull().default(0),
     /** Когда пользователь начал создание сессии eve; окно привязки — 60 секунд. */
     startRequestedAt: timestamp("start_requested_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     sandboxWorkState: text("sandbox_work_state").$type<"active" | "input" | "idle">().notNull().default("idle"),
     sandboxWorkTurnId: text("sandbox_work_turn_id"),
     sandboxWorkEventId: text("sandbox_work_event_id"),
@@ -104,7 +105,7 @@ export const appSessions = pgTable(
   (table) => [
     index("app_sessions_user_list_idx")
       .on(table.userId, table.updatedAt.desc(), table.id.desc())
-      .where(sql`${table.eveSessionId} is not null`),
+      .where(sql`${table.eveSessionId} is not null and ${table.deletedAt} is null`),
   ],
 );
 
@@ -141,6 +142,19 @@ export type NewUser = typeof users.$inferInsert;
 export type AuthSession = typeof authSessions.$inferSelect;
 export type LoginNonce = typeof loginNonces.$inferSelect;
 export type AppSession = typeof appSessions.$inferSelect;
+
+/** Минутный затвор добивания удалений, общий для всех экземпляров приложения. */
+export const sessionDeletionRetries = pgTable("session_deletion_retries", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Журнал финальной очистки S3: переживает удаление строки app_sessions. */
+export const sessionDeletions = pgTable("session_deletions", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("session_deletions_user_idx").on(table.userId, table.createdAt)]);
 export type NewAppSession = typeof appSessions.$inferInsert;
 export type SessionEvent = typeof sessionEvents.$inferSelect;
 

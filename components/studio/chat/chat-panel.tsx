@@ -9,11 +9,17 @@ import { useAttachments } from "@/components/studio/chat/use-attachments";
 import { useMessageFiles } from "@/components/studio/chat/use-message-files";
 import { useSessionTitle } from "@/components/studio/chat/use-session-title";
 import { useSandboxStatus } from "@/components/studio/chat/use-sandbox-status";
+import {
+  leaveDeletedSession,
+  useSessionDeletion,
+} from "@/components/studio/sessions/use-session-deletion";
 
 export type ChatAgent = UseEveAgentHelpers<ConversationState>;
 
 export interface ChatPanelProps
-  extends Omit<ChatViewProps, "agent" | "attachments" | "sandboxStatus" | "onCancel" | "onRespond" | "onSend"> {
+  extends Omit<ChatViewProps,
+    "agent" | "attachments" | "sandboxStatus" | "sessionDeletion" | "onCancel" | "onRespond" | "onSend"
+  > {
   agent: ChatAgent;
   /** Ошибка подготовки сессии, показывается вместо ошибки хука. */
   errorOverride?: Error;
@@ -25,6 +31,8 @@ export interface ChatPanelProps
   appSessionId?: string | null;
   /** Название с сервера. Пока его нет — опрос после первого сообщения. */
   initialTitle?: string | null;
+  /** После удаления открытой сессии; по умолчанию переход на `/s`. */
+  onSessionDeleted?: (id: string) => void;
 }
 
 /**
@@ -39,12 +47,14 @@ export function ChatPanel({
   appSessionId = null,
   initialTitle = null,
   title: titleProp,
+  onSessionDeleted = leaveDeletedSession,
   ...props
 }: ChatPanelProps) {
   const busy = isBusyStatus(agent.status);
   const sandboxStatus = useSandboxStatus(appSessionId, busy);
   const polled = useSessionTitle(appSessionId, agent.events, initialTitle);
   const attachments = useAttachments({ appSessionId, ensureSession });
+  const sessionDeletion = useSessionDeletion({ onDeleted: onSessionDeleted });
   const messageFiles = useMessageFiles({
     appSessionId,
     events: agent.events,
@@ -61,6 +71,7 @@ export function ChatPanel({
       appSessionId={appSessionId}
       attachments={attachments}
       sandboxStatus={sandboxStatus}
+      sessionDeletion={sessionDeletion}
       messageFiles={props.messageFiles ?? messageFiles}
       agent={{
         data: agent.data,

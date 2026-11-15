@@ -3,12 +3,13 @@
  * и выборка. Поиск идёт по `title_search`, а не по `lower()` в SQL:
  * регистр в Postgres зависит от локали базы.
  */
-import { and, desc, eq, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 
 import { getDb } from "../db/client";
 import { appSessions } from "../db/schema";
 import { isUuid } from "./access";
 import { titleSearchKey } from "./title";
+import { scheduleSessionDeletionRetries } from "./deletion-retry";
 
 export const SESSION_LIST_DEFAULT_LIMIT = 30;
 export const SESSION_LIST_MAX_LIMIT = 100;
@@ -131,9 +132,11 @@ export async function listUserSessions(
   userId: string,
   request: SessionListRequest,
 ): Promise<SessionListPage> {
+  scheduleSessionDeletionRetries(userId);
   const conditions: SQL[] = [
     eq(appSessions.userId, userId),
     isNotNull(appSessions.eveSessionId),
+    isNull(appSessions.deletedAt),
   ];
   if (request.q !== "") {
     conditions.push(

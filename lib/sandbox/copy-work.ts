@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/lib/db/client";
 import { appSessions, sandboxWorkers } from "@/lib/db/schema";
@@ -14,11 +14,14 @@ export async function recordSandboxCopyWork(
   turnSequence = 0,
 ): Promise<void> {
   const [session] = await getDb().select({ id: appSessions.id }).from(appSessions)
-    .where(eq(appSessions.eveSessionId, rootEveSessionId));
+    .where(and(eq(appSessions.eveSessionId, rootEveSessionId), isNull(appSessions.deletedAt)));
   if (!session) return;
 
   await getDb().transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(20261111, hashtext(${session.id}))`);
+    const [current] = await tx.select({ id: appSessions.id }).from(appSessions)
+      .where(and(eq(appSessions.id, session.id), isNull(appSessions.deletedAt))).for("update");
+    if (!current) return;
     await tx.insert(sandboxWorkers).values({
       appSessionId: session.id, eveSessionId, state,
       turnId: turnId ?? null, eventId: eventId ?? null, turnSequence,

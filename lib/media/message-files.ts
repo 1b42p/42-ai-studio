@@ -6,7 +6,7 @@
  * строка не создаётся, готовая или отсутствующая не пересчитывается, а
  * зависшая `copying` старше 15 минут перезапускается.
  */
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import type { SandboxSession } from "eve/sandbox";
 
 import { getDb } from "@/lib/db/client";
@@ -16,9 +16,11 @@ import {
   messageFiles,
   type MessageFileReason,
 } from "@/lib/db/schema";
-import type { Storage } from "@/lib/s3";
+import { getStorage, type Storage } from "@/lib/s3";
+import { findAppSessionById } from "@/lib/sessions/service";
 
-import { copySandboxFile, MediaCopyError } from "./copy";
+import { copySandboxFile, MediaCopyError, type CopiedSandboxFile } from "./copy";
+import { MediaSessionGoneError, withLiveMediaSession } from "./live-session";
 import { COPYING_STALE_MS, isStaleCopying, MAX_MESSAGE_LINKS } from "./files";
 import type { SandboxLink } from "./sandbox-path";
 
@@ -53,42 +55,58 @@ async function claimRow(
   messageId: string,
   sandboxPath: string,
 ): Promise<string | null> {
-  const db = getDb();
-  const [inserted] = await db
-    .insert(messageFiles)
-    .values({ appSessionId, messageId, sandboxPath, state: "copying" })
-    .onConflictDoNothing()
-    .returning({ id: messageFiles.id });
-  if (inserted !== undefined) return inserted.id;
+  try {
+    return await withLiveMediaSession(appSessionId, async (db) => {
+      const [inserted] = await db
+        .insert(messageFiles)
+        .values({ appSessionId, messageId, sandboxPath, state: "copying" })
+        .onConflictDoNothing()
+        .returning({ id: messageFiles.id });
+      if (inserted !== undefined) return inserted.id;
 
-  const staleBefore = new Date(Date.now() - COPYING_STALE_MS);
-  const [existing] = await db
-    .select({ id: messageFiles.id, state: messageFiles.state, updatedAt: messageFiles.updatedAt })
-    .from(messageFiles)
-    .where(whereRow(appSessionId, messageId, sandboxPath))
-    .limit(1);
-  if (existing === undefined || existing.state !== "copying") return null;
-  if (!isStaleCopying(existing.updatedAt)) return null;
+      const staleBefore = new Date(Date.now() - COPYING_STALE_MS);
+      const [existing] = await db
+        .select({ id: messageFiles.id, state: messageFiles.state, updatedAt: messageFiles.updatedAt })
+        .from(messageFiles)
+        .innerJoin(appSessions, eq(appSessions.id, messageFiles.appSessionId))
+        .where(and(whereRow(appSessionId, messageId, sandboxPath), isNull(appSessions.deletedAt)))
+        .limit(1);
+      if (existing === undefined || existing.state !== "copying") return null;
+      if (!isStaleCopying(existing.updatedAt)) return null;
 
-  const [claimed] = await db
-    .update(messageFiles)
-    .set({ updatedAt: new Date() })
-    .where(
-      and(
-        eq(messageFiles.id, existing.id),
-        eq(messageFiles.state, "copying"),
-        lt(messageFiles.updatedAt, staleBefore),
-      ),
-    )
-    .returning({ id: messageFiles.id });
-  return claimed?.id ?? null;
+      const [claimed] = await db
+        .update(messageFiles)
+        .set({ updatedAt: new Date() })
+        .where(
+          and(
+            eq(messageFiles.id, existing.id),
+            eq(messageFiles.state, "copying"),
+            lt(messageFiles.updatedAt, staleBefore),
+          ),
+        )
+        .returning({ id: messageFiles.id });
+      return claimed?.id ?? null;
+    });
+  } catch (error) {
+    if (error instanceof MediaSessionGoneError) return null;
+    throw error;
+  }
 }
 
-async function markMissing(id: string, reason: MessageFileReason): Promise<void> {
-  await getDb()
-    .update(messageFiles)
-    .set({ state: "missing", reason, mediaId: null, updatedAt: new Date() })
-    .where(eq(messageFiles.id, id));
+async function markMissing(
+  appSessionId: string,
+  id: string,
+  reason: MessageFileReason,
+): Promise<void> {
+  try {
+    await withLiveMediaSession(appSessionId, async (tx) =>
+      tx.update(messageFiles)
+        .set({ state: "missing", reason, mediaId: null, updatedAt: new Date() })
+        .where(eq(messageFiles.id, id)),
+    );
+  } catch (error) {
+    if (!(error instanceof MediaSessionGoneError)) throw error;
+  }
 }
 
 /**
@@ -97,18 +115,11 @@ async function markMissing(id: string, reason: MessageFileReason): Promise<void>
  */
 export async function captureMessageFiles(options: CaptureMessageFilesOptions): Promise<void> {
   const db = getDb();
-  let userId = options.userId;
-  if (userId === undefined) {
-    const [session] = await db
-      .select({ userId: appSessions.userId })
-      .from(appSessions)
-      .where(eq(appSessions.id, options.appSessionId))
-      .limit(1);
-    if (session === undefined) return;
-    userId = session.userId;
-  }
-  if (userId === undefined) return;
-  const ownerId: string = userId;
+  // Переданный владельцем кэш не заменяет проверку существования сессии.
+  const session = await findAppSessionById(options.appSessionId);
+  if (session === null) return;
+  if (options.userId !== undefined && options.userId !== session.userId) return;
+  const ownerId = session.userId;
 
   // Несколько текстовых блоков одного шага делят `message_id` и один предел
   // в 20 ссылок: уже записанные строки тоже считаются.
@@ -119,10 +130,12 @@ export async function captureMessageFiles(options: CaptureMessageFilesOptions): 
       updatedAt: messageFiles.updatedAt,
     })
     .from(messageFiles)
+    .innerJoin(appSessions, eq(appSessions.id, messageFiles.appSessionId))
     .where(
       and(
         eq(messageFiles.appSessionId, options.appSessionId),
         eq(messageFiles.messageId, options.messageId),
+        isNull(appSessions.deletedAt),
       ),
     );
   const now = Date.now();
@@ -143,16 +156,22 @@ export async function captureMessageFiles(options: CaptureMessageFilesOptions): 
   const accepted = [...retry, ...fresh.slice(0, room)];
   const overflow = fresh.slice(room);
   for (const link of overflow) {
-    await db
-      .insert(messageFiles)
-      .values({
-        appSessionId: options.appSessionId,
-        messageId: options.messageId,
-        sandboxPath: link.path,
-        state: "missing",
-        reason: "too_many",
-      })
-      .onConflictDoNothing();
+    try {
+      await withLiveMediaSession(options.appSessionId, async (tx) =>
+        tx.insert(messageFiles)
+          .values({
+            appSessionId: options.appSessionId,
+            messageId: options.messageId,
+            sandboxPath: link.path,
+            state: "missing",
+            reason: "too_many",
+          })
+          .onConflictDoNothing(),
+      );
+    } catch (error) {
+      if (error instanceof MediaSessionGoneError) return;
+      throw error;
+    }
   }
 
   let sandboxPromise: Promise<SandboxSession> | undefined;
@@ -164,13 +183,14 @@ export async function captureMessageFiles(options: CaptureMessageFilesOptions): 
       if (rowId === null) return;
 
       if (link.kind === "rejected") {
-        await markMissing(rowId, link.reason);
+        await markMissing(options.appSessionId, rowId, link.reason);
         return;
       }
 
+      let copied: CopiedSandboxFile | undefined;
       try {
         const sandbox = await getSandbox();
-        const copied = await copySandboxFile({
+        copied = await copySandboxFile({
           sandbox,
           path: link.path,
           maxBytes: options.maxBytes,
@@ -179,24 +199,33 @@ export async function captureMessageFiles(options: CaptureMessageFilesOptions): 
           kind: "message_file",
           storage: options.storage,
         });
-        const [created] = await db
-          .insert(media)
-          .values({
-            userId: ownerId,
-            appSessionId: options.appSessionId,
-            kind: "message_file",
-            objectKey: copied.objectKey,
-            contentType: copied.contentType,
-            sizeBytes: copied.sizeBytes,
-            originalName: copied.originalName,
-          })
-          .returning({ id: media.id });
-        if (created === undefined) throw new Error("Строка media не создана");
-        await db
-          .update(messageFiles)
-          .set({ state: "ready", reason: null, mediaId: created.id, updatedAt: new Date() })
-          .where(eq(messageFiles.id, rowId));
+        const file = copied;
+        await withLiveMediaSession(options.appSessionId, async (tx) => {
+          const [created] = await tx
+            .insert(media)
+            .values({
+              userId: ownerId,
+              appSessionId: options.appSessionId,
+              kind: "message_file",
+              objectKey: file.objectKey,
+              contentType: file.contentType,
+              sizeBytes: file.sizeBytes,
+              originalName: file.originalName,
+            })
+            .returning({ id: media.id });
+          if (created === undefined) throw new Error("Строка media не создана");
+          const [linked] = await tx
+            .update(messageFiles)
+            .set({ state: "ready", reason: null, mediaId: created.id, updatedAt: new Date() })
+            .where(eq(messageFiles.id, rowId))
+            .returning({ id: messageFiles.id });
+          if (linked === undefined) throw new Error("Строка файла сообщения исчезла");
+        });
       } catch (error) {
+        if (copied !== undefined) {
+          await (options.storage ?? getStorage()).deleteObject(copied.objectKey);
+        }
+        if (error instanceof MediaSessionGoneError) return;
         const reason = error instanceof MediaCopyError ? error.reason : "copy_failed";
         if (!(error instanceof MediaCopyError)) {
           console.error("[media] файл ответа не сохранён", {
@@ -205,7 +234,7 @@ export async function captureMessageFiles(options: CaptureMessageFilesOptions): 
             error,
           });
         }
-        await markMissing(rowId, reason);
+        await markMissing(options.appSessionId, rowId, reason);
       }
     }),
   );

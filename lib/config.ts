@@ -64,6 +64,10 @@ export interface AppConfig {
   readonly s3ForcePathStyle: boolean;
   /** Публичный адрес приложения без завершающего «/». */
   readonly appUrl: string;
+  /** Подпись служебных запросов между приложением и eve. */
+  readonly internalApiSecret: string;
+  /** Адрес Next.js для серверных запросов к eve. */
+  readonly internalAppUrl: string;
   /** Тестовые подмены (появятся в следующих тикетах). */
   readonly appTestMode: boolean;
   /** Изолированные оценки настоящей модели; только локально, не в production. */
@@ -258,6 +262,13 @@ const envSchema = z.object({
     .optional()
     .default("https://oauth.telegram.org"),
   SESSION_SECRET: envString.min(32, "секрет должен быть не короче 32 символов"),
+  INTERNAL_API_SECRET: envString.min(32, "секрет должен быть не короче 32 символов"),
+  INTERNAL_APP_URL: envUrl.refine((value) => {
+    const url = URL.parse(value);
+    if (url === null) return false;
+    return (url.protocol === "http:" || url.protocol === "https:") &&
+      !url.username && !url.password && !url.search && !url.hash;
+  }, "ожидается URL с http:// или https:// без учётных данных, запроса и фрагмента"),
   SESSION_TTL_DAYS: z.coerce
     .number({ error: "ожидается целое число от 1 до 365" })
     .int("ожидается целое число от 1 до 365")
@@ -368,7 +379,10 @@ export function parseConfig(env: EnvRecord): AppConfig {
     normalized[name] = value === undefined || value.trim() === "" ? undefined : value;
   }
 
-  const result = envSchema.safeParse(normalized);
+  const result = envSchema.safeParse({
+    ...normalized,
+    INTERNAL_APP_URL: normalized.INTERNAL_APP_URL ?? `http://127.0.0.1:${normalized.PORT ?? 3000}`,
+  });
   const issues: string[] = result.success ? [] : formatIssues(result.error);
   const extra = new Map<string, string>();
   const addIssue = (name: string, message: string) => {
@@ -487,6 +501,8 @@ export function parseConfig(env: EnvRecord): AppConfig {
     s3SecretAccessKey: data.S3_SECRET_ACCESS_KEY,
     s3ForcePathStyle: data.S3_FORCE_PATH_STYLE,
     appUrl: data.APP_URL,
+    internalApiSecret: data.INTERNAL_API_SECRET,
+    internalAppUrl: data.INTERNAL_APP_URL.replace(/\/+$/, ""),
     appTestMode: data.APP_TEST_MODE,
     appEvalMode: data.APP_EVAL_MODE,
     appVideoEvalSandbox: data.APP_VIDEO_EVAL_SANDBOX,

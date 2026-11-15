@@ -127,6 +127,13 @@
       "when": 1794472027930,
       "tag": "0017_sticky_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794756588503,
+      "tag": "0018_session_deletion",
+      "breakpoints": true
     }
   ]
 }

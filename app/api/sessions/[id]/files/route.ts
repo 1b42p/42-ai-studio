@@ -9,7 +9,7 @@ import { errorResponse } from "@/lib/http/errors";
 import { listSessionFiles } from "@/lib/media/service";
 import type { MessageFilesResponse } from "@/lib/media/types";
 import { isUuid } from "@/lib/sessions/access";
-import { findAppSessionForUser } from "@/lib/sessions/service";
+import { findUserSession } from "@/lib/sessions/service";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +23,12 @@ export async function GET(
   const { id } = await context.params;
   if (!isUuid(id)) return errorResponse(404, "not_found", "Сессия не найдена");
 
-  const session = await findAppSessionForUser(id, user.id);
+  const session = await findUserSession(user.id, id);
   if (session === null) return errorResponse(404, "not_found", "Сессия не найдена");
 
   const body: MessageFilesResponse = { files: await listSessionFiles(id) };
+  if ((await findUserSession(user.id, id)) === null) {
+    return errorResponse(404, "not_found", "Сессия не найдена");
+  }
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }

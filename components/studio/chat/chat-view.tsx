@@ -20,6 +20,9 @@ import { InputPrompt } from "@/components/studio/chat/input-prompt";
 import { inlineQuestionIds } from "@/components/studio/chat/input-routing";
 import { MessageRow } from "@/components/studio/chat/message-row";
 import { SandboxStatusBanner } from "@/components/studio/chat/sandbox-status-banner";
+import { DeleteSessionButton } from "@/components/studio/sessions/delete-session-button";
+import { DeleteSessionDialog } from "@/components/studio/sessions/delete-session-dialog";
+import type { SessionDeletionController } from "@/components/studio/sessions/use-session-deletion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +32,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { ItemActions } from "@/components/ui/item";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import {
   MessageScroller,
@@ -74,6 +78,8 @@ export interface ChatViewProps {
   messageFiles?: MessageFilesState;
   /** Загрузчик вложений поля ввода; без него скрепка неактивна. */
   attachments?: AttachmentsController;
+  /** Управляемое удаление, запрос исполняется только в контроллере обёртки. */
+  sessionDeletion?: SessionDeletionController;
   onSend: (content: string | UserContent) => void | Promise<void>;
   onRespond: (responses: readonly InputResponse[]) => void | Promise<void>;
   onCancel: () => void | Promise<void>;
@@ -197,6 +203,7 @@ export function ChatView({
   sandboxStatus,
   messageFiles,
   attachments,
+  sessionDeletion,
   onSend,
   onRespond,
   onCancel,
@@ -225,6 +232,7 @@ export function ChatView({
   const showSessions = sessions !== undefined && messages.length === 0;
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
+  const deleteButton = useRef<HTMLButtonElement | null>(null);
   const canAttach = attachments !== undefined && !disabled;
   // Панель копии рисуется поверх окна справа: пока она открыта, лента и поле
   // ввода освобождают её ширину, чтобы прямоугольники не пересекались.
@@ -294,10 +302,29 @@ export function ChatView({
       ) : null}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3 md:px-6">
         <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
-        <Button nativeButton={false} size="sm" variant="outline" render={<a href="/s" />}>
-          Новая сессия
-        </Button>
+        <ItemActions className="shrink-0">
+          {appSessionId && sessionDeletion ? (
+            <DeleteSessionButton
+              buttonRef={deleteButton}
+              onClick={() => sessionDeletion.open({ id: appSessionId, title })}
+              title={title}
+            />
+          ) : null}
+          <Button nativeButton={false} size="sm" variant="outline" render={<a href="/s" />}>
+            Новая сессия
+          </Button>
+        </ItemActions>
       </header>
+      {sessionDeletion ? (
+        <DeleteSessionDialog
+          finalFocus={deleteButton}
+          onClose={sessionDeletion.close}
+          onConfirm={() => void sessionDeletion.confirm()}
+          open={sessionDeletion.target !== null}
+          state={sessionDeletion.state}
+          title={sessionDeletion.target?.title ?? title}
+        />
+      ) : null}
 
       {/* `order` поднимает поле над списком, не размонтируя его. */}
       <div

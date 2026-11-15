@@ -178,7 +178,7 @@ test("инструкции видеографа сохраняют правил�
   expect(instructions).toContain("Правки файлов");
   expect(instructions).toContain("[ролик](coffee-promo/out/coffee-promo.mp4)");
   expect(instructions).toContain("Относительные пути считаются от `/workspace`");
-  expect(instructions).not.toContain("ask_question");
+  expect(instructions).toContain("Один вопрос — один вызов `ask_question`");
   expect(instructions).toContain("download_video");
   expect(instructions).toContain("повторяй больше двух раз");
 });

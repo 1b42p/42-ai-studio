@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRequire } from "node:module";
+import { resolve } from "node:path";
+import { Worker } from "node:worker_threads";
 import { setTimeout as delay } from "node:timers/promises";
-import { Daytona, DaytonaConflictError, Image, SandboxState, type Sandbox } from "@daytona/sdk";
+import { Daytona, DaytonaConflictError, DaytonaNotFoundError, Image, SandboxState, type Sandbox } from "@daytona/sdk";
 import { SANDBOX_AGENT_ENV, type SandboxConnection } from "eve/sandbox/provider";
 import { loadConfig } from "@/lib/config";
 import { getFakeBackend } from "@/lib/sandbox/fake";
@@ -29,7 +32,7 @@ export interface DaytonaMachine {
   configureLifecycle(): Promise<void>;
   recover(): Promise<void>;
   ready(): Promise<void>;
-  delete(): Promise<void>;
+  delete(timeout?: number, wait?: boolean): Promise<void>;
   connect(callbacks: ConnectionCallbacks): SandboxConnection;
   readJobDirectory(jobId: string): Promise<JobDirectoryReading>;
 }
@@ -104,10 +107,87 @@ function wrap(sandbox: Sandbox): DaytonaMachine {
       await configureLifecycle();
     },
     ready: () => sandbox.waitUntilStarted(300),
-    delete: () => sandbox.delete(300, true),
+    delete: (timeout = 300, wait = true) => sandbox.delete(timeout, wait),
     connect: (callbacks) => connectDaytona(sandbox, callbacks),
     readJobDirectory: (jobId) => readDaytonaJobDirectory(sandbox, jobId),
   };
+}
+
+// SDK 0.226.1 не принимает AbortSignal у get/delete. Изолируем только эту
+// операцию: terminate закрывает её HTTP/WebSocket и останавливает продолжения
+// SDK до освобождения блокировки. Уже принятый Daytona запрос отменить нельзя;
+// следующий вызов подтверждает удаление через get/404.
+const DELETE_WORKER = String.raw`
+const { parentPort, workerData } = require("node:worker_threads");
+(async () => {
+  try {
+    const { Daytona } = require(workerData.modulePath);
+    const client = new Daytona({
+      apiKey: workerData.secret, apiUrl: workerData.apiUrl,
+      requestTimeoutMs: Math.max(1, workerData.deadline - Date.now())
+    });
+    const sandbox = await client.get(workerData.sandboxId);
+    const remaining = workerData.deadline - Date.now();
+    if (remaining <= 0) throw new Error("Deletion timed out");
+    await sandbox.delete(remaining / 1000, true);
+    parentPort.postMessage({ ok: true });
+  } catch (error) {
+    parentPort.postMessage({ ok: false, status: error?.statusCode ?? error?.status });
+  }
+})();
+`;
+
+/** Ограниченное и полностью остановленное перед возвратом удаление SDK. */
+export async function deleteDaytonaMachine(
+  keyId: string,
+  secret: string,
+  sandboxId: string,
+  options: { signal: AbortSignal; deadline: number },
+): Promise<void> {
+  const { signal, deadline } = options;
+  signal.throwIfAborted();
+  const config = loadConfig();
+  if (config.appTestMode) {
+    const machine = await daytonaBackend(keyId, secret).get(sandboxId);
+    signal.throwIfAborted();
+    await (machine as import("@/lib/sandbox/fake").FakeMachine).delete(
+      Math.max(0.001, (deadline - Date.now()) / 1000), true, signal,
+    );
+    signal.throwIfAborted();
+    return;
+  }
+  const require = createRequire(resolve("package.json"));
+  const worker = new Worker(DELETE_WORKER, {
+    eval: true,
+    workerData: {
+      modulePath: require.resolve("@daytona/sdk"),
+      apiUrl: config.daytonaApiUrl, secret, sandboxId, deadline,
+    },
+    stdout: true, stderr: true,
+  });
+  // В журнал приложения не пересылаем ни вывод SDK, ни его ошибки с ключом.
+  worker.stdout.resume();
+  worker.stderr.resume();
+  let abort: (() => void) | undefined;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      abort = () => reject(signal.reason);
+      signal.addEventListener("abort", abort, { once: true });
+      worker.once("error", () => reject(new Error("Daytona deletion worker failed")));
+      worker.once("exit", () => reject(new Error("Daytona deletion worker exited")));
+      worker.once("message", (result: { ok: boolean; status?: number }) => {
+        if (result.ok) resolve();
+        else if (result.status === 404) reject(new DaytonaNotFoundError("Sandbox not found", 404));
+        else if (result.status === 409) reject(new DaytonaConflictError("Sandbox state change in progress", 409));
+        else reject(Object.assign(new Error("Daytona deletion failed"), { status: result.status }));
+      });
+      if (signal.aborted) abort();
+    });
+    signal.throwIfAborted();
+  } finally {
+    if (abort) signal.removeEventListener("abort", abort);
+    await worker.terminate();
+  }
 }
 
 export function daytonaBackend(keyId: string, secret: string): DaytonaBackend {

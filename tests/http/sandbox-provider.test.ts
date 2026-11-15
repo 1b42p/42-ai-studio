@@ -7,6 +7,7 @@ import { beforeEach, expect, test } from "vitest";
 
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
 import { loadConfig } from "../../lib/config";
+import { getLockSqlClient, getSqlClient } from "../../lib/db/client";
 import { getFakeBackend } from "../../lib/sandbox/fake";
 import { appSessions, daytonaKeys, sandboxes } from "../../lib/db/schema";
 import { assertEveSessionAccess } from "../../lib/sessions/access";
@@ -62,6 +63,43 @@ test("имена машин уникальны внутри организаци
   expect((await b.get("same-name")).id).toBe(second.id);
   await expect(a.create({ name: "same-name", appSessionId })).rejects.toMatchObject({ status: 409 });
   await Promise.all([first.delete(), second.delete()]);
+});
+
+test("метка удаления, появившаяся пока start ждёт блокировку, запрещает создание", async () => {
+  await createDaytonaKey();
+  const user = await createUser();
+  const eveSessionId = randomUUID();
+  const [session] = await db().insert(appSessions).values({ userId: user.id, eveSessionId }).returning();
+  const ctx = {
+    kind: "session",
+    session: { id: eveSessionId, auth: { current: null, initiator: null }, turn: { id: randomUUID(), sequence: 0 } },
+    storagePath: loadConfig().fakeSandboxDir!,
+    resolveProjectPath: (filename: string) => path.resolve(filename),
+  } satisfies SandboxSessionContext;
+  const lock = await getLockSqlClient().reserve();
+  await lock`select pg_advisory_lock(1, hashtext(${session.id}::text))`;
+  const opening = createDaytonaLifecycle().start(ctx, undefined, {
+    templateKey: "deleted-race", dockerfile: "FROM python:3.12-slim-bookworm\n", files: [],
+  });
+  const result = opening.then((value) => ({ value }), (error: unknown) => ({ error }));
+  try {
+    await expect.poll(async () => {
+      const rows = await getSqlClient()`select 1 from pg_stat_activity
+        where wait_event = 'advisory' and query like ${`%${session.id}%`}`;
+      // postgres.js передаёт UUID параметром: ожидающий запрос содержит $1.
+      const parameterized = await getSqlClient()`select 1 from pg_stat_activity
+        where wait_event = 'advisory' and query like '%pg_advisory_lock(1,%'`;
+      return rows.length + parameterized.length;
+    }).toBeGreaterThan(0);
+    await db().update(appSessions).set({ deletedAt: new Date() }).where(eq(appSessions.id, session.id));
+  } finally {
+    await lock`select pg_advisory_unlock(1, hashtext(${session.id}::text))`;
+    lock.release();
+  }
+  const outcome = await result;
+  if ("value" in outcome) await outcome.value.connection.close?.();
+  expect(outcome).toMatchObject({ error: { code: "session_not_bound" } });
+  expect((await fakeSandbox.counters()).created).toBe(0);
 });
 
 test("два одновременных start одной сессии создают одну песочницу и возвращают её обоим клиентам", async () => {

@@ -3,6 +3,8 @@ import type { EveEvalContext, ToolStub } from "eve/evals";
 import { expect, inject, test } from "vitest";
 
 import data from "../../evals/fixtures/voiceover/project.json";
+import { mediaStubs } from "../../evals/voiceover/command-fixtures";
+import { PIPER_VOICE, PROJECT } from "../../evals/voiceover/fixture-data";
 import { voiceoverSession } from "../../evals/voiceover/fixtures";
 import {
   piperScenes,
@@ -33,6 +35,58 @@ function readTiming(path: string, timing: unknown) {
     output: { path, content: `1: ${JSON.stringify(timing)}` },
   };
 }
+
+test.each(["", "-v2"])(
+  "подмены Piper сохраняют batch, loop и точные ответы (версия=%s)",
+  (version) => {
+    const stubs = mediaStubs(true);
+    const responseFor = (command: string) => {
+      const matched = stubs.find((stub) => {
+        const constraint = stub.match?.command;
+        return constraint && typeof constraint === "object" &&
+          typeof constraint.pattern === "string" &&
+          new RegExp(constraint.pattern).test(command);
+      });
+      expect(matched).toBeDefined();
+      return matched?.outcome;
+    };
+    const synthesis = (number: string) =>
+      `python3 /skills/piper_speak.py --voice ${PIPER_VOICE} ` +
+      `--text-file "voice/scene-${number}.txt" ` +
+      `--out "public/voice/scene-${number}-piper${version}"`;
+    const expected = {
+      response: {
+        status: "completed",
+        exitCode: 0,
+        stdout: data.scenes.map((scene, index) => {
+          const base = `${PROJECT}/public/voice/scene-0${index + 1}-piper${version}`;
+          return JSON.stringify({
+            audioPath: `${base}.wav`,
+            timingsPath: `${base}.words.json`,
+            durationMs: scene.durationMs,
+            words: scene.words.length,
+            mode: "alignment",
+          });
+        }).join("\n"),
+        stderr: "",
+        truncated: false,
+      },
+    };
+    expect(responseFor(["01", "02", "03"].map(synthesis).join(" && ")))
+      .toEqual(expected);
+    for (const values of ["01 02 03", "{01..03}"]) {
+      for (const variable of ["i", "scene"]) {
+        for (const reference of [`$${variable}`, `\${${variable}}`]) {
+          for (const separator of [";", "\n"]) {
+            const command = `cd "${PROJECT}" && for ${variable} in ${values}${separator} do ` +
+              `${synthesis(reference)}${separator} done`;
+            expect(responseFor(command)).toEqual(expected);
+          }
+        }
+      }
+    }
+  },
+);
 
 test.each([false, true])(
   "полный набор подмен voiceover принимается HTTP-сервером eve (fallback=%s)",

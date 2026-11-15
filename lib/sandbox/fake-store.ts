@@ -11,7 +11,7 @@ export type FakeCreateFailure = "build_failed" | "unavailable" | "error" | "unau
 /** Отказ использования: как ответ Daytona на `/organizations/{id}/usage`. */
 export type FakeUsageFailure = "unauthorized" | "forbidden" | "unavailable" | "unexpected";
 /** Отказ удаления машины: проверка повторного `deleteKey`. */
-export type FakeDeleteFailure = "unavailable" | "error";
+export type FakeDeleteFailure = "unavailable" | "error" | "conflict" | "not_found";
 /** Отказ чтения машины: проверка восстановления на отозванном ключе. */
 export type FakeGetFailure = "unauthorized" | "unavailable";
 /** Ресурсы песочницы и квота ключа в фиктивном слое. */
@@ -37,7 +37,9 @@ export interface StoredRule extends Omit<FakeRule, "match"> {
   flags: string;
 }
 export interface FakeCall {
-  op: "spawn" | "readFile" | "writeFiles" | "removePath" | "stop" | "readJobDirectory";
+  op: "spawn" | "readFile" | "writeFiles" | "removePath" | "stop" | "readJobDirectory" | "delete";
+  timeout?: number;
+  wait?: boolean;
   command?: string;
   path?: string;
   at: number;

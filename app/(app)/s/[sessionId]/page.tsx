@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ResumedChat } from "@/components/studio/chat/resumed-chat";
 import { getCurrentUser, requireUser } from "@/lib/auth/guard";
 import { isUuid } from "@/lib/sessions/access";
-import { findAppSessionForUser, SESSION_START_WINDOW_MS } from "@/lib/sessions/service";
+import { findUserSession, SESSION_START_WINDOW_MS } from "@/lib/sessions/service";
 
 const UNTITLED_DOCUMENT = "Новая сессия · 42 AI Studio";
 
@@ -19,7 +19,7 @@ export async function generateMetadata({
   if (user === null || user.isBlocked || !isUuid(sessionId)) {
     return { title: UNTITLED_DOCUMENT };
   }
-  const session = await findAppSessionForUser(sessionId, user.id);
+  const session = await findUserSession(user.id, sessionId);
   if (session === null || session.title === null || session.title === "") {
     return { title: UNTITLED_DOCUMENT };
   }
@@ -40,7 +40,7 @@ export default async function SessionPage({
   const user = await requireUser(`/s/${sessionId}`);
 
   if (!isUuid(sessionId)) notFound();
-  const session = await findAppSessionForUser(sessionId, user.id);
+  const session = await findUserSession(user.id, sessionId);
   if (session === null) notFound();
 
   const starting =

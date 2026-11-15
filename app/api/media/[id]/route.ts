@@ -38,6 +38,9 @@ export async function GET(
     expiresIn: MEDIA_URL_TTL_SECONDS,
     downloadName: download ? record.originalName : undefined,
   });
+  if ((await findMediaForUser(id, user.id)) === null) {
+    return errorResponse(404, "not_found", "Файл не найден");
+  }
 
   return new Response(null, {
     status: 302,

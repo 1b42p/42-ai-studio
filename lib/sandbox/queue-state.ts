@@ -1,4 +1,4 @@
-import { asc, eq, gt } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 
 import { getDb, getSqlClient } from "@/lib/db/client";
 import { queueEntries, sandboxes } from "@/lib/db/schema";
@@ -10,7 +10,8 @@ export async function getSandboxStatus(appSessionId: string): Promise<SandboxSta
     appSessionId: queueEntries.appSessionId,
     reason: queueEntries.reason,
   }).from(queueEntries)
-    .where(gt(queueEntries.heartbeatAt, new Date(Date.now() - 60_000)))
+    .where(and(gt(queueEntries.heartbeatAt, new Date(Date.now() - 60_000)),
+      sql`exists (select 1 from app_sessions where id = ${queueEntries.appSessionId} and deleted_at is null)`))
     .orderBy(asc(queueEntries.enqueuedAt), asc(queueEntries.id));
   const position = entries.findIndex((entry) => entry.appSessionId === appSessionId);
   if (position !== -1) {

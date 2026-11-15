@@ -25,13 +25,13 @@ export async function recordSandboxTask(
       insert into sandbox_task_calls (app_session_id, task_id, call_id, turn_id, generation, kind)
       select a.id, ${data.taskId}, ${data.callId}, ${data.turnId}, w.generation, ${data.kind ?? "tool"}
       from app_sessions a join sandbox_wait_turns w on w.app_session_id = a.id
-      where a.eve_session_id = ${rootEveSessionId} and w.scope_id = 'root' and w.turn_id = ${data.turnId}
+       where a.eve_session_id = ${rootEveSessionId} and a.deleted_at is null and w.scope_id = 'root' and w.turn_id = ${data.turnId}
         and w.generation = a.sandbox_wait_generation
       on conflict (app_session_id, call_id) do nothing returning id`;
     // Повтор уже записанного события не меняет поколение или settled.
     if (!call) {
       const [known] = await tx`select c.id from sandbox_task_calls c join app_sessions a on a.id = c.app_session_id
-        where a.eve_session_id = ${rootEveSessionId} and c.call_id = ${data.callId}`;
+         where a.eve_session_id = ${rootEveSessionId} and a.deleted_at is null and c.call_id = ${data.callId}`;
       if (!known) throw new StudioSandboxError("sandbox_wait_cancelled");
     }
   });
@@ -47,7 +47,7 @@ export async function captureSandboxCopyWait(
     const [call] = await tx<{ appSessionId: string; generation: number }[]>`
       select c.app_session_id as "appSessionId", c.generation from sandbox_task_calls c
       join app_sessions a on a.id = c.app_session_id
-      where a.eve_session_id = ${rootEveSessionId} and c.task_id = (
+       where a.eve_session_id = ${rootEveSessionId} and a.deleted_at is null and c.task_id = (
         select initial.task_id from sandbox_task_calls initial
         where initial.app_session_id = a.id and initial.call_id = ${parentCallId})
         and c.state = 'active' and c.kind = 'agent' and c.generation = a.sandbox_wait_generation
