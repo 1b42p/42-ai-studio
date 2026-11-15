@@ -45,6 +45,8 @@ export interface PublishToolMediaOptions {
   readonly path: string;
   readonly contentType?: string;
   readonly kind?: ToolMediaKind;
+  /** Только серверный снимок байтов после проверки формата и размера. */
+  readonly validatedBytes?: Uint8Array;
 }
 
 export interface PublishToolMediaDependencies {
@@ -104,6 +106,7 @@ export async function publishToolMedia(
       kind,
       contentType: options.contentType,
       storage: dependencies.storage,
+      validatedBytes: options.validatedBytes,
     });
   } catch (error) {
     if (error instanceof MediaCopyError) {

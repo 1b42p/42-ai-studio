@@ -23,6 +23,7 @@ interface ListItem {
   title: string | null;
   createdAt: string;
   updatedAt: string;
+  preview: { mediaId: string } | null;
 }
 
 interface ListPage {
@@ -149,10 +150,12 @@ describe("GET /api/sessions", () => {
     expect(own.body.items[0]).toMatchObject({
       title: "Сессия 2",
       createdAt: "2026-06-01T10:00:00.000Z",
+      preview: null,
     });
     expect(Object.keys(own.body.items[0]).sort()).toEqual([
       "createdAt",
       "id",
+      "preview",
       "title",
       "updatedAt",
     ]);
