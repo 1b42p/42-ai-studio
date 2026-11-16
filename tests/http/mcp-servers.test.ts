@@ -53,6 +53,10 @@ describe("MCP-серверы пользователя", () => {
     const other = await createUser();
     const otherCookie = await loginAs(other);
     expect((await fetchApp(`/api/mcp-servers/${server.id}`, { method: "DELETE", headers: { cookie: otherCookie } })).status).toBe(404);
+    expect((await fetchApp(`/api/mcp-servers/${server.id}`, {
+      method: "PATCH", headers: { cookie: otherCookie, "content-type": "application/json" }, body: JSON.stringify({ enabled: false }),
+    })).status).toBe(404);
+    expect((await fetchApp(`/api/mcp-servers/${server.id}/check`, { method: "POST", headers: { cookie: otherCookie } })).status).toBe(404);
     expect(await (await fetchApp("/api/mcp-servers", { headers: { cookie: otherCookie } })).json()).toEqual({ servers: [] });
     const otherToken = await signInternalToken("mcp_proxy", { uid: other.id, srv: server.id });
     expect((await fetchApp(`/api/mcp-proxy/${server.id}`, { headers: { "x-studio-mcp-token": otherToken } })).status).toBe(403);
@@ -73,6 +77,17 @@ describe("MCP-серверы пользователя", () => {
     const disabled = await sendAndWait(user, session.id, '/tool eve__tool {"name":"mcp-moy-server__echo","input":{"text":"пока"}}');
     expect(JSON.stringify(disabled)).not.toContain("echo: пока");
     expect(await fakeMcpServer.requests()).toHaveLength(disabledCalls);
+    const enabled = await fetchApp(`/api/mcp-servers/${server.id}`, {
+      method: "PATCH", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ enabled: true }),
+    });
+    expect(enabled.status).toBe(200);
+    const restored = await sendAndWait(user, session.id, '/tool eve__tool {"name":"mcp-moy-server__echo","input":{"text":"снова"}}');
+    expect(JSON.stringify(restored)).toContain("echo: снова");
+    expect((await fetchApp(`/api/mcp-servers/${server.id}`, { method: "DELETE", headers: { cookie } })).status).toBe(204);
+    const afterDelete = (await fakeMcpServer.requests()).length;
+    const removed = await sendAndWait(user, session.id, '/tool eve__tool {"name":"mcp-moy-server__echo","input":{"text":"удалён"}}');
+    expect(JSON.stringify(removed)).not.toContain("echo: удалён");
+    expect(await fakeMcpServer.requests()).toHaveLength(afterDelete);
   }, 90_000);
 
   test("ограничивает проверки и запрещает обращения во внутреннюю сеть", async () => {
