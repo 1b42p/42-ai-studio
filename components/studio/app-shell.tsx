@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import { Brand } from "@/components/studio/brand";
 import { ThemeToggle } from "@/components/studio/theme-toggle";
-import type { NavItem } from "@/components/studio/nav";
+import { navIcons, type NavItem } from "@/components/studio/nav";
 import {
   Sidebar,
   SidebarContent,
@@ -37,9 +37,6 @@ function isActive(pathname: string, href: string) {
  * поверх экрана на телефоне.
  */
 export function AppShell({ navItems, pathname, userSlot, children }: AppShellProps) {
-  // Пока роль оператора не появилась (#30), пункты «только для оператора» скрыты.
-  const visibleItems = navItems.filter((item) => item.requires !== "operator");
-
   return (
     <SidebarProvider>
       <Sidebar>
@@ -57,17 +54,20 @@ export function AppShell({ navItems, pathname, userSlot, children }: AppShellPro
             <SidebarGroupLabel>Разделы</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {visibleItems.map((item) => (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      render={<a href={item.href} />}
-                      isActive={isActive(pathname, item.href)}
-                    >
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                {navItems.map((item) => {
+                  const Icon = navIcons[item.icon];
+                  return (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        render={<a href={item.href} />}
+                        isActive={isActive(pathname, item.href)}
+                      >
+                        <Icon />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

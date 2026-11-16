@@ -27,15 +27,60 @@ describe("настройки пользователя", () => {
     const initial = await settingsAs(user);
     expect(initial.status).toBe(200);
     expect(initial.headers.get("cache-control")).toBe("no-store");
-    expect(await initial.json()).toEqual({ customInstructions: "" });
+    expect(await initial.json()).toEqual({ customInstructions: "", memoryEnabled: false });
 
     const saved = await patchAs(user, { customInstructions: "  Пиши\r\nкратко.\u0000 " });
     expect(saved.status).toBe(200);
-    expect(await saved.json()).toEqual({ customInstructions: "Пиши\nкратко." });
-    expect(await (await settingsAs(user)).json()).toEqual({ customInstructions: "Пиши\nкратко." });
+    expect(await saved.json()).toEqual({ customInstructions: "Пиши\nкратко.", memoryEnabled: false });
+    expect(await (await settingsAs(user)).json())
+      .toEqual({ customInstructions: "Пиши\nкратко.", memoryEnabled: false });
 
     expect(await (await patchAs(user, { customInstructions: "" })).json())
-      .toEqual({ customInstructions: "" });
+      .toEqual({ customInstructions: "", memoryEnabled: false });
+  });
+
+  test("переключает память, сохраняя общие указания и остальные настройки", async () => {
+    const user = await createUser();
+    expect((await patchAs(user, {
+      customInstructions: "Пиши кратко.",
+      memoryEnabled: false,
+    })).status).toBe(200);
+    const enabled = await patchAs(user, { memoryEnabled: true });
+    expect(enabled.status).toBe(200);
+    expect(await enabled.json()).toEqual({
+      customInstructions: "Пиши кратко.", memoryEnabled: true,
+    });
+    expect(await (await settingsAs(user)).json()).toEqual({
+      customInstructions: "Пиши кратко.", memoryEnabled: true,
+    });
+    expect(await (await patchAs(user, { customInstructions: "По-русски." })).json()).toEqual({
+      customInstructions: "По-русски.", memoryEnabled: true,
+    });
+    const disabled = await patchAs(user, { memoryEnabled: false });
+    expect(disabled.status).toBe(200);
+    expect(await disabled.json()).toEqual({
+      customInstructions: "По-русски.", memoryEnabled: false,
+    });
+    expect(await (await settingsAs(user)).json()).toEqual({
+      customInstructions: "По-русски.", memoryEnabled: false,
+    });
+  });
+
+  test("изменение памяти требует входа и разрешённого Origin", async () => {
+    expect((await fetchApp("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memoryEnabled: true }),
+    })).status).toBe(401);
+    const blocked = await createUser({ isBlocked: true });
+    expect((await patchAs(blocked, { memoryEnabled: true })).status).toBe(403);
+    const user = await createUser();
+    expect((await patchAs(user, { memoryEnabled: true }, {
+      origin: "https://evil.example",
+    })).status).toBe(403);
+    expect(await (await settingsAs(user)).json()).toEqual({
+      customInstructions: "", memoryEnabled: false,
+    });
   });
 
   test("без входа и заблокированному доступ закрыт", async () => {
@@ -51,12 +96,13 @@ describe("настройки пользователя", () => {
     const userA = await createUser();
     const userB = await createUser();
     expect((await patchAs(userA, { customInstructions: "Частные пожелания А" })).status).toBe(200);
-    expect(await (await settingsAs(userB)).json()).toEqual({ customInstructions: "" });
+    expect(await (await settingsAs(userB)).json())
+      .toEqual({ customInstructions: "", memoryEnabled: false });
     expect((await patchAs(userA, { customInstructions: "чужое" }, {
       origin: "https://evil.example",
     })).status).toBe(403);
     expect(await (await settingsAs(userA)).json())
-      .toEqual({ customInstructions: "Частные пожелания А" });
+      .toEqual({ customInstructions: "Частные пожелания А", memoryEnabled: false });
   });
 
   test("4000 кодовых точек принимаются, 4001 отклоняется без изменения настроек", async () => {
@@ -71,12 +117,14 @@ describe("настройки пользователя", () => {
         message: "Общие указания не должны быть длиннее 4000 символов (сейчас 4001).",
       },
     });
-    expect(await (await settingsAs(user)).json()).toEqual({ customInstructions: text });
+    expect(await (await settingsAs(user)).json())
+      .toEqual({ customInstructions: text, memoryEnabled: false });
   });
 
   test.each([
     {}, [], null, 7, { typo: "" }, { customInstructions: 9 },
     { customInstructions: "верное поле", typo: "" },
+    { memoryEnabled: "yes" }, { memoryEnabled: 1 }, { memoryEnabled: null },
   ])(
     "неверное тело %j возвращает invalid_request",
     async (body) => {

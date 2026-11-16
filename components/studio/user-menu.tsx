@@ -2,7 +2,7 @@
 
 import { LogOutIcon } from "lucide-react";
 
-import type { NavItem } from "@/components/studio/nav";
+import { navIcons, type NavItem } from "@/components/studio/nav";
 import { useLogout } from "@/components/studio/use-logout";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -60,12 +60,15 @@ export function UserMenu({ user, onLogout, items = [] }: UserMenuProps) {
       <DropdownMenuContent align="start" side="top" className="w-56">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="truncate">{user.name}</DropdownMenuLabel>
-          {items.map(({ title, href, icon: Icon }) => (
-            <DropdownMenuItem key={href} render={<a href={href} />}>
-              <Icon />
-              {title}
-            </DropdownMenuItem>
-          ))}
+          {items.map(({ title, href, icon }) => {
+            const Icon = navIcons[icon];
+            return (
+              <DropdownMenuItem key={href} render={<a href={href} />}>
+                <Icon />
+                {title}
+              </DropdownMenuItem>
+            );
+          })}
           {failed ? (
             <Alert variant="destructive">
               <AlertDescription>Не удалось выйти. Попробуйте ещё раз.</AlertDescription>

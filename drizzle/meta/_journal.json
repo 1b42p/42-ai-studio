@@ -145,8 +145,22 @@
     {
       "idx": 20,
       "version": "7",
-      "when": 1794771979924,
-      "tag": "0020_nasty_tigra",
+      "when": 1794771942527,
+      "tag": "0020_flaky_tusk",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794780327655,
+      "tag": "0021_cooing_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1794821281313,
+      "tag": "0022_slimy_whirlwind",
       "breakpoints": true
     }
   ]

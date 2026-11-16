@@ -1,27 +1,49 @@
-import { MessagesSquareIcon, SettingsIcon, type LucideIcon } from "lucide-react";
+import { MessagesSquareIcon, SettingsIcon, ShieldIcon, type LucideIcon } from "lucide-react";
+
+/** Значок пункта навигации: имя, а не компонент, чтобы массив был сериализуемым. */
+export type NavIcon = "sessions" | "settings" | "admin";
 
 /** Пункт боковой навигации приложения. */
 export interface NavItem {
   title: string;
   href: string;
-  icon: LucideIcon;
-  /** Показывает пункт только оператору. Проверку добавит #30. */
+  icon: NavIcon;
+  /** Показывает пункт только оператору. */
   requires?: "operator";
 }
 
-/**
- * Единственный список пунктов навигации на весь проект.
- * «Админку» (`requires: "operator"`) добавит #30.
- */
+/** Значки пунктов: компоненты живут только в клиентском графе. */
+export const navIcons: Record<NavIcon, LucideIcon> = {
+  sessions: MessagesSquareIcon,
+  settings: SettingsIcon,
+  admin: ShieldIcon,
+};
+
+/** Единственный список пунктов навигации на весь проект. */
 export const navItems: NavItem[] = [
   {
     title: "Сессии",
     href: "/s",
-    icon: MessagesSquareIcon,
+    icon: "sessions",
   },
   {
     title: "Настройки",
     href: "/settings",
-    icon: SettingsIcon,
+    icon: "settings",
+  },
+  {
+    title: "Админка",
+    href: "/admin",
+    icon: "admin",
+    requires: "operator",
   },
 ];
+
+/**
+ * Пункты для оболочки: `is_operator` приходит из проверки пользователя на
+ * сервере. Скрытие — удобство, а не защита: страницы и маршруты проверяют
+ * право сами.
+ */
+export function navItemsFor(isOperator: boolean): NavItem[] {
+  return isOperator ? navItems : navItems.filter((item) => item.requires !== "operator");
+}

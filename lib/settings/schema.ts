@@ -30,6 +30,7 @@ const customInstructionsSchema = z
 
 export const settingsSchema = z.strictObject({
   customInstructions: customInstructionsSchema,
+  memoryEnabled: z.boolean({ error: INVALID_SETTINGS_MESSAGE }),
 });
 
 export const settingsPatchSchema = settingsSchema.partial().refine(

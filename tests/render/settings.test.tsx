@@ -30,17 +30,26 @@ afterEach(() => vi.restoreAllMocks());
 
 function StatefulSettings({
   initial = "Пиши кратко.",
-  save = async (patch: SettingsPatch) => ({ customInstructions: normalizeCustomInstructions(patch.customInstructions ?? "") }),
+  initialMemoryEnabled = false,
+  save,
 }: {
   initial?: string;
+  initialMemoryEnabled?: boolean;
   save?: (patch: SettingsPatch) => Promise<Settings>;
 }) {
-  const [settings, setSettings] = useState({ customInstructions: initial });
+  const [settings, setSettings] = useState({
+    customInstructions: initial,
+    memoryEnabled: initialMemoryEnabled,
+  });
   return (
     <SettingsPage
       settings={settings}
       save={async (patch) => {
-        const next = await save(patch);
+        const next = save ? await save(patch) : {
+          ...settings,
+          ...patch,
+          customInstructions: normalizeCustomInstructions(patch.customInstructions ?? settings.customInstructions),
+        };
         setSettings(next);
         return next;
       }}
@@ -51,7 +60,7 @@ function StatefulSettings({
 }
 
 function NetworkSettings() {
-  const { settings, save } = useSettings({ customInstructions: "Начальные указания" });
+  const { settings, save } = useSettings({ customInstructions: "Начальные указания", memoryEnabled: false });
   return <SettingsPage settings={settings} save={save} user={user} onLogout={() => {}} />;
 }
 
@@ -59,14 +68,14 @@ test("настройки показывают разделы, заполненн
   const onLogout = vi.fn();
   await renderOnPhone(
     <SettingsPage
-      settings={{ customInstructions: "Пиши кратко." }}
+      settings={{ customInstructions: "Пиши кратко.", memoryEnabled: false }}
       save={vi.fn()}
       user={user}
       onLogout={onLogout}
     />,
   );
 
-  for (const name of ["Тема", "Общие указания для агента", "MCP-серверы", "Аккаунт"]) {
+  for (const name of ["Тема", "Общие указания для агента", "MCP-серверы", "Память", "Аккаунт"]) {
     await expect.element(page.getByRole("heading", { name, exact: true })).toBeVisible();
   }
   await expect.element(page.getByRole("textbox", { name: "Общие указания" })).toHaveValue("Пиши кратко.");
@@ -87,7 +96,10 @@ test("компьютер: навигация настроек, одна коло
   await expect.element(page.getByRole("link", { name: "Настройки" })).toHaveAttribute("href", "/settings");
   await expect.element(page.getByText("4000 из 4000")).toBeVisible();
   const regions = page.getByRole("region").elements();
-  expect(regions).toHaveLength(4);
+  expect(regions).toHaveLength(5);
+  expect(regions.map((region) => region.getAttribute("aria-labelledby"))).toEqual([
+    "settings-theme", "settings-instructions", "settings-mcp", "settings-memory", "settings-account",
+  ]);
   const bounds = regions.map((region) => region.getBoundingClientRect());
   expect(bounds.every((rect) => rect.width <= 672)).toBe(true);
   expect(bounds[0].x).toBe(bounds[1].x);
@@ -98,7 +110,7 @@ test("компьютер: навигация настроек, одна коло
 test("телефон: 4000 символов без пробелов, длинное имя и кнопки во всю ширину", async () => {
   await renderOnPhone(
     <SettingsPage
-      settings={{ customInstructions: "Я".repeat(4000) }}
+      settings={{ customInstructions: "Я".repeat(4000), memoryEnabled: false }}
       save={vi.fn()}
       user={{ ...user, name: "Я".repeat(200), username: "a".repeat(200) }}
       onLogout={() => {}}
@@ -145,7 +157,7 @@ test("сохранение показывает спиннер, блокируе
   await expect.element(page.getByRole("status", { name: "Сохранение" })).toBeVisible();
   expect(save).toHaveBeenCalledExactlyOnceWith({ customInstructions: "На русском." });
 
-  pending.resolve({ customInstructions: "На русском." });
+  pending.resolve({ customInstructions: "На русском.", memoryEnabled: false });
   await expect.element(page.getByText("Сохранено", { exact: true })).toBeVisible();
   await expect.element(field).toHaveValue("На русском.");
   await expect.element(button).toBeDisabled();
@@ -156,7 +168,7 @@ test("сохранение показывает спиннер, блокируе
 test("ошибка не теряет текст, повтор сохраняет, очистка отправляет пустую строку", async () => {
   const save = vi.fn()
     .mockRejectedValueOnce(new Error("private internal details"))
-    .mockResolvedValueOnce({ customInstructions: "" });
+    .mockResolvedValueOnce({ customInstructions: "", memoryEnabled: false });
   await renderOnDesktop(<StatefulSettings save={save} />);
   const field = page.getByRole("textbox", { name: "Общие указания" });
   const button = page.getByRole("button", { name: "Сохранить" });
@@ -203,9 +215,9 @@ test("тема меняет класс, хранится после открыт
 
 test("хук читает GET и сохраняет PATCH с сообщением валидации сервера", async () => {
   const fetch = vi.spyOn(globalThis, "fetch")
-    .mockResolvedValueOnce(Response.json({ customInstructions: "Из GET" }))
+    .mockResolvedValueOnce(Response.json({ customInstructions: "Из GET", memoryEnabled: false }))
     .mockResolvedValueOnce(Response.json({ error: { code: "invalid_request", message: "Сообщение сервера." } }, { status: 400 }))
-    .mockResolvedValueOnce(Response.json({ customInstructions: "Новые указания" }));
+    .mockResolvedValueOnce(Response.json({ customInstructions: "Новые указания", memoryEnabled: false }));
   await renderOnDesktop(<NetworkSettings />);
   const field = page.getByRole("textbox");
   await expect.element(field).toHaveValue("Из GET");
@@ -225,11 +237,103 @@ test("поздний GET не затирает сохранённые измен
   const get = Promise.withResolvers<Response>();
   vi.spyOn(globalThis, "fetch")
     .mockImplementationOnce(() => get.promise)
-    .mockResolvedValueOnce(Response.json({ customInstructions: "Новые указания" }));
+    .mockResolvedValueOnce(Response.json({ customInstructions: "Новые указания", memoryEnabled: false }));
   await renderOnDesktop(<NetworkSettings />);
   await page.getByRole("textbox").fill("Новые указания");
   await page.getByRole("button", { name: "Сохранить" }).click();
   await expect.element(page.getByText("Сохранено", { exact: true })).toBeVisible();
-  get.resolve(Response.json({ customInstructions: "Устаревшие указания" }));
+  get.resolve(Response.json({ customInstructions: "Устаревшие указания", memoryEnabled: false }));
   await expect.element(page.getByRole("textbox")).toHaveValue("Новые указания");
+});
+
+for (const [viewport, renderSettings] of [
+  ["телефон", renderOnPhone],
+  ["компьютер", renderOnDesktop],
+] as const) {
+  for (const enabled of [false, true]) {
+    test(`${viewport}: память ${enabled ? "включена" : "выключена"}, переключение доступно по подписи`, async () => {
+      await renderSettings(<StatefulSettings initialMemoryEnabled={enabled} />);
+      const toggle = page.getByRole("switch", { name: "Запоминать мои предпочтения", exact: true });
+      await expect.element(toggle).toHaveAttribute("aria-checked", String(enabled));
+      await expect.element(toggle).toHaveAttribute("aria-busy", "false");
+      await expect.element(page.getByText(
+        "Агент запоминает ваши постоянные предпочтения и использует их во всех ваших сессиях. Выключенная память не используется, но остаётся сохранённой. Просмотреть или очистить её нельзя.",
+      )).toBeVisible();
+      await expect.element(toggle).toHaveAccessibleDescription("Изменение действует со следующего сообщения.");
+      await page.getByText("Запоминать мои предпочтения", { exact: true }).click();
+      await expect.element(toggle).toHaveAttribute("aria-checked", String(!enabled));
+      expectNoHorizontalScroll();
+    });
+  }
+
+  test(`${viewport}: память изменяется оптимистически, блокирует повтор и сохраняется`, async () => {
+    const pending = Promise.withResolvers<Settings>();
+    const save = vi.fn(() => pending.promise);
+    await renderSettings(<StatefulSettings save={save} />);
+    const toggle = page.getByRole("switch", { name: "Запоминать мои предпочтения" });
+    await toggle.click();
+    await expect.element(toggle).toHaveAttribute("aria-checked", "true");
+    await expect.element(toggle).toHaveAttribute("data-disabled");
+    await expect.element(toggle).toHaveAttribute("aria-busy", "true");
+    expect(save).toHaveBeenCalledExactlyOnceWith({ memoryEnabled: true });
+    expectNoHorizontalScroll();
+
+    pending.resolve({ customInstructions: "Пиши кратко.", memoryEnabled: true });
+    await expect.element(toggle).toHaveAttribute("aria-busy", "false");
+    await expect.element(toggle).toHaveAttribute("aria-checked", "true");
+    expectNoHorizontalScroll();
+  });
+
+  for (const enabled of [false, true]) {
+    test(`${viewport}: ошибка памяти откатывает ${enabled ? "выключение" : "включение"} и позволяет повтор`, async () => {
+      const pending = Promise.withResolvers<Settings>();
+      const save = vi.fn()
+        .mockImplementationOnce(() => pending.promise)
+        .mockResolvedValueOnce({ customInstructions: "Пиши кратко.", memoryEnabled: !enabled });
+      await renderSettings(<StatefulSettings save={save} initialMemoryEnabled={enabled} />);
+      const toggle = page.getByRole("switch", { name: "Запоминать мои предпочтения" });
+      await toggle.click();
+      await expect.element(toggle).toHaveAttribute("aria-checked", String(!enabled));
+      pending.reject(new Error("private internal details"));
+
+      await expect.element(page.getByRole("alert")).toHaveTextContent(
+        "Не удалось изменить настройку памяти. Попробуйте ещё раз.",
+      );
+      await expect.element(toggle).toHaveAttribute("aria-checked", String(enabled));
+      await expect.element(toggle).toHaveAttribute("aria-busy", "false");
+      expectNoHorizontalScroll();
+
+      await toggle.click();
+      await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
+      await expect.element(toggle).toHaveAttribute("aria-busy", "false");
+      await expect.element(toggle).toHaveAttribute("aria-checked", String(!enabled));
+      expect(save).toHaveBeenNthCalledWith(2, { memoryEnabled: !enabled });
+      expectNoHorizontalScroll();
+    });
+  }
+}
+
+test("память сохраняется через общий PATCH и не меняет общие указания", async () => {
+  const fetch = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(Response.json({ customInstructions: "Из GET", memoryEnabled: false }))
+    .mockResolvedValueOnce(Response.json({ customInstructions: "Из GET", memoryEnabled: true }))
+    .mockResolvedValueOnce(Response.json({ customInstructions: "Из GET", memoryEnabled: false }));
+  await renderOnDesktop(<NetworkSettings />);
+  const toggle = page.getByRole("switch", { name: "Запоминать мои предпочтения" });
+  await expect.element(page.getByRole("textbox")).toHaveValue("Из GET");
+  await toggle.click();
+  await expect.element(toggle).toHaveAttribute("aria-busy", "false");
+  await expect.element(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  await expect.element(toggle).toHaveAttribute("aria-busy", "false");
+  await expect.element(toggle).toHaveAttribute("aria-checked", "false");
+  expect(fetch.mock.calls.slice(1)).toEqual([true, false].map((memoryEnabled) => [
+    "/api/settings",
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memoryEnabled }),
+    },
+  ]));
+  await expect.element(page.getByRole("textbox")).toHaveValue("Из GET");
 });

@@ -9,6 +9,7 @@ import {
 import { esc, entriesPattern, optionOrders, pixelInvocation, quote } from "../music/operation-patterns";
 import { nominalFramePattern } from "../support/frame-pattern";
 import { blockedRead, emptySearch, isolateDownload } from "../web/fixtures";
+import { isDisabledEvalMemoryResolverManifest } from "../support/disabled-eval-memory-manifest";
 
 export const TIMEOUT = 20 * 60 * 1000;
 export const REQUEST = (seconds: number) => `Сделай ролик про кофе длительностью ${seconds} секунд, ` +
@@ -301,7 +302,9 @@ export async function questionSession(t: EveEvalContext, seconds = 120) {
   const covered = new Set(stubs.filter((stub) => stub.match === undefined).map((stub) => stub.tool));
   covered.add("ask_question"); // A stub returns JSON immediately and cannot park on human input.
   const uncovered = info.tools.static.filter(({ name }) => !covered.has(name));
-  if (uncovered.length || info.tools.dynamic.length) throw new Error(`Неподменённые эффекты: ${uncovered.map(({ name }) => name).join(", ")}`);
+  if (uncovered.length || info.tools.dynamic.some(tool => !isDisabledEvalMemoryResolverManifest(tool))) {
+    throw new Error(`Неподменённые эффекты: ${uncovered.map(({ name }) => name).join(", ")}`);
+  }
   return t.session({ stubs });
 }
 
