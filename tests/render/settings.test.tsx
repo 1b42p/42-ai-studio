@@ -98,7 +98,7 @@ test("компьютер: навигация настроек, одна коло
   const regions = page.getByRole("region").elements();
   expect(regions).toHaveLength(5);
   expect(regions.map((region) => region.getAttribute("aria-labelledby"))).toEqual([
-    "settings-theme", "settings-instructions", "settings-mcp", "settings-memory", "settings-account",
+    "settings-theme", "settings-instructions", "settings-memory", "settings-mcp", "settings-account",
   ]);
   const bounds = regions.map((region) => region.getBoundingClientRect());
   expect(bounds.every((rect) => rect.width <= 672)).toBe(true);
