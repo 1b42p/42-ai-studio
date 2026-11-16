@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 
 import { signInternalToken } from "@/lib/auth/internal-tokens";
 import { eq } from "drizzle-orm";
+import { SignJWT } from "jose";
 import { mcpServers, users } from "@/lib/db/schema";
 import { decryptSecret } from "@/lib/secrets";
 import { loadConfig } from "@/lib/config";
@@ -117,6 +118,31 @@ describe("MCP-серверы пользователя", () => {
     expect((await fetchApp(`/api/mcp-proxy/${id}`, { method: "POST" })).status).toBe(401);
   });
 
+  test("отвергает внутренние адреса и неизвестные имена при добавлении", async () => {
+    const user = await createUser();
+    const cookie = await loginAs(user);
+    const addresses = [
+      "https://2130706433/", "https://0x7f.1/", "https://[::ffff:127.0.0.1]/",
+      "https://[::1]/", "https://169.254.169.254/", "https://10.0.0.5/",
+      "https://100.64.0.1/", "http://localhost:59210/mcp", "https://a.localhost/",
+      "https://x.local/", "https://metadata.google.internal/", "https://intranet/",
+    ];
+    for (const url of addresses) {
+      const response = await fetchApp("/api/mcp-servers", {
+        method: "POST", headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({ name: "Недопустимый", url, authKind: "none" }),
+      });
+      expect(response.status, url).toBe(400);
+      expect((await response.json()).error.message, url).toContain("внутреннюю сеть");
+    }
+    const unknown = await fetchApp("/api/mcp-servers", {
+      method: "POST", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Неизвестный", url: "https://nonexistent.invalid/mcp", authKind: "none" }),
+    });
+    expect(unknown.status).toBe(400);
+    expect((await unknown.json()).error.message).toBe("Имя сервера не найдено.");
+  });
+
   test("не допускает к прокси чужую сессию и заблокированного пользователя", async () => {
     const user = await createUser();
     const other = await createUser();
@@ -132,6 +158,12 @@ describe("MCP-серверы пользователя", () => {
     expect(JSON.stringify(events)).not.toContain("echo: чужой");
     expect(await fakeMcpServer.requests()).toHaveLength(before);
     const token = await signInternalToken("mcp_proxy", { uid: user.id, srv: id });
+    const issued = Math.floor(Date.now() / 1000) - 120;
+    const expired = await new SignJWT({ uid: user.id, srv: id, purpose: "mcp_proxy" })
+      .setProtectedHeader({ alg: "HS256" }).setIssuer("studio-app").setAudience("studio-internal")
+      .setIssuedAt(issued).setExpirationTime(issued + 60)
+      .sign(new TextEncoder().encode(loadConfig().internalApiSecret));
+    expect((await fetchApp(`/api/mcp-proxy/${id}`, { headers: { "x-studio-mcp-token": expired } })).status).toBe(401);
     await db().update(users).set({ isBlocked: true }).where(eq(users.id, user.id));
     const denied = await fetchApp(`/api/mcp-proxy/${id}`, { headers: { "x-studio-mcp-token": token } });
     expect(denied.status).toBe(403);

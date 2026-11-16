@@ -38,6 +38,13 @@ test("пустой список, выбор авторизации и управ
   await expect.element(page.getByRole("textbox", { name: "Имя заголовка 2" })).toBeVisible();
   await page.getByRole("button", { name: "Убрать заголовок 2" }).click();
   await expect.element(page.getByRole("textbox", { name: "Имя заголовка 2" })).not.toBeInTheDocument();
+  await page.getByRole("combobox").click();
+  await page.getByRole("option", { name: "Токен (Bearer)" }).click();
+  const token = document.querySelector<HTMLInputElement>("#mcp-token");
+  expect(token?.type).toBe("password");
+  await page.getByRole("combobox").click();
+  await page.getByRole("option", { name: "Без авторизации" }).click();
+  expect(document.querySelector("#mcp-token")).toBeNull();
   expectNoHorizontalScroll();
 });
 
