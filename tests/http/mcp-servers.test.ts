@@ -343,4 +343,22 @@ describe("MCP-серверы пользователя", () => {
     expect(JSON.stringify(events)).toContain("echo: SSE");
     expect((await fakeMcpServer.requests()).some((request) => request.path.startsWith("/legacy/messages") && request.headers["user-agent"] === "42-ai-studio-mcp/1")).toBe(true);
   }, 90_000);
+
+  test.each([400, 404, 405])("переходит на SSE при ответе %i", async (status) => {
+    const user = await createUser();
+    const cookie = await loginAs(user);
+    const response = await fetchApp("/api/mcp-servers", {
+      method: "POST", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Legacy", url: `${upstreamUrl}/legacy/sse?fallback=${status}`, authKind: "none" }),
+    });
+    const server = await response.json();
+    const proxyToken = await signInternalToken("mcp_proxy", { uid: user.id, srv: server.id });
+    const initial = await fetchApp(`/api/mcp-proxy/${server.id}`, {
+      method: "POST", headers: { "x-studio-mcp-token": proxyToken }, body: "{}",
+    });
+    expect(initial.status).toBe(status);
+    const session = await createSessionAs(user);
+    const events = await sendAndWait(user, session.id, '/tool eve__tool {"name":"mcp-legacy__echo","input":{"text":"резерв"}}');
+    expect(JSON.stringify(events)).toContain("echo: резерв");
+  }, 90000);
 });

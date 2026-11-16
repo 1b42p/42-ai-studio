@@ -39,7 +39,10 @@ export async function startFakeMcpServer(port: number) {
     if (path.startsWith("/mcp-hang")) return;
     if (path.startsWith("/mcp-big")) { response.writeHead(200, { "content-length": 16 * 1024 * 1024 + 1 }); response.end(Buffer.alloc(16 * 1024 * 1024 + 1)); return; }
     if (path.startsWith("/legacy/sse") || path.startsWith("/mcp-sse-legacy/sse")) {
-      if (request.method === "POST") { response.writeHead(405).end(); return; }
+      if (request.method === "POST") {
+        const code = Number(new URL(path, "http://localhost").searchParams.get("fallback") ?? "405");
+        response.writeHead(code).end(); return;
+      }
       response.writeHead(200, { "content-type": "text/event-stream" });
       response.write(`: keepalive\n\nevent: endpoint\ndata: ${path.startsWith("/legacy/") ? "/legacy/messages" : "/mcp-sse-legacy/messages"}?sessionId=legacy\n\n`);
       legacyStream = response;
