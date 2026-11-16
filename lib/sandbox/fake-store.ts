@@ -10,6 +10,8 @@ import { JOB_ID_PATTERN } from "./job-types";
 export type FakeCreateFailure = "build_failed" | "unavailable" | "error" | "unauthorized";
 /** Отказ использования: как ответ Daytona на `/organizations/{id}/usage`. */
 export type FakeUsageFailure = "unauthorized" | "forbidden" | "unavailable" | "unexpected";
+/** Отказ `GET /api-keys/current` до чтения квот. */
+export type FakeKeyRejection = "unauthorized" | "forbidden" | "unavailable";
 /** Отказ удаления машины: проверка повторного `deleteKey`. */
 export type FakeDeleteFailure = "unavailable" | "error" | "conflict" | "not_found";
 /** Отказ чтения машины: проверка восстановления на отозванном ключе. */
@@ -24,6 +26,7 @@ export interface FakeKeyConfig {
   quota: FakeResources;
   organizationId?: string;
   usageFailure?: FakeUsageFailure;
+  rejection?: FakeKeyRejection;
 }
 export interface FakeRule {
   match: RegExp | string;
@@ -659,6 +662,16 @@ export class FakeStore {
     });
   }
 
+  /** `GET /api-keys/current` отвечает отказом, не трогая чтение квот. */
+  async rejectKey(apiKey: string, rejection: FakeKeyRejection | null): Promise<void> {
+    await this.transaction((data) => {
+      const config = { ...keyConfig(data, apiKey) };
+      if (rejection === null) delete config.rejection;
+      else config.rejection = rejection;
+      data.keys[apiKey] = config;
+    });
+  }
+
   /** Заставляет `/usage` (и `/api-keys/current` при 401) отвечать отказом. */
   async failUsage(apiKey: string, failure: FakeUsageFailure | null): Promise<void> {
     await this.transaction((data) => {
@@ -682,9 +695,11 @@ export class FakeStore {
   async keyOrganization(apiKey: string): Promise<string> {
     return this.transaction((data) => {
       const config = keyConfig(data, apiKey);
-      if (config.usageFailure === "unauthorized") {
-        throw httpFailure(401, "Fake Daytona: key expired");
+      if (config.rejection === "unauthorized" || config.usageFailure === "unauthorized") {
+        throw httpFailure(401, "Fake Daytona: key rejected");
       }
+      if (config.rejection === "forbidden") throw httpFailure(403, "Fake Daytona: key rejected");
+      if (config.rejection === "unavailable") throw httpFailure(503, "Fake Daytona: key rejected");
       return organizationOf(data, apiKey);
     });
   }

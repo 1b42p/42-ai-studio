@@ -130,15 +130,40 @@ function hasNumbers(usage: KeyUsage | null): usage is KeyUsage & {
   return usage?.cpu != null && usage.memoryGb != null && usage.diskGb != null;
 }
 
-function fits(usage: KeyUsage | null, reserved: KeyNeed, need: KeyNeed): boolean {
-  // Использование прочитать не удалось и прежних чисел нет: ключ подходит.
-  if (!hasNumbers(usage)) return true;
+/**
+ * Сколько песочниц размера `size` ещё поместится: целая часть минимума из
+ * частных по свободному месту. `null`, если чисел использования нет.
+ * Свободное место — квота минус использование минус `reserved`.
+ */
+export function freeCapacity(
+  usage: KeyUsage | null,
+  reserved: KeyNeed,
+  size: KeyNeed,
+): number | null {
+  if (!hasNumbers(usage)) return null;
+  if (size.cpu <= 0 || size.memoryGb <= 0 || size.diskGb <= 0) return null;
   const free = {
     cpu: usage.cpu.quota - usage.cpu.used - reserved.cpu,
     memoryGb: usage.memoryGb.quota - usage.memoryGb.used - reserved.memoryGb,
     diskGb: usage.diskGb.quota - usage.diskGb.used - reserved.diskGb,
   };
-  return free.cpu >= need.cpu && free.memoryGb >= need.memoryGb && free.diskGb >= need.diskGb;
+  return Math.max(
+    0,
+    Math.floor(Math.min(free.cpu / size.cpu, free.memoryGb / size.memoryGb, free.diskGb / size.diskGb)),
+  );
+}
+
+/** Что резервирует строка `starting`: пробуждение не занимает диск повторно. */
+export function reservedNeed(kind: SandboxLaunch | null, size: KeyNeed): KeyNeed {
+  if (kind === "wake") return { cpu: size.cpu, memoryGb: size.memoryGb, diskGb: 0 };
+  return size;
+}
+
+function fits(usage: KeyUsage | null, reserved: KeyNeed, need: KeyNeed): boolean {
+  // Использование прочитать не удалось и прежних чисел нет: ключ подходит.
+  const slots = freeCapacity(usage, reserved, need);
+  if (slots === null) return true;
+  return slots >= 1;
 }
 
 /**
@@ -244,10 +269,7 @@ export async function pickKey(
       const pool = organizationByKey.get(row.daytonaKeyId) ?? `key:${row.daytonaKeyId}`;
       // Пробуждение остановленной песочницы резервирует только vCPU и память:
       // диск уже занят ею и входит в использование Daytona.
-      const size = row.startingKind === "wake"
-        ? { cpu: sandboxSize.cpu, memoryGb: sandboxSize.memoryGb, diskGb: 0 }
-        : sandboxSize;
-      reserved.set(pool, add(reserved.get(pool) ?? ZERO, size));
+      reserved.set(pool, add(reserved.get(pool) ?? ZERO, reservedNeed(row.startingKind, sandboxSize)));
     }
 
     const pools = new Map<string, Pool>();
@@ -393,6 +415,13 @@ export interface DeleteKeyResult {
   readonly remaining: number;
 }
 
+export interface DeleteKeyOptions {
+  /** После этого момента оставшиеся машины не трогаются и входят в `remaining`. */
+  readonly deadline?: Date;
+  /** Сколько удалений идёт одновременно. По умолчанию одно, как раньше. */
+  readonly concurrency?: number;
+}
+
 /** Запоминает машину до сетевого удаления; повторная запись безопасна. */
 export async function rememberPendingDeletion(keyId: string, sandboxId: string): Promise<void> {
   await getDb()
@@ -416,7 +445,10 @@ export async function forgetPendingDeletion(keyId: string, sandboxId: string): P
  * удаляет его песочницы. Шифротекст затирается маркером `deleted` только когда
  * не осталось неудалённых машин; иначе операцию можно повторить.
  */
-export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
+export async function deleteKey(
+  keyId: string,
+  options: DeleteKeyOptions = {},
+): Promise<DeleteKeyResult> {
   const db = getDb();
   const [key] = await db.select().from(daytonaKeys).where(eq(daytonaKeys.id, keyId));
   if (key === undefined) return { remaining: 0 };
@@ -497,7 +529,12 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
       ));
   };
 
-  for (const [sandboxId, rowIds] of targets) {
+  const deadline = options.deadline;
+  const concurrency = Math.max(1, Math.min(options.concurrency ?? 1, 5));
+  const queue = [...targets.entries()];
+  let cursor = 0;
+
+  const removeOne = async (sandboxId: string, rowIds: string[]): Promise<void> => {
     // Идентификатор запоминается до сетевого удаления: падение процесса
     // между запросом и подтверждением не потеряет машину.
     await rememberPendingDeletion(keyId, sandboxId);
@@ -514,7 +551,23 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
         remaining += 1;
       }
     }
-  }
+  };
+
+  const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
+    while (cursor < queue.length) {
+      if (deadline !== undefined && Date.now() >= deadline.getTime()) {
+        remaining += queue.length - cursor;
+        cursor = queue.length;
+        return;
+      }
+      const index = cursor;
+      cursor += 1;
+      const next = queue[index];
+      if (next === undefined) return;
+      await removeOne(next[0], next[1]);
+    }
+  });
+  await Promise.all(workers);
 
   if (remaining === 0) {
     await db
