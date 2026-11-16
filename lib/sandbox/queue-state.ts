@@ -2,22 +2,26 @@ import { and, asc, eq, gt, sql } from "drizzle-orm";
 
 import { getDb, getSqlClient } from "@/lib/db/client";
 import { queueEntries, sandboxes } from "@/lib/db/schema";
+import { recordSandboxTransition } from "@/lib/usage/sandbox";
 import type { SandboxStatus } from "./status";
 
-/** Снимок очереди без обращения к Daytona или изменения состояния машины. */
-export async function getSandboxStatus(appSessionId: string): Promise<SandboxStatus> {
-  const entries = await getDb().select({
-    appSessionId: queueEntries.appSessionId,
-    reason: queueEntries.reason,
-  }).from(queueEntries)
+/** Единый порядок живой очереди для пользователя и оператора, без диспетчера. */
+export async function queuePositions() {
+  const entries = await getDb().select().from(queueEntries)
     .where(and(gt(queueEntries.heartbeatAt, new Date(Date.now() - 60_000)),
       sql`exists (select 1 from app_sessions where id = ${queueEntries.appSessionId} and deleted_at is null)`))
     .orderBy(asc(queueEntries.enqueuedAt), asc(queueEntries.id));
+  return entries.map((entry, index) => ({ ...entry, position: index + 1 }));
+}
+
+/** Снимок очереди без обращения к Daytona или изменения состояния машины. */
+export async function getSandboxStatus(appSessionId: string): Promise<SandboxStatus> {
+  const entries = await queuePositions();
   const position = entries.findIndex((entry) => entry.appSessionId === appSessionId);
   if (position !== -1) {
     return {
       state: "queued",
-      queue: { position: position + 1, total: entries.length, reason: entries[position].reason },
+      queue: { position: entries[position].position, total: entries.length, reason: entries[position].reason },
     };
   }
   const [sandbox] = await getDb().select({ state: sandboxes.state }).from(sandboxes)
@@ -47,10 +51,16 @@ export async function removeSandboxQueueEntry(eveSessionId: string, userId?: str
     await tx`delete from queue_entries where app_session_id = ${session.id}
       and wait_generation = ${session.generation}`;
     // Запрос, уже отправленный Daytona, остаётся восстановимым по имени машины.
-    await tx`update sandboxes set slot_request_id = null, starting_since = null, starting_kind = null,
-      state = case when starting_kind = 'wake' then 'stopped'::sandbox_state
-        when starting_kind = 'restore' then 'archived'::sandbox_state else 'gone'::sandbox_state end
+    const [reservation] = await tx<{ id: string; kind: string | null }[]>`
+      select id, starting_kind as kind from sandboxes
       where app_session_id = ${session.id} and wait_generation = ${session.generation}
-        and state = 'starting' and launch_started_at is null`;
+        and state = 'starting' and launch_started_at is null for update`;
+    if (reservation) {
+      await recordSandboxTransition({
+        sandboxId: reservation.id, source: "app",
+        newState: reservation.kind === "wake" ? "stopped" : reservation.kind === "restore" ? "archived" : "gone",
+        changes: { slotRequestId: null, startingSince: null, startingKind: null },
+      }, tx);
+    }
   });
 }

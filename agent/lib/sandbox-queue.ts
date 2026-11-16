@@ -10,6 +10,7 @@ import {
   type AppSession, type DaytonaKey, type QueueEntry, type Sandbox, type SandboxLaunch,
 } from "@/lib/db/schema";
 import { sessionIsBusy } from "@/lib/sandbox/busy";
+import { flushSandboxUsage, recordSandboxTransition } from "@/lib/usage/sandbox";
 import { assertSandboxWait, type SandboxWait } from "@/lib/sandbox/wait-generation";
 import { sandboxState } from "@/lib/sandbox/daytona-state";
 import { errorStatus, isMissingSandbox, StudioSandboxError } from "@/lib/sandbox/errors";
@@ -40,6 +41,7 @@ function liveEntries() {
 
 /** Список согласован с задержкой: отсутствие подтверждается отдельным get/404. */
 export async function reconcileSandboxStates(): Promise<Map<string, DaytonaMachine>> {
+  await flushSandboxUsage();
   const db = getDb();
   const [entries, rows, keys] = await Promise.all([
     liveEntries(), db.select({ sandbox: sandboxes, eveSessionId: appSessions.eveSessionId })
@@ -71,6 +73,7 @@ export async function reconcileSandboxStates(): Promise<Map<string, DaytonaMachi
         if (!row.daytonaSandboxId && !eveSessionId) continue;
         const unchanged = and(
           eq(sandboxes.id, row.id), eq(sandboxes.state, row.state),
+          row.runningSince === null ? isNull(sandboxes.runningSince) : eq(sandboxes.runningSince, row.runningSince),
           eq(sandboxes.daytonaKeyId, row.daytonaKeyId),
           eq(sandboxes.daytonaSandboxId, row.daytonaSandboxId),
           row.startingSince === null ? isNull(sandboxes.startingSince)
@@ -92,8 +95,10 @@ export async function reconcileSandboxStates(): Promise<Map<string, DaytonaMachi
             try { machine = await client.get(idOrName); }
             catch (error) {
               if (!isMissingSandbox(error)) throw error;
-              await db.update(sandboxes).set({ state: "gone", startingSince: null, startingKind: null })
-                .where(unchanged);
+              await recordSandboxTransition({
+                where: unchanged, newState: "gone", source: "observed",
+                changes: { startingSince: null, startingKind: null },
+              });
               continue;
             }
           }
@@ -105,24 +110,27 @@ export async function reconcileSandboxStates(): Promise<Map<string, DaytonaMachi
             if (!(error instanceof StudioSandboxError)) throw error;
           }
           const activity = machine.lastActivityAt;
-          const [updated] = await db.update(sandboxes).set({
-            daytonaSandboxId: machine.id,
-            state: mapped,
-            startingSince: mapped === "starting" ? row.startingSince : null,
-            startingKind: mapped === "starting" ? row.startingKind : null,
-            lastActiveAt: activity &&
-              activity.getTime() > (row.daytonaActivityAt?.getTime() ?? row.createdAt.getTime())
-              ? sql`greatest(${sandboxes.lastActiveAt}, ${activity.toISOString()}::timestamptz)`
-              : sql`${sandboxes.lastActiveAt}`,
-            daytonaActivityAt: activity
-              ? sql`greatest(${sandboxes.daytonaActivityAt}, ${activity.toISOString()}::timestamptz)`
-              : sql`${sandboxes.daytonaActivityAt}`,
-            stoppedAt: machine.state === "stopped"
-              ? (row.state === "stopped" ? row.stoppedAt : null) ?? machine.stoppedAt ?? new Date()
-              : null,
-          }).where(unchanged).returning({ id: sandboxes.id });
+          const updated = await recordSandboxTransition({
+            where: unchanged, newState: mapped, source: "observed",
+            lastActivityAt: activity,
+            changes: {
+              daytonaSandboxId: machine.id,
+              startingSince: mapped === "starting" ? row.startingSince : null,
+              startingKind: mapped === "starting" ? row.startingKind : null,
+              lastActiveAt: activity &&
+                activity.getTime() > (row.daytonaActivityAt?.getTime() ?? row.createdAt.getTime())
+                ? sql`greatest(${sandboxes.lastActiveAt}, ${activity.toISOString()}::timestamptz)`
+                : sql`${sandboxes.lastActiveAt}`,
+              daytonaActivityAt: activity
+                ? sql`greatest(${sandboxes.daytonaActivityAt}, ${activity.toISOString()}::timestamptz)`
+                : sql`${sandboxes.daytonaActivityAt}`,
+              stoppedAt: machine.state === "stopped"
+                ? (row.state === "stopped" ? row.stoppedAt : null) ?? machine.stoppedAt ?? new Date()
+                : null,
+            },
+          });
           // Устаревший handle не должен попасть в последующую остановку/архивацию.
-          if (updated) machines.set(row.appSessionId, machine);
+          if (updated.updated) machines.set(row.appSessionId, machine);
         } catch (error) {
           console.warn("[sandbox:queue] reconcile_failed", errorStatus(error) ?? "transport");
         }
@@ -190,10 +198,12 @@ async function stopMachine(row: Sandbox, machine: DaytonaMachine): Promise<boole
   try {
     await machine.stop();
     if (machine.state !== "stopped") return false;
-    await getDb().update(sandboxes).set({ state: "stopped", stoppedAt: new Date(),
-      startingSince: null, startingKind: null })
-      .where(and(eq(sandboxes.id, row.id), eq(sandboxes.daytonaSandboxId, machine.id),
-        eq(sandboxes.maintenanceToken, token)));
+    await recordSandboxTransition({
+      newState: "stopped", source: "app",
+      changes: { stoppedAt: new Date(), startingSince: null, startingKind: null },
+      where: and(eq(sandboxes.id, row.id), eq(sandboxes.daytonaSandboxId, machine.id),
+        eq(sandboxes.maintenanceToken, token)),
+    });
     return true;
   } catch (error) {
     console.warn("[sandbox:queue] stop_failed", errorStatus(error) ?? "transport");
@@ -250,8 +260,10 @@ async function reclaim(entry: QueueEntry, machines: Map<string, DaytonaMachine>)
         await machine.archive();
         // Только подтверждённый archived означает освобождённый диск.
         if ((machine as DaytonaMachine).state === "archived") {
-          await db.update(sandboxes).set({ state: "archived" })
-            .where(and(eq(sandboxes.id, row.id), eq(sandboxes.maintenanceToken, token)));
+          await recordSandboxTransition({
+            newState: "archived", source: "app",
+            where: and(eq(sandboxes.id, row.id), eq(sandboxes.maintenanceToken, token)),
+          });
         }
         return true;
       } catch (error) {

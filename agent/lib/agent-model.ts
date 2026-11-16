@@ -7,10 +7,9 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { simulateStreamingMiddleware, wrapLanguageModel, type LanguageModel } from "ai";
-import { mockModel } from "eve/evals";
 
 import type { AgentReasoning } from "@/lib/config";
-import { respondToFixture } from "./fixture-model";
+import { createFixtureModel } from "./fixture-model";
 
 /** Имя провайдера для OpenAI-совместимого API: не `openai`, иначе eve включит нативные инструменты OpenAI. */
 export const OPENAI_COMPATIBLE_PROVIDER = "studio";
@@ -60,7 +59,7 @@ const MISSING_MODEL_MESSAGE =
 export function selectAgentModel(config: AgentModelConfig): AgentModelSelection {
   if (config.appTestMode) {
     return {
-      model: mockModel(respondToFixture),
+      model: createFixtureModel(),
       modelContextWindowTokens: FIXTURE_CONTEXT_TOKENS,
     };
   }

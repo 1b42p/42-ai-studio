@@ -5,7 +5,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import * as backends from "../../agent/lib/daytona-backend";
 import { reconcileSandboxStates } from "../../agent/lib/sandbox-queue";
-import { appSessions, sandboxes, type Sandbox, type SandboxState } from "../../lib/db/schema";
+import { appSessions, sandboxes, usageRecords, type Sandbox, type SandboxState } from "../../lib/db/schema";
+import { recordSandboxTransition } from "../../lib/usage/sandbox";
 import { getFakeBackend } from "../../lib/sandbox/fake";
 import { loadConfig } from "../../lib/config";
 import { createDaytonaKey, createUser, db, resetDatabase } from "./support/db";
@@ -134,6 +135,28 @@ test("успешный get не перезаписывает новый резе
   });
   expect((await reconcileSandboxStates()).size).toBe(0);
   expect(await read(row)).toMatchObject({ state: "starting", daytonaSandboxId: "", startingSince });
+});
+
+test("старое наблюдение stopped не закрывает новый интервал после полного пробуждения", async () => {
+  const { row, machine, get } = await fixture({ state: "started" });
+  const firstStart = new Date(Date.now() - 10_000);
+  const secondStart = new Date();
+  await db().update(sandboxes).set({ runningSince: firstStart }).where(eq(sandboxes.id, row.id));
+  get.mockImplementationOnce(async () => {
+    await recordSandboxTransition({ sandboxId: row.id, newState: "stopped", source: "app" });
+    await recordSandboxTransition({
+      sandboxId: row.id, newState: "started", source: "app", observedAt: secondStart,
+    });
+    return new Proxy(machine!, {
+      get(target, property, receiver) {
+        return property === "state" ? "stopped" : Reflect.get(target, property, receiver);
+      },
+    });
+  });
+  expect((await reconcileSandboxStates()).size).toBe(0);
+  expect(await read(row)).toMatchObject({ state: "started", runningSince: secondStart });
+  const records = await db().select().from(usageRecords).where(eq(usageRecords.kind, "sandbox_seconds"));
+  expect(records).toHaveLength(1);
 });
 
 test.each([
