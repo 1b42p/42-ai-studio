@@ -90,11 +90,11 @@ export function McpSectionView({ state }: { state: McpState }) {
             </Field>
             {authKind === "bearer" && <Field data-invalid={error && errorField === "token" ? true : undefined}><FieldLabel htmlFor="mcp-token">Токен</FieldLabel><Input id="mcp-token" aria-invalid={error && errorField === "token" ? true : undefined} type="password" value={token} onChange={(event) => setToken(event.target.value)} />{errorField === "token" && <FieldError>{error}</FieldError>}</Field>}
             {authKind === "headers" && <>
-              {headers.map((header, index) => <div className="flex min-w-0 gap-2" key={index}>
+              {headers.map((header, index) => <Field orientation="horizontal" className="min-w-0" key={index}>
                 <Input aria-label={`Имя заголовка ${index + 1}`} placeholder="Имя" value={header.name} onChange={(event) => setHeaders((current) => current.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} />
                 <Input aria-label={`Значение заголовка ${index + 1}`} placeholder="Значение" type="password" value={header.value} onChange={(event) => setHeaders((current) => current.map((item, i) => i === index ? { ...item, value: event.target.value } : item))} />
                 <Button size="icon" variant="ghost" aria-label={`Убрать заголовок ${index + 1}`} onClick={() => setHeaders((current) => current.filter((_, i) => i !== index))}><Trash2Icon /></Button>
-              </div>)}
+              </Field>)}
               <Button variant="outline" onClick={() => setHeaders((current) => [...current, { name: "", value: "" }])} disabled={headers.length >= 10}>Добавить заголовок</Button>
               {errorField === "headers" && <FieldError>{error}</FieldError>}
             </>}
