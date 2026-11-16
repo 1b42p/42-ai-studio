@@ -5,6 +5,7 @@ import { loadConfig } from "../config";
 /** Реестр назначений расширяется вместе с потребителями служебных токенов. */
 export interface InternalTokenClaims {
   eve_session_end: { sid: string };
+  mcp_proxy: { uid: string; srv: string };
 }
 
 export type InternalTokenPayload = JWTPayload & { purpose: string; iat: number; exp: number };
