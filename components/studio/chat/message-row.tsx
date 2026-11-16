@@ -9,6 +9,7 @@ import type {
 import { BrainIcon } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
+import { AuthorizationCard, type AuthorizationPart } from "./authorization-card";
 import { InputPrompt, type RespondToInput } from "@/components/studio/chat/input-prompt";
 import { isQuestionCall, questionsFor } from "@/components/studio/chat/input-routing";
 import type { FileLookup } from "@/components/studio/chat/message-files";
@@ -28,6 +29,7 @@ import {
 import { messageIdOf } from "@/lib/media/message-id";
 
 type AssistantGroup =
+  | { readonly kind: "authorization"; readonly id: string; readonly part: AuthorizationPart }
   | { readonly kind: "question"; readonly id: string; readonly part: EveDynamicToolPart }
   | { readonly kind: "reasoning"; readonly id: string; readonly text: string; readonly running: boolean }
   | {
@@ -37,7 +39,7 @@ type AssistantGroup =
       readonly streaming: boolean;
       readonly stepIndex?: number;
     }
-  | { readonly kind: "tools"; readonly id: string; readonly parts: EveDynamicToolPart[] };
+  | { readonly kind: "tools"; readonly id: string; readonly parts: (EveDynamicToolPart | AuthorizationPart)[] };
 
 function textOfUserMessage(message: EveMessage): string {
   return message.parts
@@ -54,6 +56,17 @@ function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[]
   const groups: AssistantGroup[] = [];
 
   for (const part of parts) {
+    if (part.type === "authorization") {
+      const id = part.attemptId ?? `authorization-${groups.length}`;
+      const last = groups.at(-1);
+      if (part.state === "completed") {
+        if (last?.kind === "tools") last.parts.push(part);
+        else groups.push({ kind: "tools", id, parts: [part] });
+      } else {
+        groups.push({ kind: "authorization", id, part });
+      }
+      continue;
+    }
     if (part.type === "text") {
       if (part.text.trim().length === 0) continue;
       groups.push({
@@ -128,6 +141,7 @@ function AssistantContent({
   onCopyPanelChange,
   onRespond,
   inputDisabled,
+  authorizationAllowHosts,
 }: {
   parts: readonly EveMessagePart[];
   turnId: string | undefined;
@@ -137,12 +151,16 @@ function AssistantContent({
   onCopyPanelChange?: (callId: string, open: boolean) => void;
   onRespond?: RespondToInput;
   inputDisabled?: boolean;
+  authorizationAllowHosts?: readonly string[];
 }) {
   const groups = groupAssistantParts(parts);
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-3">
       {groups.map((group) => {
+        if (group.kind === "authorization") {
+          return <AuthorizationCard key={group.id} part={group.part} allowHosts={authorizationAllowHosts} />;
+        }
         if (group.kind === "question") {
           // Copies are answered through the parent's pinned prompt.
           if (!onRespond) return null;
@@ -162,8 +180,11 @@ function AssistantContent({
         if (group.kind === "tools") {
           return (
             <Trace key={group.id}>
-              {group.parts.map((part) => (
+              {group.parts.map((part, index) => part.type === "authorization" ? (
+                <AuthorizationCard key={part.attemptId ?? `authorization-${index}`} part={part} allowHosts={authorizationAllowHosts} />
+              ) : (
                 <ToolCard
+                  authorizationAllowHosts={authorizationAllowHosts}
                   appSessionId={appSessionId}
                   data={data}
                   key={part.toolCallId}
@@ -200,6 +221,7 @@ export interface MessageRowProps {
   readonly onCopyPanelChange?: (callId: string, open: boolean) => void;
   readonly onRespond?: RespondToInput;
   readonly inputDisabled?: boolean;
+  readonly authorizationAllowHosts?: readonly string[];
 }
 
 /**
@@ -207,7 +229,7 @@ export interface MessageRowProps {
  * агента: у копии те же карточки вызовов, только файлы песочницы выводятся
  * путём (`MessageFilesState.enabled: false`).
  */
-export function MessageRow({ message, data, files, appSessionId, onCopyPanelChange, onRespond, inputDisabled }: MessageRowProps) {
+export function MessageRow({ message, data, files, appSessionId, onCopyPanelChange, onRespond, inputDisabled, authorizationAllowHosts }: MessageRowProps) {
   const align = message.role === "user" ? "end" : "start";
   const text = textOfUserMessage(message);
 
@@ -225,6 +247,7 @@ export function MessageRow({ message, data, files, appSessionId, onCopyPanelChan
           </>
         ) : (
           <AssistantContent
+            authorizationAllowHosts={authorizationAllowHosts}
             appSessionId={appSessionId}
             data={data}
             files={files}

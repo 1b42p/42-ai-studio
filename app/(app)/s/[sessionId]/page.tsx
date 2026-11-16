@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ResumedChat } from "@/components/studio/chat/resumed-chat";
 import { getCurrentUser, requireUser } from "@/lib/auth/guard";
+import { loadConfig } from "@/lib/config";
 import { isUuid } from "@/lib/sessions/access";
 import { findUserSession, SESSION_START_WINDOW_MS } from "@/lib/sessions/service";
 
@@ -49,6 +50,7 @@ export default async function SessionPage({
 
   return (
     <ResumedChat
+      authorizationAllowHosts={loadConfig().ssrfTestAllowHosts}
       appSessionId={session.id}
       initialEveSessionId={session.eveSessionId}
       initialTitle={session.title}

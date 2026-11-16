@@ -39,6 +39,16 @@ function issuesOf(env: EnvRecord): readonly string[] {
 }
 
 describe("parseConfig", () => {
+  test("исключения SSRF разрешены только в тестовом режиме вне production", () => {
+    const value = "127.0.0.1:59210,127.0.0.1:59219";
+    expect(parseConfig({ ...validEnv(), SSRF_TEST_ALLOW_HOSTS: value }).ssrfTestAllowHosts)
+      .toEqual(["127.0.0.1:59210", "127.0.0.1:59219"]);
+    expect(issuesOf({ ...validEnv(), APP_TEST_MODE: "0", SSRF_TEST_ALLOW_HOSTS: value }))
+      .toEqual(expect.arrayContaining([expect.stringContaining("SSRF_TEST_ALLOW_HOSTS")]));
+    expect(issuesOf({ ...validEnv(), NODE_ENV: "production", SSRF_TEST_ALLOW_HOSTS: value }))
+      .toEqual(expect.arrayContaining([expect.stringContaining("SSRF_TEST_ALLOW_HOSTS")]));
+  });
+
   test("служебный секрет обязателен и содержит не меньше 32 символов", () => {
     for (const value of [undefined, "", "short", "x".repeat(31)]) {
       const issues = issuesOf({ ...validEnv(), INTERNAL_API_SECRET: value });

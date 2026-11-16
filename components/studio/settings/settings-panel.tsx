@@ -10,9 +10,12 @@ import type { Settings } from "@/lib/settings/schema";
 import { logout } from "./logout";
 import { SettingsPage } from "./settings-page";
 import { useSettings } from "./use-settings";
+import { McpContext, type McpServerView } from "./mcp-context";
+import { useMcp } from "./use-mcp";
 
-export function SettingsPanel({ initialSettings, user }: { initialSettings: Settings; user: PublicUser }) {
+export function SettingsPanel({ initialSettings, initialMcpServers, user }: { initialSettings: Settings; initialMcpServers: McpServerView[]; user: PublicUser }) {
   const { settings, save, loadError, refresh } = useSettings(initialSettings);
+  const mcp = useMcp(initialMcpServers);
   return (
     <>
       {loadError ? (
@@ -24,7 +27,9 @@ export function SettingsPanel({ initialSettings, user }: { initialSettings: Sett
           </AlertAction>
         </Alert>
       ) : null}
-      <SettingsPage settings={settings} save={save} user={user} onLogout={logout} />
+      <McpContext.Provider value={mcp}>
+        <SettingsPage settings={settings} save={save} user={user} onLogout={logout} />
+      </McpContext.Provider>
     </>
   );
 }

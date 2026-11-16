@@ -80,6 +80,43 @@ export async function sessionIsBusy(
   machine: Pick<DaytonaMachine, "readJobDirectory"> & Partial<Pick<DaytonaMachine, "state">>,
   now = Date.now(),
 ): Promise<boolean> {
+  if (await sessionTurnIsBusy(appSessionId, now, false)) return true;
+  if ("state" in machine && machine.state !== "started") return false;
+
+  const jobs = await getDb().select({ jobId: bashJobs.jobId }).from(bashJobs).where(and(
+    eq(bashJobs.appSessionId, appSessionId),
+    eq(bashJobs.status, "running"),
+    gte(bashJobs.createdAt, new Date(now - MAX_JOB_AGE_MS)),
+  ));
+  for (const job of jobs) {
+    try {
+      const reading = await machine.readJobDirectory(job.jobId);
+      if (reading.found && reading.alive && reading.exitCode === null) return true;
+    } catch {
+      // Недоступность каталога не доказывает, что процесс завершился.
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Отчёт читает только базу: toolbox-запрос сбрасывал бы автостоп Daytona. */
+export async function sessionIsBusyForAdmin(
+  appSessionId: string,
+  now = Date.now(),
+): Promise<boolean> {
+  if (await sessionTurnIsBusy(appSessionId, now, true)) return true;
+  const [job] = await getDb().select({ id: bashJobs.id }).from(bashJobs)
+    .where(and(eq(bashJobs.appSessionId, appSessionId), eq(bashJobs.status, "running")))
+    .limit(1);
+  return job !== undefined;
+}
+
+async function sessionTurnIsBusy(
+  appSessionId: string,
+  now: number,
+  readOnly: boolean,
+): Promise<boolean> {
   const [activeCopy] = await getDb().select({ id: sandboxWorkers.id }).from(sandboxWorkers)
     .where(and(eq(sandboxWorkers.appSessionId, appSessionId), eq(sandboxWorkers.state, "active")))
     .limit(1);
@@ -132,28 +169,12 @@ export async function sessionIsBusy(
     task.kind === "agent" && task.workerState === "input",
   );
   if (turnIsBusy(events, now, { allowWaitingTasks })) return true;
-  if (session?.state === "active" && session.eventId) {
+  if (!readOnly && session?.state === "active" && session.eventId) {
     const [released] = await getDb().update(appSessions).set({ sandboxWorkState: "idle" })
       .where(and(eq(appSessions.id, appSessionId), eq(appSessions.sandboxWorkState, "active"),
         eq(appSessions.sandboxWorkEventId, session.eventId))).returning({ id: appSessions.id });
     // Новый шаг мог уже сменить отметку после чтения истории.
     if (!released) return true;
-  }
-  if ("state" in machine && machine.state !== "started") return false;
-
-  const jobs = await getDb().select({ jobId: bashJobs.jobId }).from(bashJobs).where(and(
-    eq(bashJobs.appSessionId, appSessionId),
-    eq(bashJobs.status, "running"),
-    gte(bashJobs.createdAt, new Date(now - MAX_JOB_AGE_MS)),
-  ));
-  for (const job of jobs) {
-    try {
-      const reading = await machine.readJobDirectory(job.jobId);
-      if (reading.found && reading.alive && reading.exitCode === null) return true;
-    } catch {
-      // Недоступность каталога не доказывает, что процесс завершился.
-      return true;
-    }
   }
   return false;
 }

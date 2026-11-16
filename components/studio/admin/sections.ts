@@ -1,6 +1,5 @@
 /**
- * Разделы админки. Один массив на проект: #31 добавляет сюда
- * «Песочницы» и «Расход».
+ * Разделы админки. Один массив на проект.
  */
 export interface AdminSection {
   readonly id: string;
@@ -10,5 +9,7 @@ export interface AdminSection {
 
 export const adminSections: readonly AdminSection[] = [
   { id: "users", title: "Пользователи", href: "/admin/users" },
+  { id: "sandboxes", title: "Песочницы", href: "/admin/sandboxes" },
+  { id: "usage", title: "Расход", href: "/admin/usage" },
   { id: "keys", title: "Ключи", href: "/admin/keys" },
 ];

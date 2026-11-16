@@ -12,7 +12,7 @@ export type SafeFetchReason =
   | "timeout" | "too_large";
 
 export class SafeFetchError extends Error {
-  constructor(readonly reason: SafeFetchReason) {
+  constructor(readonly reason: SafeFetchReason, readonly redirectHost?: string) {
     super(reason);
     this.name = "SafeFetchError";
   }
@@ -23,6 +23,9 @@ export interface OutboundPolicy extends UrlPolicy {
   timeoutMs: number;
   maxBytes: number;
   resolveDns?: (hostname: string) => Promise<readonly string[]>;
+  /** Некоторые потребители ведут собственный журнал без адресов. */
+  suppressLog?: boolean;
+  stopAfter?: (body: Buffer, headers: Headers) => boolean;
 }
 
 export interface SafeFetchResult {
@@ -88,7 +91,7 @@ export function createSafeAgent(policy: OutboundPolicy): Agent {
             if (lookupOptions.all) callback(null, addresses);
             else callback(null, addresses[0].address, addresses[0].family);
           },
-          (error: unknown) => callback(classifyError(error), "", 4),
+          (error: unknown) => callback(classifySafeFetchError(error), "", 4),
         );
       };
       return new Pool(origin, {
@@ -99,12 +102,12 @@ export function createSafeAgent(policy: OutboundPolicy): Agent {
   });
 }
 
-function classifyError(error: unknown): SafeFetchError {
+export function classifySafeFetchError(error: unknown): SafeFetchError {
   if (error instanceof SafeFetchError) return error;
   if (error instanceof Error) {
-    if (error.cause) return classifyError(error.cause);
+    if (error.cause) return classifySafeFetchError(error.cause);
     if (error instanceof AggregateError) {
-      const failures = error.errors.map(classifyError);
+      const failures = error.errors.map(classifySafeFetchError);
       return failures.find((failure) => failure.reason !== "connect_failed") ?? new SafeFetchError("connect_failed");
     }
     const code = "code" in error ? String(error.code) : error.name;
@@ -139,7 +142,11 @@ export async function safeFetch(input: string, init: SafeFetchInit, policy: Outb
       let bytes = 0;
       try {
         if (response.status >= 300 && response.status < 400) {
-          if (policy.maxRedirects === 0) throw new SafeFetchError("redirect");
+          if (policy.maxRedirects === 0) {
+            const location = response.headers.get("location");
+            const redirected = location ? URL.parse(location, current) : null;
+            throw new SafeFetchError("redirect", redirected?.hostname);
+          }
           if ([301, 302, 303, 307, 308].includes(response.status)) {
             if (++redirects > policy.maxRedirects) throw new SafeFetchError("too_many_redirects");
             const location = response.headers.get("location");
@@ -160,16 +167,19 @@ export async function safeFetch(input: string, init: SafeFetchInit, policy: Outb
             bytes += chunk.byteLength;
             if (bytes > policy.maxBytes) throw new SafeFetchError("too_large");
             chunks.push(chunk);
+            if (policy.stopAfter?.(Buffer.concat(chunks, bytes), response.headers)) break;
           }
         }
         return { finalUrl: current.href, redirects, status: response.status, headers: response.headers, body: Buffer.concat(chunks, bytes) };
       } finally {
         await response.body?.cancel().catch(() => {});
-        console.info("[safe-fetch]", { host: response.url ? new URL(response.url).hostname : current.hostname, status: response.status, bytes, durationMs: Math.round(performance.now() - started) });
+        if (!policy.suppressLog) {
+          console.info("[safe-fetch]", { host: response.url ? new URL(response.url).hostname : current.hostname, status: response.status, bytes, durationMs: Math.round(performance.now() - started) });
+        }
       }
     }
   } catch (error) {
-    throw classifyError(error);
+    throw classifySafeFetchError(error);
   } finally {
     clearTimeout(deadline);
     controller.abort();

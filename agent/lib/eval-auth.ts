@@ -57,6 +57,7 @@ export function authenticateEval(
         videoEval: "1",
         videoEvalRenderFails: request.headers.get("x-studio-video-eval") === "render-failure" ? "1" : "0",
         videoEvalMissingEntrypoint: request.headers.get("x-studio-video-eval") === "missing-entrypoint" ? "1" : "0",
+        videoEvalBrokenLayout: request.headers.get("x-studio-video-eval") === "broken-layout" ? "1" : "0",
       } : {}),
     },
     allowToolStubs: true,

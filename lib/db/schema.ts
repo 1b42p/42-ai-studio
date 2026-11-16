@@ -3,6 +3,7 @@ import {
   bigint,
   bigserial,
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -45,6 +46,24 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
 });
+
+export const mcpServers = pgTable("mcp_servers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  nameKey: text("name_key").notNull(),
+  slug: text("slug").notNull(),
+  url: text("url").notNull(),
+  authKind: text("auth_kind").$type<"none" | "bearer" | "headers" | "oauth">().notNull(),
+  credentialsEncrypted: text("credentials_encrypted"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("mcp_servers_user_name_idx").on(table.userId, table.nameKey),
+  uniqueIndex("mcp_servers_user_slug_idx").on(table.userId, table.slug),
+  uniqueIndex("mcp_servers_user_url_idx").on(table.userId, table.url),
+]);
 
 export const userMemory = pgTable(
   "user_memory",
@@ -179,6 +198,35 @@ export type AuthSession = typeof authSessions.$inferSelect;
 export type LoginNonce = typeof loginNonces.$inferSelect;
 export type AppSession = typeof appSessions.$inferSelect;
 
+export const usageRecords = pgTable("usage_records", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  appSessionId: uuid("app_session_id").references(() => appSessions.id, { onDelete: "set null" }),
+  kind: text("kind").$type<"sandbox_seconds" | "model_input_tokens" | "model_output_tokens">().notNull(),
+  amount: bigint("amount", { mode: "number" }).notNull(),
+  sourceKey: text("source_key").notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check("usage_records_kind_check", sql`${table.kind} in ('sandbox_seconds', 'model_input_tokens', 'model_output_tokens')`),
+  check("usage_records_amount_positive", sql`${table.amount} > 0`),
+  uniqueIndex("usage_records_kind_source_idx").on(table.kind, table.sourceKey),
+  index("usage_records_recorded_at_idx").on(table.recordedAt),
+  index("usage_records_user_recorded_at_idx").on(table.userId, table.recordedAt),
+]);
+
+/** Квитанция закрытия переживает отказ записи расхода и удаление песочницы. */
+export const pendingSandboxUsage = pgTable("pending_sandbox_usage", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  appSessionId: uuid("app_session_id").references(() => appSessions.id, { onDelete: "set null" }),
+  sourceKey: text("source_key").notNull().unique(),
+  amount: bigint("amount", { mode: "number" }).notNull(),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  check("pending_sandbox_usage_amount_positive", sql`${table.amount} > 0`),
+  index("pending_sandbox_usage_user_idx").on(table.userId),
+]);
+
 /** Минутный затвор добивания удалений, общий для всех экземпляров приложения. */
 export const sessionDeletionRetries = pgTable("session_deletion_retries", {
   userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
@@ -293,6 +341,7 @@ export const sandboxes = pgTable("sandboxes", {
   daytonaKeyId: uuid("daytona_key_id").notNull().references(() => daytonaKeys.id),
   daytonaSandboxId: text("daytona_sandbox_id").notNull(),
   state: sandboxState("state").notNull(),
+  runningSince: timestamp("running_since", { withTimezone: true, precision: 3 }),
   /** Когда строка перешла в `starting`; данные Daytona отстают от изменения. */
   startingSince: timestamp("starting_since", { withTimezone: true }),
   /** Что резервирует строка в квоте пула: создание, пробуждение или восстановление. */

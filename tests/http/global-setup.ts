@@ -21,11 +21,15 @@ import {
 import { startEdgeTtsServer, type EdgeTtsServer } from "./support/edge-tts-server";
 import { startOidcIssuer, type OidcIssuer } from "./support/oidc-issuer";
 import { startTavilyServer, type TavilyServer } from "./support/tavily-server";
+import { startFakeMcpServer } from "./support/fake-mcp-server";
+import { createFakeOAuthState, startFakeOAuthProvider } from "./support/fake-oauth-provider";
 
 let app: AppHandle | undefined;
 let oidcIssuer: OidcIssuer | undefined;
 let edgeTts: EdgeTtsServer | undefined;
 let tavily: TavilyServer | undefined;
+let mcp: Awaited<ReturnType<typeof startFakeMcpServer>> | undefined;
+let oauth: Awaited<ReturnType<typeof startFakeOAuthProvider>> | undefined;
 
 /** Создаёт тестовую базу через служебную базу `postgres`, если её ещё нет. */
 async function ensureDatabase(databaseUrl: string): Promise<void> {
@@ -69,6 +73,9 @@ export async function setup(project: TestProject): Promise<void> {
   const edgePort = config.edgeTtsWssUrl === undefined ? 59101 : Number(new URL(config.edgeTtsWssUrl).port);
   edgeTts = await startEdgeTtsServer(edgePort);
   tavily = await startTavilyServer(Number(new URL(config.tavilyApiUrl).port));
+  const oauthState = createFakeOAuthState();
+  oauth = await startFakeOAuthProvider(oauthState);
+  mcp = await startFakeMcpServer(Number(config.ssrfTestAllowHosts[0].split(":").at(-1)), oauthState);
 
   oidcIssuer = await startOidcIssuer(config.telegramOidcIssuer, {
     appUrl: config.appUrl,
@@ -91,5 +98,7 @@ export async function teardown(): Promise<void> {
   await oidcIssuer?.close();
   await edgeTts?.close();
   await tavily?.close();
+  await mcp?.close();
+  await oauth?.close();
   await closeDb();
 }

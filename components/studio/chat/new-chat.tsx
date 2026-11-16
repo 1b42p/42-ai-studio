@@ -32,6 +32,7 @@ export interface NewChatProps {
   initialQuery: string;
   /** Адрес с некорректным `q`: показать ошибку, а не пустой список. */
   initialError?: boolean;
+  authorizationAllowHosts?: readonly string[];
 }
 
 /**
@@ -40,7 +41,7 @@ export interface NewChatProps {
  * запоминают первую функцию), и в состоянии (опрос названия должен увидеть id
  * после создания).
  */
-export function NewChat({ initialPage, initialQuery, initialError = false }: NewChatProps) {
+export function NewChat({ initialPage, initialQuery, initialError = false, authorizationAllowHosts }: NewChatProps) {
   const appSessionId = useRef<string | null>(null);
   const sessionCreation = useRef<Promise<string> | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -94,6 +95,7 @@ export function NewChat({ initialPage, initialQuery, initialError = false }: New
 
   return (
     <ChatPanel
+      authorizationAllowHosts={authorizationAllowHosts}
       agent={agent}
       appSessionId={sessionId}
       ensureSession={ensureSession}

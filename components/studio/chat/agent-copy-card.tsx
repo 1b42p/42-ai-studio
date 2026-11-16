@@ -58,7 +58,7 @@ function CopySkeleton() {
   );
 }
 
-function CopyBody({ copy, appSessionId }: { copy: CopyCall; appSessionId?: string | null }) {
+function CopyBody({ copy, appSessionId, authorizationAllowHosts }: { copy: CopyCall; appSessionId?: string | null; authorizationAllowHosts?: readonly string[] }) {
   const state = copyConversationState(copy);
 
   if (state === "unavailable") {
@@ -89,6 +89,7 @@ function CopyBody({ copy, appSessionId }: { copy: CopyCall; appSessionId?: strin
                 scrollAnchor={message.role === "user"}
               >
                 <MessageRow
+                  authorizationAllowHosts={authorizationAllowHosts}
                   appSessionId={appSessionId}
                   data={conversation}
                   files={COPY_FILES}
@@ -112,7 +113,7 @@ function CopyBody({ copy, appSessionId }: { copy: CopyCall; appSessionId?: strin
  * рабочим, а закрывают её кнопка и Escape. На телефоне она модальная, занимает
  * весь экран и закрывается ещё и нажатием вне панели.
  */
-export function AgentCopyCard({ part, data, appSessionId, onCopyPanelChange }: ToolCardProps) {
+export function AgentCopyCard({ part, data, appSessionId, onCopyPanelChange, authorizationAllowHosts }: ToolCardProps) {
   const copy = readCopyCall(data, part);
   const [open, setOpen] = useState(false);
   const mobile = useIsMobile();
@@ -178,7 +179,7 @@ export function AgentCopyCard({ part, data, appSessionId, onCopyPanelChange }: T
             </Alert>
           ) : null}
 
-          <CopyBody appSessionId={appSessionId} copy={copy} />
+          <CopyBody appSessionId={appSessionId} copy={copy} authorizationAllowHosts={authorizationAllowHosts} />
         </div>
       </SheetContent>
     </Sheet>

@@ -6,7 +6,7 @@ import {
   type SandboxSessionEndOptions,
 } from "eve/sandbox/provider";
 import { loadConfig } from "@/lib/config";
-import { getDb, getLockSqlClient } from "@/lib/db/client";
+import { getDb, getLockSqlClient, getSqlClient } from "@/lib/db/client";
 import { appSessions, daytonaKeys, sandboxes, type DaytonaKey, type SandboxLaunch } from "@/lib/db/schema";
 import { bindAppSession, findAppSessionById } from "@/lib/sessions/service";
 import { decryptSecret, DAYTONA_KEY_PURPOSE } from "@/lib/secrets";
@@ -16,6 +16,7 @@ import { sandboxState } from "@/lib/sandbox/daytona-state";
 import type { SandboxState as StoredState } from "@/lib/db/schema";
 export { sandboxState } from "@/lib/sandbox/daytona-state";
 import { waitForSandboxMaintenance } from "@/lib/sandbox/maintenance";
+import { recordSandboxTransition } from "@/lib/usage/sandbox";
 import {
   assertSandboxWait, beginSandboxLaunch, captureSandboxWait, readSandboxCopyWait, type SandboxWait,
 } from "@/lib/sandbox/wait-generation";
@@ -102,6 +103,7 @@ async function liveMachine(
   id: string,
   onLaunch?: (kind: SandboxLaunch) => Promise<DaytonaMachine | void>,
   guard?: () => Promise<void>,
+  observe?: (machine: DaytonaMachine) => Promise<void>,
 ): Promise<DaytonaMachine> {
   let machine: DaytonaMachine;
   try { machine = await backend.get(id); }
@@ -122,6 +124,7 @@ async function liveMachine(
     }
   }
   await guard?.();
+  await observe?.(machine);
   if (sandboxStateForLoss(machine.state)) throw new SandboxSessionGoneError("Песочница утрачена.");
   if (machine.state === "error" || machine.state === "build_failed") {
     if (machine.state === "error" && machine.recoverable) {
@@ -147,10 +150,11 @@ async function liveMachine(
 
 /** Резерв места в пуле до того, как Daytona обновит использование. */
 async function reserveLaunch(appSessionId: string, keyId: string, kind: SandboxLaunch, wait: SandboxWait): Promise<void> {
-  await getDb()
-    .update(sandboxes)
-    .set({ daytonaKeyId: keyId, state: "starting", startingSince: new Date(), startingKind: kind })
-    .where(and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.waitGeneration, wait.generation)));
+  await recordSandboxTransition({
+    where: and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.waitGeneration, wait.generation)),
+    newState: "starting", source: "observed",
+    changes: { daytonaKeyId: keyId, startingSince: new Date(), startingKind: kind },
+  });
 }
 
 /** Снимает резерв; сбой записи не должен подменять исходную ошибку старта. */
@@ -160,11 +164,16 @@ async function updateReservation(
   wait: SandboxWait,
 ): Promise<void> {
   try {
-    await getDb()
-      .update(sandboxes)
-      .set(values)
-      .where(and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.state, "starting"),
-        eq(sandboxes.waitGeneration, wait.generation)));
+    const where = and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.state, "starting"),
+      eq(sandboxes.waitGeneration, wait.generation));
+    if (values.state) {
+      await recordSandboxTransition({
+        where, newState: values.state, source: "app",
+        changes: { startingSince: null, startingKind: null },
+      });
+    } else {
+      await getDb().update(sandboxes).set({ startingSince: null, startingKind: null }).where(where);
+    }
   } catch (error) {
     console.error("[sandbox] reservation_release_failed", errorStatus(error) ?? "db");
   }
@@ -195,23 +204,16 @@ async function checkpointMachine(
   machine: DaytonaMachine,
   wait: SandboxWait,
 ): Promise<boolean> {
-  return getDb().transaction(async (tx) => {
-    const [key] = await tx
-      .select({ id: daytonaKeys.id })
-      .from(daytonaKeys)
-      .where(and(
-        eq(daytonaKeys.id, keyId),
-        isNull(daytonaKeys.deletedAt),
-        ne(daytonaKeys.apiKeyEncrypted, DELETED_KEY_MARKER),
-      ))
-      .for("update");
+  return getSqlClient().begin(async (tx) => {
+    const [key] = await tx`
+      select id from daytona_keys where id = ${keyId} and deleted_at is null
+        and api_key_encrypted <> ${DELETED_KEY_MARKER} for update`;
     if (key === undefined) return false;
-    const updated = await tx
-      .update(sandboxes)
-      .set({
+    const result = await recordSandboxTransition({
+      newState: sandboxState(machine.state), source: "app",
+      changes: {
         daytonaKeyId: keyId,
         daytonaSandboxId: machine.id,
-        state: sandboxState(machine.state),
         startingSince: null,
         startingKind: null,
         lastActiveAt: new Date(),
@@ -219,14 +221,14 @@ async function checkpointMachine(
         stoppedAt: null,
         waitGeneration: wait.generation,
         launchStartedAt: null,
-      })
-      .where(and(eq(sandboxes.appSessionId, appSessionId), sqlExpression`
+      },
+      where: and(eq(sandboxes.appSessionId, appSessionId), sqlExpression`
         ${sandboxes.waitGeneration} <= ${wait.generation} and (
           ${sandboxes.waitGeneration} = ${wait.generation} or exists (
             select 1 from app_sessions where id = ${appSessionId}
-              and sandbox_wait_generation = ${wait.generation}))`))
-      .returning({ id: sandboxes.id });
-    return updated.length > 0;
+              and sandbox_wait_generation = ${wait.generation}))`),
+    }, tx);
+    return result.updated > 0;
   });
 }
 
@@ -249,24 +251,45 @@ function sandboxStateForLoss(state: string | undefined) {
   return state === "destroyed" || state === "destroying";
 }
 
+/** Снимок БД берётся до сетевого чтения: старое наблюдение не закрывает новый запуск. */
+async function captureMachineObserver(appSessionId: string) {
+  const [row] = await getDb().select().from(sandboxes).where(eq(sandboxes.appSessionId, appSessionId));
+  return async (machine: DaytonaMachine): Promise<void> => {
+    if (!row || row.state === "starting" ||
+        !["started", "stopped", "archived", "destroyed", "destroying"].includes(machine.state ?? "")) return;
+    await recordSandboxTransition({
+      where: and(
+        eq(sandboxes.id, row.id), eq(sandboxes.state, row.state),
+        eq(sandboxes.daytonaSandboxId, machine.id),
+        row.runningSince === null ? isNull(sandboxes.runningSince) : eq(sandboxes.runningSince, row.runningSince),
+        eq(sandboxes.waitGeneration, row.waitGeneration),
+      ),
+      newState: sandboxState(machine.state), source: "observed",
+      lastActivityAt: machine.lastActivityAt,
+    });
+  };
+}
+
 async function connected(machine: DaytonaMachine, appSessionId: string, wait: SandboxWait): Promise<SandboxConnection> {
   await waitForSandboxMaintenance(appSessionId);
   await assertSandboxWait(wait);
   const db = getDb();
   const identity = and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.daytonaSandboxId, machine.id));
-  const updated = await db.update(sandboxes)
-    .set({ state: sandboxState(machine.state), startingSince: null, startingKind: null,
+  const updated = await recordSandboxTransition({
+    newState: sandboxState(machine.state), source: "app",
+    changes: { startingSince: null, startingKind: null,
       lastActiveAt: new Date(), daytonaActivityAt: machine.lastActivityAt ?? null, stoppedAt: null,
-      waitGeneration: wait.generation, launchStartedAt: null })
-    .where(and(identity, sqlExpression`exists (select 1 from app_sessions
-       where id = ${appSessionId} and deleted_at is null and sandbox_wait_generation = ${wait.generation})`))
-    .returning({ id: sandboxes.id });
-  if (!updated.length) throw new StudioSandboxError("sandbox_wait_cancelled");
+      waitGeneration: wait.generation, launchStartedAt: null },
+    where: and(identity, sqlExpression`exists (select 1 from app_sessions
+        where id = ${appSessionId} and deleted_at is null and sandbox_wait_generation = ${wait.generation})`),
+  });
+  if (!updated.updated) throw new StudioSandboxError("sandbox_wait_cancelled");
   const connection = machine.connect({
     async onStop() {
-      await db.update(sandboxes)
-        .set({ state: "stopped", startingSince: null, startingKind: null, stoppedAt: new Date() })
-        .where(identity);
+      await recordSandboxTransition({
+        where: identity, newState: "stopped", source: "app",
+        changes: { startingSince: null, startingKind: null, stoppedAt: new Date() },
+      });
     },
     async onActivity() {
       await db.update(sandboxes).set({ lastActiveAt: new Date() })
@@ -326,7 +349,8 @@ async function provision(
     await assertSandboxWait(wait);
     if (found.id === previousId) await found.delete();
     else machine = await liveMachine(backend, found.id,
-      () => beginSandboxLaunch(wait), () => assertSandboxWait(wait));
+      () => beginSandboxLaunch(wait), () => assertSandboxWait(wait),
+      await captureMachineObserver(appSessionId));
   } catch (error) {
     if (!isMissingSandbox(error) && !(error instanceof SandboxSessionGoneError)) throw error;
   }
@@ -404,7 +428,9 @@ export function createDaytonaLifecycle() {
           try {
             const backend = await backendFor(row.daytonaKeyId);
             const name = daytonaSandboxName(ctx.session.id);
+            const observe = await captureMachineObserver(session.id);
             const machine = await backend.get(row.daytonaSandboxId || name);
+            await observe(machine);
             needsSlot = machine.state !== "started";
             launch = row.daytonaSandboxId
               ? machine.state === "archived" || machine.state === "archiving" ? "restore" : "wake"
@@ -465,11 +491,12 @@ export function createDaytonaLifecycle() {
                   await beginSandboxLaunch(wait);
                 },
                 () => assertSandboxWait(wait),
+                await captureMachineObserver(session.id),
               );
               opened = { machine, state: { keyId: existing.daytonaKeyId, sandboxId: machine.id } };
             } catch (error) {
               if (!(error instanceof SandboxSessionGoneError)) throw error;
-              await sql`update sandboxes set state = 'gone' where id = ${existing.id}`;
+              await recordSandboxTransition({ sandboxId: existing.id, newState: "gone", source: "observed" });
             }
           }
           const name = daytonaSandboxName(ctx.session.id);
@@ -623,6 +650,7 @@ export function createDaytonaLifecycle() {
                   backend, state.sandboxId,
                   () => beginSandboxLaunch(wait),
                   () => assertSandboxWait(wait),
+                  await captureMachineObserver(session.id),
                 );
               } finally {
                 try {
@@ -633,12 +661,15 @@ export function createDaytonaLifecycle() {
               }
             },
             () => assertSandboxWait(wait),
+            await captureMachineObserver(session.id),
           );
           return await connected(machine, session.id, wait);
         } catch (error) {
           if (error instanceof SandboxSessionGoneError) {
-            await getDb().update(sandboxes).set({ state: "gone" })
-              .where(and(eq(sandboxes.appSessionId, session.id), eq(sandboxes.daytonaSandboxId, state.sandboxId)));
+            await recordSandboxTransition({
+              where: and(eq(sandboxes.appSessionId, session.id), eq(sandboxes.daytonaSandboxId, state.sandboxId)),
+              newState: "gone", source: "observed",
+            });
             throw error;
           }
           await clearLaunchReservation(session.id, wait);
@@ -664,7 +695,9 @@ export function createDaytonaLifecycle() {
         const [key] = await abortable(() => getDb().select().from(daytonaKeys).where(eq(daytonaKeys.id, target.keyId)), options.abortSignal);
         // Удалённый ключ уже не расшифровывается: машин этого ключа больше нет.
         if (key !== undefined && key.apiKeyEncrypted === DELETED_KEY_MARKER) {
-          await getDb().update(sandboxes).set({ state: "gone" }).where(eq(sandboxes.appSessionId, session.id));
+          await recordSandboxTransition({
+            where: eq(sandboxes.appSessionId, session.id), newState: "gone", source: "app",
+          });
           return;
         }
         const backend = backendForKey(key, true);
@@ -675,7 +708,9 @@ export function createDaytonaLifecycle() {
         if (error instanceof Error && error.name === "AbortError") throw error;
         if (!(error instanceof SandboxSessionGoneError) && !isMissingSandbox(error)) throw sandboxFailure(error, "sandbox_start_failed");
       }
-      await getDb().update(sandboxes).set({ state: "gone" }).where(eq(sandboxes.appSessionId, session.id));
+      await recordSandboxTransition({
+        where: eq(sandboxes.appSessionId, session.id), newState: "gone", source: "app",
+      });
     },
   };
 }

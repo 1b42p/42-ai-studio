@@ -64,6 +64,7 @@ beforeAll(async () => {
     NODE_ENV: "development",
     APP_STUB_EVAL_SANDBOX: "1",
     APP_TEST_MODE: "0",
+    SSRF_TEST_ALLOW_HOSTS: "",
     AGENT_MODEL: "stub-media",
     TELEGRAM_OIDC_ISSUER: "https://oauth.telegram.org",
     TAVILY_API_URL: "https://api.tavily.com",
