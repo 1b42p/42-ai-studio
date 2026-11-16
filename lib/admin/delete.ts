@@ -13,7 +13,7 @@ import { errorStatus } from "@/lib/sandbox/errors";
 
 const SESSIONS_PER_BATCH = 5;
 const BATCH_BUDGET_MS = 90_000;
-const STEP_BUDGET_MS = 120_000;
+const REQUEST_BUDGET_MS = 120_000;
 
 export type DeleteUserResult =
   | { readonly status: "deleted" }
@@ -71,6 +71,7 @@ export async function deleteUserData(
 ): Promise<DeleteUserResult> {
   const config = loadConfig();
   const storage = options.storage ?? getStorage();
+  const requestDeadline = Date.now() + REQUEST_BUDGET_MS;
   // Отдельный пул из одного соединения: сеансовая блокировка не занимает общий
   // пул на время сетевых шагов удаления.
   const client = postgres(config.databaseUrl, { max: 1, connect_timeout: 5, idle_timeout: 1 });
@@ -117,15 +118,17 @@ export async function deleteUserData(
       order by (deleted_at is null) desc, created_at, id
       limit ${SESSIONS_PER_BATCH}`;
 
-    const deadline = Date.now() + BATCH_BUDGET_MS;
+    const batchDeadline = Math.min(requestDeadline, Date.now() + BATCH_BUDGET_MS);
     const failed = new Set<string>();
     let deleted = 0;
 
     for (const session of batch) {
-      if (Date.now() >= deadline) break;
+      if (Date.now() >= batchDeadline) break;
       let result: SessionDeletionResult;
       try {
-        result = await deleteSessionData(session.id);
+        // Дедлайн пачки передаётся внутрь: медленная сессия не выходит за
+        // бюджет запроса, а её таймаут означает «осталась на следующий 202».
+        result = await deleteSessionData(session.id, { deadline: batchDeadline });
       } catch (error) {
         failed.add(session.id);
         console.warn("[admin:user] session delete failed", {
@@ -135,6 +138,7 @@ export async function deleteUserData(
         });
         continue;
       }
+      if (result.timedOut) break;
       if (result.status === "deleted" || result.status === "not_found") deleted += 1;
       else if (result.status === "upstream_error") failed.add(session.id);
       // `conflict` — сессию удаляет другой запрос; это пропуск без сбоя.
@@ -161,7 +165,7 @@ export async function deleteUserData(
       return { status: "progress", deleted, total, remaining };
     }
 
-    const signal = AbortSignal.timeout(STEP_BUDGET_MS);
+    const signal = AbortSignal.timeout(Math.max(1, requestDeadline - Date.now()));
     try {
       await storage.deletePrefix(`u/${userId}/`, { signal });
     } catch (error) {
