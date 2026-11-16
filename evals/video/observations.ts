@@ -94,6 +94,26 @@ export function planBeforeWork(events: readonly EveEvalStreamEvent[]): boolean {
   return false;
 }
 
+/** Четыре разных кадра, чтение которых завершилось. */
+export function distinctFrameViews(events: readonly EveEvalStreamEvent[]): boolean {
+  const requested = new Map<string, string>();
+  const viewed = new Set<string>();
+  for (const event of events) {
+    if (event.type === "actions.requested") {
+      for (const action of event.data.actions) {
+        if (action.kind === "tool-call" && action.toolName === "read_file" && isFramePath(action.input.filePath)) {
+          requested.set(action.callId, String(action.input.filePath));
+        }
+      }
+    } else if (event.type === "action.result" && event.data.status === "completed" &&
+      event.data.result.kind === "tool-result") {
+      const path = requested.get(event.data.result.callId);
+      if (path !== undefined) viewed.add(path);
+    }
+  }
+  return viewed.size >= 4;
+}
+
 /** Смотрим завершение чтения, а не запрос: параллельный read + render не считается просмотром. */
 export function framesBeforeFullRender(events: readonly EveEvalStreamEvent[]): boolean {
   const requestedFrames = new Set<string>();
