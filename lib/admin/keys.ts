@@ -202,7 +202,7 @@ async function toView(
     usageCheckedAt: iso(key.usageCheckedAt),
     exhaustedUntil: iso(key.exhaustedUntil),
     remainingSandboxes: ciphertextKept ? await remainingSandboxes(key.id) : null,
-    fits: key.deletedAt === null ? freeCapacity(usage, reserved.get(pool) ?? ZERO, sandboxSize()) : null,
+    fits: freeCapacity(usage, reserved.get(pool) ?? ZERO, sandboxSize()),
     sandboxes: tallies.get(key.id) ?? emptyTally(),
     warning: warningFor(key, keys),
   };
@@ -289,9 +289,25 @@ export async function addAdminKey(
       }
     }
     const ciphertext = encryptSecret(apiKey, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE);
+    const organizationUsage = probe.organizationId === null ? null : {
+      source: "error",
+      fetchedAt: null,
+      organizationId: probe.organizationId,
+      region: null,
+      cpu: null,
+      memoryGb: null,
+      diskGb: null,
+      maxPerSandbox: null,
+      error: null,
+    };
     const created = (await tx`
-      insert into daytona_keys (label, api_key_encrypted, enabled)
-      values (${label}, ${ciphertext}, true)
+      insert into daytona_keys (label, api_key_encrypted, enabled, usage)
+      values (
+        ${label},
+        ${ciphertext},
+        true,
+        ${organizationUsage === null ? null : JSON.stringify(organizationUsage)}::jsonb
+      )
       returning id`) as Array<{ id: string }>;
     const id = created[0]?.id;
     if (id === undefined) return fail(502, "upstream_error", KEY_UNAVAILABLE_MESSAGE);

@@ -556,8 +556,9 @@ export async function deleteKey(
   const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
     while (cursor < queue.length) {
       if (deadline !== undefined && Date.now() >= deadline.getTime()) {
-        remaining += queue.length - cursor;
+        const left = queue.length - cursor;
         cursor = queue.length;
+        if (left > 0) remaining += left;
         return;
       }
       const index = cursor;

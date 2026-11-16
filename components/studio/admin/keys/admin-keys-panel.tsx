@@ -13,6 +13,7 @@ import {
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AdminKeyView, AdminKeysPage } from "@/lib/admin/key-view";
+import { remainingSandboxesWarning } from "@/lib/admin/key-view";
 import { AddKeyDialog } from "./add-key-dialog";
 import { KeyActionDialog, type KeyAction } from "./key-action-dialog";
 import { KeyCard } from "./key-card";
@@ -208,9 +209,15 @@ export function AdminKeysPanel({
           items: current.items.filter((item) => item.id !== actionItem.id),
         }));
         if (result.remainingSandboxes > 0) {
+          setDeletedOpen(true);
           setDeleted((current) => [
             ...(current ?? []).filter((item) => item.id !== actionItem.id),
-            { ...actionItem, remainingSandboxes: result.remainingSandboxes, enabled: false, deletedAt: new Date().toISOString() },
+            {
+              ...actionItem,
+              remainingSandboxes: result.remainingSandboxes,
+              enabled: false,
+              deletedAt: new Date().toISOString(),
+            },
           ]);
         }
       } else {
@@ -333,12 +340,19 @@ export function AdminKeysPanel({
         <CollapsibleContent className="flex flex-col gap-2 pt-2">
           {deletedError !== null ? <p className="text-sm text-destructive">{deletedError}</p> : null}
           {deleted?.map((item) => (
-            <p className="truncate text-sm" key={item.id}>
-              {item.label}
-              {item.deletedAt !== null && shownNow !== null
-                ? `, удалён ${new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeZone }).format(new Date(item.deletedAt))}`
-                : ""}
-            </p>
+            <div className="flex min-w-0 flex-col gap-1" key={item.id}>
+              <p className="truncate text-sm">
+                {item.label}
+                {item.deletedAt !== null && shownNow !== null
+                  ? `, удалён ${new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeZone }).format(new Date(item.deletedAt))}`
+                  : ""}
+              </p>
+              {item.remainingSandboxes != null && item.remainingSandboxes > 0 ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{remainingSandboxesWarning(item.remainingSandboxes)}</AlertDescription>
+                </Alert>
+              ) : null}
+            </div>
           ))}
         </CollapsibleContent>
       </Collapsible>

@@ -355,14 +355,19 @@ export async function probeApiKey(secret: string): Promise<ApiKeyProbe> {
   try {
     const current = await source.keyOrganization();
     if (current !== undefined) return { ok: true, organizationId: current };
-    const organizations = await source.organizations();
-    if (organizations.length === 1) return { ok: true, organizationId: organizations[0] ?? null };
-    return { ok: true, organizationId: null };
   } catch (error) {
     const code = usageErrorOf(error);
     if (code === "unauthorized" || code === "forbidden") return { ok: false, reason: "rejected" };
     return { ok: false, reason: "unavailable" };
   }
+  // Ключ принят. Организацию ищем как при чтении квот; не вышло — без сверки.
+  try {
+    const organizations = await source.organizations();
+    if (organizations.length === 1) return { ok: true, organizationId: organizations[0] ?? null };
+  } catch {
+    return { ok: true, organizationId: null };
+  }
+  return { ok: true, organizationId: null };
 }
 
 /**
