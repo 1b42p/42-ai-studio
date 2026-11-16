@@ -10,6 +10,8 @@ import { loadConfig } from "@/lib/config";
 import { getStorage } from "@/lib/s3";
 import { DAYTONA_KEY_PURPOSE, decryptSecret } from "@/lib/secrets";
 import { errorStatus, isMissingSandbox } from "@/lib/sandbox/errors";
+import { recordSandboxTransition } from "@/lib/usage/sandbox";
+import { cancellableQuery as query } from "@/lib/db/cancellable-query";
 
 export interface SessionDeletionResult {
   status: "deleted" | "not_found" | "conflict" | "upstream_error";
@@ -36,20 +38,6 @@ interface DeletingSession {
 }
 
 class DeletionConflict extends Error {}
-
-/** Отмена запроса Postgres, а не гонка с продолжающимся SQL. */
-async function query<T>(pending: PromiseLike<T> & { cancel(): void }, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted();
-  const abort = () => pending.cancel();
-  signal.addEventListener("abort", abort, { once: true });
-  try {
-    const result = await pending;
-    signal.throwIfAborted();
-    return result;
-  } finally {
-    signal.removeEventListener("abort", abort);
-  }
-}
 
 /** ReservedSql имеет только запросы/release: транзакцией управляем явно. */
 async function transactionOnReserved<T>(
@@ -218,9 +206,13 @@ export async function deleteSessionData(
       await query(sql!`delete from pending_sandbox_deletions
         where daytona_key_id = ${sandbox.keyId}
           and daytona_sandbox_id = ${sandbox.daytonaSandboxId}`, stepSignal);
-      await query(sql!`update sandboxes set state = 'gone', starting_since = null,
-        starting_kind = null, launch_started_at = null
-        where id = ${sandbox.id}`, stepSignal);
+      stepSignal.throwIfAborted();
+      await recordSandboxTransition({
+        sandboxId: sandbox.id, newState: "gone", source: "app",
+        changes: { startingSince: null, startingKind: null, launchStartedAt: null },
+        signal: stepSignal,
+      });
+      stepSignal.throwIfAborted();
     });
 
     const prefix = `u/${session.userId}/s/${appSessionId}/`;

@@ -57,6 +57,7 @@
     "postgres": "^3.4.9",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "recharts": "^3.8.0",
     "rehype-harden": "^1.1.8",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
