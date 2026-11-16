@@ -25,7 +25,7 @@ import {
 } from "@/lib/daytona/usage";
 import { errorStatus, isMissingSandbox } from "@/lib/sandbox/errors";
 import { DAYTONA_KEY_PURPOSE, decryptSecret } from "@/lib/secrets";
-import { daytonaBackend } from "./daytona-backend";
+import { daytonaBackend, deleteDaytonaMachine } from "./daytona-backend";
 
 /** Данные моложе 30 секунд считаются свежими. */
 export const USAGE_FRESH_MS = 30_000;
@@ -141,16 +141,17 @@ export function freeCapacity(
   size: KeyNeed,
 ): number | null {
   if (!hasNumbers(usage)) return null;
-  if (size.cpu <= 0 || size.memoryGb <= 0 || size.diskGb <= 0) return null;
-  const free = {
-    cpu: usage.cpu.quota - usage.cpu.used - reserved.cpu,
-    memoryGb: usage.memoryGb.quota - usage.memoryGb.used - reserved.memoryGb,
-    diskGb: usage.diskGb.quota - usage.diskGb.used - reserved.diskGb,
-  };
-  return Math.max(
-    0,
-    Math.floor(Math.min(free.cpu / size.cpu, free.memoryGb / size.memoryGb, free.diskGb / size.diskGb)),
-  );
+  const ratios: number[] = [];
+  if (size.cpu > 0) ratios.push((usage.cpu.quota - usage.cpu.used - reserved.cpu) / size.cpu);
+  if (size.memoryGb > 0) {
+    ratios.push((usage.memoryGb.quota - usage.memoryGb.used - reserved.memoryGb) / size.memoryGb);
+  }
+  if (size.diskGb > 0) {
+    ratios.push((usage.diskGb.quota - usage.diskGb.used - reserved.diskGb) / size.diskGb);
+  }
+  // Нулевой спрос по измерению не считается нехваткой: пробуждение не просит диск.
+  if (ratios.length === 0) return null;
+  return Math.max(0, Math.floor(Math.min(...ratios)));
 }
 
 /** Что резервирует строка `starting`: пробуждение не занимает диск повторно. */
@@ -505,15 +506,13 @@ export async function deleteKey(
     return { remaining: remaining + targets.size };
   }
 
-  let backend: ReturnType<typeof daytonaBackend>;
+  let secret: string;
   try {
-    backend = daytonaBackend(
-      key.id,
-      decryptSecret(key.apiKeyEncrypted, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
-    );
+    secret = decryptSecret(key.apiKeyEncrypted, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE);
   } catch {
     return { remaining: remaining + targets.size };
   }
+  const backend = daytonaBackend(key.id, secret);
 
   // Строку могли уже занять новой песочницей и ключом, пока удаление шло по
   // сети: отмечаем `gone` только ту же пару «ключ + машина».
@@ -535,12 +534,26 @@ export async function deleteKey(
   let cursor = 0;
 
   const removeOne = async (sandboxId: string, rowIds: string[]): Promise<void> => {
+    if (deadline !== undefined && Date.now() >= deadline.getTime()) {
+      remaining += 1;
+      return;
+    }
     // Идентификатор запоминается до сетевого удаления: падение процесса
     // между запросом и подтверждением не потеряет машину.
     await rememberPendingDeletion(keyId, sandboxId);
+    const controller = new AbortController();
+    const budget = deadline === undefined ? undefined : deadline.getTime() - Date.now();
+    const timer = budget === undefined ? undefined : setTimeout(() => controller.abort(), Math.max(0, budget));
     try {
-      const machine = await backend.get(sandboxId);
-      await machine.delete();
+      if (deadline !== undefined) {
+        await deleteDaytonaMachine(keyId, secret, sandboxId, {
+          signal: controller.signal,
+          deadline: deadline.getTime(),
+        });
+      } else {
+        const machine = await backend.get(sandboxId);
+        await machine.delete();
+      }
       await forgetPendingDeletion(keyId, sandboxId);
       await markGone(rowIds, sandboxId);
     } catch (error) {
@@ -550,6 +563,8 @@ export async function deleteKey(
       } else {
         remaining += 1;
       }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
     }
   };
 
