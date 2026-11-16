@@ -28,6 +28,7 @@ export function serializeServer(server: Server) {
   return {
     id: server.id, name: server.name, url: `${url.href}${query ? "?…" : ""}`,
     authKind: server.authKind, enabled: server.enabled, headerNames, createdAt: server.createdAt,
+    ...(server.authKind === "oauth" ? { connected: Boolean(server.credentialsEncrypted) } : {}),
   };
 }
 

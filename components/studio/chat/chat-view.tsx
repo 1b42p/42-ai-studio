@@ -72,6 +72,8 @@ export interface ChatViewProps {
   ended?: boolean;
   /** Сессия приложения: карточки команд опрашивают задания из неё. */
   appSessionId?: string | null;
+  /** Exact HTTP host exceptions supplied by the server in test mode only. */
+  authorizationAllowHosts?: readonly string[];
   /** Состояние песочницы приходит от обёртки, без сети внутри представления. */
   sandboxStatus?: SandboxStatus | null;
   /** Файлы из ответов агента; без них ссылки показывают «Файл недоступен». */
@@ -200,6 +202,7 @@ export function ChatView({
   inputDisabled = false,
   ended = false,
   appSessionId = null,
+  authorizationAllowHosts,
   sandboxStatus,
   messageFiles,
   attachments,
@@ -370,6 +373,7 @@ export function ChatView({
                   >
                     <div className="flex w-full min-w-0 flex-col gap-3">
                       <MessageRow
+                        authorizationAllowHosts={authorizationAllowHosts}
                         appSessionId={appSessionId}
                         data={data}
                         files={files}

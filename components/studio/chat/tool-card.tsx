@@ -5,6 +5,7 @@ import { WrenchIcon } from "lucide-react";
 import type { ComponentType } from "react";
 
 import { AgentCopyCard } from "@/components/studio/chat/agent-copy-card";
+import { authorizationErrorDescription } from "./authorization-card";
 import { DownloadVideoCard } from "@/components/studio/chat/download-video-card";
 import { EditFileCard } from "@/components/studio/chat/edit-file-card";
 import { ReadFileCard } from "@/components/studio/chat/read-file-card";
@@ -20,6 +21,7 @@ export interface ToolCardProps {
   data: ConversationState;
   /** Сессия приложения: карточка фоновой команды опрашивает её задание. */
   appSessionId?: string | null;
+  authorizationAllowHosts?: readonly string[];
   /** Панель копии открыта/закрыта: по этому чат освобождает место справа. */
   onCopyPanelChange?: (callId: string, open: boolean) => void;
 }
@@ -38,6 +40,9 @@ const toolCards: ReadonlyMap<string, ComponentType<ToolCardProps>> = new Map([
 ]);
 
 function FallbackToolCard({ part }: ToolCardProps) {
+  const authorizationError = part.state === "output-error"
+    ? authorizationErrorDescription(part.errorText)
+    : null;
   const status = part.state === "output-error"
     ? "error"
     : part.state === "output-available" || part.state === "output-denied"
@@ -47,13 +52,15 @@ function FallbackToolCard({ part }: ToolCardProps) {
   return (
     <TraceLine status={status}>
       <TraceIcon><WrenchIcon /></TraceIcon>
-      <TraceTitle>{part.toolMetadata?.eve?.label ?? "Инструмент"}</TraceTitle>
+      <TraceTitle>{authorizationError
+        ? `Не удалось подключиться. ${authorizationError}`
+        : part.toolMetadata?.eve?.label ?? "Инструмент"}</TraceTitle>
     </TraceLine>
   );
 }
 
 /** Карточка вызова: имя инструмента берётся из метаданных eve, затем из части. */
-export function ToolCard({ part, data, appSessionId, onCopyPanelChange }: ToolCardProps) {
+export function ToolCard({ part, data, appSessionId, onCopyPanelChange, authorizationAllowHosts }: ToolCardProps) {
   // У загрузки навыка `name` — имя навыка, а не инструмент: карточку не ищем.
   const name =
     part.toolMetadata?.eve?.kind === "load-skill"
@@ -62,6 +69,7 @@ export function ToolCard({ part, data, appSessionId, onCopyPanelChange }: ToolCa
   const Card = toolCards.get(name) ?? FallbackToolCard;
   return (
     <Card
+      authorizationAllowHosts={authorizationAllowHosts}
       appSessionId={appSessionId}
       data={data}
       onCopyPanelChange={onCopyPanelChange}

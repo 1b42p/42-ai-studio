@@ -43,9 +43,11 @@ async function loadAllEvents(appSessionId: string): Promise<MessageStreamEvent[]
 function ChatWithSession({
   appSessionId,
   initialTitle,
+  authorizationAllowHosts,
 }: {
   appSessionId: string;
   initialTitle: string | null;
+  authorizationAllowHosts?: readonly string[];
 }) {
   const agent = useEveAgent({
     headers: () => ({ "x-studio-session-id": appSessionId }),
@@ -54,6 +56,7 @@ function ChatWithSession({
 
   return (
     <ChatPanel
+      authorizationAllowHosts={authorizationAllowHosts}
       agent={agent}
       appSessionId={appSessionId}
       ensureSession={async () => appSessionId}
@@ -67,11 +70,13 @@ function ResumedChatSession({
   eveSessionId,
   initialEvents,
   initialTitle,
+  authorizationAllowHosts,
 }: {
   appSessionId: string;
   eveSessionId: string;
   initialEvents: readonly MessageStreamEvent[];
   initialTitle: string | null;
+  authorizationAllowHosts?: readonly string[];
 }) {
   const agent = useEveAgent({
     headers: () => ({ "x-studio-session-id": appSessionId }),
@@ -83,6 +88,7 @@ function ResumedChatSession({
 
   return (
     <ChatPanel
+      authorizationAllowHosts={authorizationAllowHosts}
       agent={agent}
       appSessionId={appSessionId}
       ensureSession={async () => appSessionId}
@@ -123,6 +129,7 @@ function LoadError({ text }: { text: string }) {
 }
 
 export interface ResumedChatProps {
+  authorizationAllowHosts?: readonly string[];
   appSessionId: string;
   initialEveSessionId: string | null;
   /** Название с сервера. Пока пустое, шапка спросит его после первого сообщения. */
@@ -141,6 +148,7 @@ export function ResumedChat({
   initialEveSessionId,
   initialTitle,
   starting,
+  authorizationAllowHosts,
 }: ResumedChatProps) {
   const [eveSessionId, setEveSessionId] = useState<string | null>(initialEveSessionId);
   const [phase, setPhase] = useState<Phase>(
@@ -211,10 +219,11 @@ export function ResumedChat({
       {phase === "loading" ? <StatusScreen text="Загружаем беседу…" /> : null}
       {phase === "error" ? <LoadError text={error ?? "Неизвестная ошибка."} /> : null}
       {phase === "empty" ? (
-        <ChatWithSession appSessionId={appSessionId} initialTitle={initialTitle} />
+        <ChatWithSession appSessionId={appSessionId} initialTitle={initialTitle} authorizationAllowHosts={authorizationAllowHosts} />
       ) : null}
       {phase === "ready" && eveSessionId !== null ? (
         <ResumedChatSession
+          authorizationAllowHosts={authorizationAllowHosts}
           appSessionId={appSessionId}
           eveSessionId={eveSessionId}
           initialEvents={events}

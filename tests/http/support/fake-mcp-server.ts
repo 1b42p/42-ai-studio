@@ -1,4 +1,5 @@
 import { createServer, type ServerResponse } from "node:http";
+import { OAUTH_ORIGIN, OAUTH_RESOURCE, type FakeOAuthState } from "./fake-oauth-provider";
 
 export interface FakeMcpRequest {
   method: string;
@@ -6,7 +7,7 @@ export interface FakeMcpRequest {
   headers: Record<string, string | undefined>;
 }
 
-export async function startFakeMcpServer(port: number) {
+export async function startFakeMcpServer(port: number, oauth?: FakeOAuthState) {
   const requests: FakeMcpRequest[] = [];
   let legacyStream: ServerResponse | undefined;
   const server = createServer(async (request, response) => {
@@ -25,6 +26,19 @@ export async function startFakeMcpServer(port: number) {
       headers: Object.fromEntries(["authorization", "x-api-key", "cookie", "x-studio-mcp-token", "user-agent", "mcp-session-id"]
         .map((name) => [name, request.headers[name] as string | undefined])),
     });
+    if (path === "/.well-known/oauth-protected-resource/mcp-oauth") {
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+        resource: oauth?.modes.foreignResource ? "https://foreign.example/mcp" : OAUTH_RESOURCE,
+        authorization_servers: [OAUTH_ORIGIN], scopes_supported: ["mcp:read"],
+      }));
+      return;
+    }
+    if (path.startsWith("/mcp-oauth") && !oauth?.accepts(request.headers.authorization)) {
+      response.writeHead(401, {
+        "www-authenticate": `Bearer resource_metadata="http://127.0.0.1:${port}/.well-known/oauth-protected-resource/mcp-oauth", scope="mcp:read"`,
+      }).end();
+      return;
+    }
     if ((path.startsWith("/bearer") || path.startsWith("/mcp-bearer")) && request.headers.authorization !== "Bearer secret-token") {
       response.writeHead(401).end(); return;
     }

@@ -1,6 +1,7 @@
 import { ChatFrame } from "@/components/studio/chat/chat-frame";
 import { NewChat } from "@/components/studio/chat/new-chat";
 import { requireUser } from "@/lib/auth/guard";
+import { loadConfig } from "@/lib/config";
 import { listUserSessions, parseSessionListSearchParams } from "@/lib/sessions/list";
 
 export const maxDuration = 125;
@@ -27,6 +28,7 @@ export default async function SessionsPage({
   return (
     <ChatFrame>
       <NewChat
+        authorizationAllowHosts={loadConfig().ssrfTestAllowHosts}
         initialError={!parsed.ok}
         initialPage={
           parsed.ok
