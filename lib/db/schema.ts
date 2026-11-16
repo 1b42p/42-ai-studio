@@ -47,6 +47,24 @@ export const users = pgTable("users", {
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
 });
 
+export const mcpServers = pgTable("mcp_servers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  nameKey: text("name_key").notNull(),
+  slug: text("slug").notNull(),
+  url: text("url").notNull(),
+  authKind: text("auth_kind").$type<"none" | "bearer" | "headers" | "oauth">().notNull(),
+  credentialsEncrypted: text("credentials_encrypted"),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("mcp_servers_user_name_idx").on(table.userId, table.nameKey),
+  uniqueIndex("mcp_servers_user_slug_idx").on(table.userId, table.slug),
+  uniqueIndex("mcp_servers_user_url_idx").on(table.userId, table.url),
+]);
+
 export const userMemory = pgTable(
   "user_memory",
   {

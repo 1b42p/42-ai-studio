@@ -70,6 +70,7 @@ export interface AppConfig {
   readonly internalAppUrl: string;
   /** Тестовые подмены (появятся в следующих тикетах). */
   readonly appTestMode: boolean;
+  readonly ssrfTestAllowHosts: readonly string[];
   /** Изолированные оценки настоящей модели; только локально, не в production. */
   readonly appEvalMode: boolean;
   readonly appVideoEvalSandbox: boolean;
@@ -236,6 +237,7 @@ const envSchema = z.object({
     "не должен заканчиваться на /",
   ),
   APP_TEST_MODE: envBoolean.optional().default(false),
+  SSRF_TEST_ALLOW_HOSTS: envString.optional(),
   APP_EVAL_MODE: envBoolean.optional().default(false),
   APP_VIDEO_EVAL_SANDBOX: envBoolean.optional().default(false),
   APP_STUB_EVAL_SANDBOX: envBoolean.optional().default(false),
@@ -394,6 +396,9 @@ export function parseConfig(env: EnvRecord): AppConfig {
   if (result.success) {
     const data = result.data;
     const production = normalized.NODE_ENV === "production";
+    if (data.SSRF_TEST_ALLOW_HOSTS && (!data.APP_TEST_MODE || production)) {
+      addIssue("SSRF_TEST_ALLOW_HOSTS", "разрешена только при APP_TEST_MODE=1 вне production");
+    }
     if (data.YOUTUBE_COOKIES !== undefined) {
       youtubeCookies = normalizeCookieText(data.YOUTUBE_COOKIES);
       if (!cookieHeaderValid(youtubeCookies)) {
@@ -504,6 +509,7 @@ export function parseConfig(env: EnvRecord): AppConfig {
     internalApiSecret: data.INTERNAL_API_SECRET,
     internalAppUrl: data.INTERNAL_APP_URL.replace(/\/+$/, ""),
     appTestMode: data.APP_TEST_MODE,
+    ssrfTestAllowHosts: data.SSRF_TEST_ALLOW_HOSTS?.split(",").map((host) => host.trim()).filter(Boolean) ?? [],
     appEvalMode: data.APP_EVAL_MODE,
     appVideoEvalSandbox: data.APP_VIDEO_EVAL_SANDBOX,
     appStubEvalSandbox: data.APP_STUB_EVAL_SANDBOX,

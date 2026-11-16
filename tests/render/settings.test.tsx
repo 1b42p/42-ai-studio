@@ -64,7 +64,7 @@ function NetworkSettings() {
   return <SettingsPage settings={settings} save={save} user={user} onLogout={() => {}} />;
 }
 
-test("настройки показывают четыре раздела, заполненное поле и аккаунт на телефоне", async () => {
+test("настройки показывают разделы, заполненное поле и аккаунт на телефоне", async () => {
   const onLogout = vi.fn();
   await renderOnPhone(
     <SettingsPage
@@ -75,7 +75,7 @@ test("настройки показывают четыре раздела, за�
     />,
   );
 
-  for (const name of ["Тема", "Общие указания для агента", "Память", "Аккаунт"]) {
+  for (const name of ["Тема", "Общие указания для агента", "MCP-серверы", "Память", "Аккаунт"]) {
     await expect.element(page.getByRole("heading", { name, exact: true })).toBeVisible();
   }
   await expect.element(page.getByRole("textbox", { name: "Общие указания" })).toHaveValue("Пиши кратко.");
@@ -96,9 +96,9 @@ test("компьютер: навигация настроек, одна коло
   await expect.element(page.getByRole("link", { name: "Настройки" })).toHaveAttribute("href", "/settings");
   await expect.element(page.getByText("4000 из 4000")).toBeVisible();
   const regions = page.getByRole("region").elements();
-  expect(regions).toHaveLength(4);
+  expect(regions).toHaveLength(5);
   expect(regions.map((region) => region.getAttribute("aria-labelledby"))).toEqual([
-    "settings-theme", "settings-instructions", "settings-memory", "settings-account",
+    "settings-theme", "settings-instructions", "settings-memory", "settings-mcp", "settings-account",
   ]);
   const bounds = regions.map((region) => region.getBoundingClientRect());
   expect(bounds.every((rect) => rect.width <= 672)).toBe(true);

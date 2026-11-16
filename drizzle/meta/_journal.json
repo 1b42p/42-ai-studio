@@ -169,6 +169,13 @@
       "when": 1794823066990,
       "tag": "0023_mean_gravity",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794828833776,
+      "tag": "0024_familiar_vector",
+      "breakpoints": true
     }
   ]
 }
