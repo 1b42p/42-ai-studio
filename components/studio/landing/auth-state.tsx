@@ -1,0 +1,65 @@
+"use client";
+
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowRight, Send } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+export type AuthState = "loading" | "anonymous" | "authenticated";
+
+const AuthContext = createContext<AuthState>("loading");
+
+export function AuthStateProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<AuthState>("loading");
+  const request = useRef<Promise<AuthState> | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    // Keep the request across Strict Mode's effect replay, not across page visits.
+    request.current ??= fetch("/api/auth/me", {
+      credentials: "same-origin",
+      cache: "no-store",
+    }).then(
+      (response): AuthState => response.status === 200 ? "authenticated" : "anonymous",
+      (): AuthState => "anonymous",
+    );
+    void request.current.then((result) => {
+      if (active) setState(result);
+    });
+    return () => { active = false; };
+  }, []);
+
+  return <AuthContext.Provider value={state}>{children}</AuthContext.Provider>;
+}
+
+export function useAuthState() {
+  return useContext(AuthContext);
+}
+
+export function StudioLoginButton({ compact = false }: { compact?: boolean }) {
+  const authenticated = useAuthState() === "authenticated";
+  const title = authenticated ? "Открыть студию" : "Войти через Telegram";
+  const Icon = authenticated ? ArrowRight : Send;
+
+  return (
+    <Button
+      size={compact ? "default" : "lg"}
+      className={cn(
+        "w-60 shrink-0",
+        compact && "size-9 p-0 md:h-9 md:w-46 md:px-3",
+      )}
+      nativeButton={false}
+      render={
+        <a
+          href={authenticated ? "/s" : "/api/auth/telegram/login?next=%2Fs"}
+          aria-label={title}
+          role="link"
+        />
+      }
+    >
+      <Icon data-icon="inline-start" aria-hidden="true" />
+      <span className={cn(compact && "hidden md:inline")}>{title}</span>
+    </Button>
+  );
+}

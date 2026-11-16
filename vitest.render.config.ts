@@ -93,6 +93,8 @@ export default defineConfig({
   },
   test: {
     include: ["tests/render/**/*.test.tsx"],
+    // CPU-throttled interactions must not compete with other rendering files.
+    fileParallelism: false,
     setupFiles: ["tests/render/setup.ts"],
     browser: {
       enabled: true,
