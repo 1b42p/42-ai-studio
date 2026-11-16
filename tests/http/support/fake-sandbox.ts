@@ -6,6 +6,7 @@ import {
   type FakeGetFailure,
   type FakeResources,
   type FakeRule,
+  type FakeKeyRejection,
   type FakeUsageFailure,
 } from "../../../lib/sandbox/fake-store";
 
@@ -40,6 +41,7 @@ export const fakeSandbox = {
   setCreateDelay: (ms: number) => store().setCreateDelay(ms),
   setQuota: (apiKey: string, quota: FakeResources) => store().setQuota(apiKey, quota),
   setOrganization: (apiKey: string, organizationId: string) => store().setOrganization(apiKey, organizationId),
+  rejectKey: (apiKey: string, rejection: FakeKeyRejection | null) => store().rejectKey(apiKey, rejection),
   failUsage: (apiKey: string, failure: FakeUsageFailure | null) => store().failUsage(apiKey, failure),
   usageCalls: (apiKey?: string) => store().usageCalls(apiKey),
   counters: () => store().counters(),

@@ -35,7 +35,7 @@ const nextConfig: NextConfig = {
   logging: {
     incomingRequests: {
       // Тела и токены входа не должны попадать в журнал разработки.
-      ignore: [/\/api\/auth\//, /\/api\/mcp-proxy\//],
+      ignore: [/\/api\/auth\//, /\/api\/mcp-proxy\//, /\/api\/admin\/keys/],
     },
   },
 };

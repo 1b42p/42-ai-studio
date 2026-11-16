@@ -341,6 +341,35 @@ async function resolveOrganization(
   return undefined;
 }
 
+export type ApiKeyProbe =
+  | { readonly ok: true; readonly organizationId: string | null }
+  | { readonly ok: false; readonly reason: "rejected" | "unavailable" };
+
+/**
+ * Проверяет ключ через `GET /api-keys/current` (таймаут 10 с). Организация
+ * берётся оттуда, иначе из единственной записи `GET /organizations`.
+ * Значение ключа и тело ответа не сохраняются.
+ */
+export async function probeApiKey(secret: string): Promise<ApiKeyProbe> {
+  const source = loadConfig().appTestMode ? fakeSource(secret) : httpSource(secret);
+  try {
+    const current = await source.keyOrganization();
+    if (current !== undefined) return { ok: true, organizationId: current };
+  } catch (error) {
+    const code = usageErrorOf(error);
+    if (code === "unauthorized" || code === "forbidden") return { ok: false, reason: "rejected" };
+    return { ok: false, reason: "unavailable" };
+  }
+  // Ключ принят. Организацию ищем как при чтении квот; не вышло — без сверки.
+  try {
+    const organizations = await source.organizations();
+    if (organizations.length === 1) return { ok: true, organizationId: organizations[0] ?? null };
+  } catch {
+    return { ok: true, organizationId: null };
+  }
+  return { ok: true, organizationId: null };
+}
+
 /**
  * Читает использование ключа. При любой ошибке прежние числа сохраняются,
  * заполняется только `error`; исключение не выходит наружу.
