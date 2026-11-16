@@ -8,8 +8,10 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
@@ -57,21 +59,23 @@ export function McpSectionView({ state }: { state: McpState }) {
         <PlusIcon data-icon="inline-start" /> Добавить сервер
       </Button>
       {error && !open && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-      {state.servers.length === 0 ? <p className="text-sm text-muted-foreground">Серверов пока нет</p> : state.servers.map((server) => (
-        <div className="flex min-w-0 flex-col gap-2" key={server.id}>
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{server.name}</p>
-              <p className="truncate text-sm text-muted-foreground">{server.url}</p>
-              <Badge variant="secondary">{AUTH_LABELS[server.authKind]}</Badge>
-            </div>
-            <Switch aria-label={`Включён: ${server.name}`} checked={server.enabled} onCheckedChange={(enabled) => void run(() => state.toggle(server.id, enabled))} />
-            <Button size="icon" variant="ghost" aria-label={`Проверить ${server.name}`} onClick={() => void state.check(server.id)}><RefreshCwIcon /></Button>
-            <Button size="icon" variant="ghost" aria-label={`Удалить ${server.name}`} onClick={() => setDeleting(server.id)}><Trash2Icon /></Button>
-          </div>
-          {state.checks[server.id] && <p className="text-sm">{checkMessage(state.checks[server.id]!)}</p>}
-        </div>
-      ))}
+      {state.servers.length === 0 ? (
+        <Empty><EmptyHeader><EmptyDescription>Серверов пока нет</EmptyDescription></EmptyHeader></Empty>
+      ) : <ItemGroup>{state.servers.map((server) => (
+        <Item className="min-w-0" role="listitem" key={server.id}>
+            <ItemContent className="min-w-0">
+              <ItemTitle className="max-w-full truncate">{server.name}</ItemTitle>
+              <ItemDescription className="truncate">{server.url}</ItemDescription>
+              <Badge className="self-start" variant="secondary">{AUTH_LABELS[server.authKind]}</Badge>
+            </ItemContent>
+            <ItemActions>
+             <Switch aria-label={`Включён: ${server.name}`} checked={server.enabled} onCheckedChange={(enabled) => void run(() => state.toggle(server.id, enabled))} />
+             <Button size="icon" variant="ghost" aria-label={`Проверить ${server.name}`} onClick={() => void state.check(server.id)}><RefreshCwIcon /></Button>
+             <Button size="icon" variant="ghost" aria-label={`Удалить ${server.name}`} onClick={() => setDeleting(server.id)}><Trash2Icon /></Button>
+            </ItemActions>
+            {state.checks[server.id] && <ItemFooter><ItemDescription>{checkMessage(state.checks[server.id]!)}</ItemDescription></ItemFooter>}
+        </Item>
+      ))}</ItemGroup>}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Добавить MCP-сервер</DialogTitle><DialogDescription>Укажите адрес и способ авторизации.</DialogDescription></DialogHeader>
