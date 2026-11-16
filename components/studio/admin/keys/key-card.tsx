@@ -26,10 +26,10 @@ export interface KeyCardProps {
   readonly onDelete: () => void;
 }
 
-function barClass(level: "ok" | "warning" | "destructive"): string {
-  if (level === "destructive") return "[&_[data-slot=progress-indicator]]:bg-destructive";
-  if (level === "warning") return "[&_[data-slot=progress-indicator]]:bg-warning";
-  return "";
+function barClass(level: "ok" | "warning" | "destructive"): string | undefined {
+  if (level === "destructive") return "bg-destructive";
+  if (level === "warning") return "bg-warning";
+  return undefined;
 }
 
 function UsageBar({
@@ -45,8 +45,8 @@ function UsageBar({
   return (
     <Progress
       aria-label={label}
-      className={barClass(level)}
       data-level={level}
+      indicatorClassName={barClass(level)}
       max={quota}
       value={used}
     >

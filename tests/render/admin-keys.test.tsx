@@ -82,8 +82,8 @@ async function expectBars(root: HTMLElement) {
   expect(cpu?.getAttribute("data-level")).toBe("ok");
   expect(memory?.getAttribute("data-level")).toBe("warning");
   expect(disk?.getAttribute("data-level")).toBe("destructive");
-  expect(memory?.className).toContain("bg-warning");
-  expect(disk?.className).toContain("bg-destructive");
+  expect(memory?.querySelector("[data-slot='progress-indicator']")?.className).toContain("bg-warning");
+  expect(disk?.querySelector("[data-slot='progress-indicator']")?.className).toContain("bg-destructive");
 }
 
 test("компьютер: карточка, пороги и подтверждения", async () => {
