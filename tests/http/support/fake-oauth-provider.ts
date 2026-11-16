@@ -42,6 +42,17 @@ export function createFakeOAuthState() {
   const access = new Map<string, Grant>();
   const refresh = new Map<string, Grant>();
   const issued: Array<{ access: string; refresh: string; clientSecret?: string }> = [];
+  let revokeGate: {
+    entered: Promise<void>;
+    markEntered: () => void;
+    released: Promise<void>;
+    release: () => void;
+  } | undefined;
+
+  function releaseRevocation() {
+    revokeGate?.release();
+    revokeGate = undefined;
+  }
 
   return {
     get modes() { return modes; },
@@ -51,8 +62,29 @@ export function createFakeOAuthState() {
     access,
     refresh,
     issued,
+    holdRevocation() {
+      if (revokeGate) throw new Error("Revocation is already held");
+      let markEntered!: () => void;
+      let release!: () => void;
+      const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      revokeGate = { entered, markEntered, released, release };
+    },
+    async waitForRevocation() {
+      if (!revokeGate) throw new Error("Revocation must be held before waiting");
+      await revokeGate.entered;
+    },
+    async pauseRevocation() {
+      const gate = revokeGate;
+      if (gate) {
+        gate.markEntered();
+        await gate.released;
+      }
+    },
+    releaseRevocation,
     setModes(value: OAuthModes) { modes = { ...modes, ...value }; },
     reset() {
+      releaseRevocation();
       modes = {};
       requests.length = 0;
       issued.length = 0;
@@ -102,6 +134,9 @@ export async function startFakeOAuthProvider(state: FakeOAuthState, port = 59211
           if (body.reset) state.reset();
           if (body.revokeAll) state.revokeAll();
           if (body.modes) state.setModes(body.modes as OAuthModes);
+          if (body.holdRevocation) state.holdRevocation();
+          if (body.releaseRevocation) state.releaseRevocation();
+          if (body.waitForRevocation) await state.waitForRevocation();
         }
         json(response, 200, { requests: state.requests, issued: state.issued, modes: state.modes });
         return;
@@ -177,6 +212,7 @@ export async function startFakeOAuthProvider(state: FakeOAuthState, port = 59211
           json(response, 401, { error: "invalid_client" }); return;
         }
         if (url.pathname === "/revoke") {
+          await state.pauseRevocation();
           if (mode.revokeFailure) {
             json(response, 503, { error: "server_error" }); return;
           }
@@ -220,6 +256,7 @@ export async function startFakeOAuthProvider(state: FakeOAuthState, port = 59211
   });
   await new Promise<void>((resolve, reject) => server.once("error", reject).listen(port, "127.0.0.1", resolve));
   return { close: async () => {
+    state.releaseRevocation();
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
   } };

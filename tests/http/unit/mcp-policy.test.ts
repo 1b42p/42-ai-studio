@@ -24,9 +24,9 @@ test("политика MCP разрешает публичные нестанд�
   }
 });
 
-test("токен через HTTP запрещён без DNS-запроса", async () => {
-  await expect(validateMcpAddress("http://nonexistent.invalid/mcp", "bearer"))
-    .rejects.toThrow("Токен и заголовки передаются только по https.");
+test.each(["bearer", "headers", "oauth"])("%s через HTTP запрещён без DNS-запроса", async (authKind) => {
+  await expect(validateMcpAddress("http://nonexistent.invalid/mcp", authKind))
+    .rejects.toThrow("Авторизация доступна только по https.");
 });
 
 test("смешанный ответ DNS целиком блокируется политикой MCP", async () => {

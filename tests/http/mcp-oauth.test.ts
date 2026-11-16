@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { MessageStreamEvent } from "eve/client";
 
 import { loadConfig } from "@/lib/config";
+import { getSqlClient } from "@/lib/db/client";
 import { mcpServers } from "@/lib/db/schema";
 import { createMcpOAuthAuthorization, getMcpOAuthToken } from "@/lib/mcp/oauth";
 import { decryptSecret } from "@/lib/secrets";
@@ -378,6 +379,44 @@ describe("MCP OAuth", () => {
     }
   }, 90_000);
 
+  test("два одновременных хода разных сессий eve обновляют общий grant ровно один раз", async () => {
+    const context = await setupOAuth();
+    await fakeOAuthProvider.expiresIn(3600);
+    const boundary = await authorizeAtBoundary(context);
+    const [first] = await fakeOAuthProvider.issued();
+    const secondSession = await createSessionAs(context.user);
+    await boundary.auth.evict!({ principal: boundary.principal, connection: boundary.connection });
+    const before = (await fakeMcpServer.requests()).length;
+    const echo = (text: string) => `/tool eve__tool ${JSON.stringify({
+      name: `${context.server.slug}__echo`, input: { text },
+    })}`;
+    const [left, right] = await Promise.all([
+      sendAndWait(context.user, context.session.id, echo("левая сессия")),
+      sendAndWait(context.user, secondSession.id, echo("правая сессия")),
+    ]);
+    expect(JSON.stringify(left)).toContain("echo: левая сессия");
+    expect(JSON.stringify(right)).toContain("echo: правая сессия");
+    expect([...left, ...right].some((event) => event.type === "authorization.required")).toBe(false);
+    const refreshes = (await fakeOAuthProvider.requests()).filter((item) => item.body.grant_type === "refresh_token");
+    expect(refreshes).toHaveLength(1);
+    expect(refreshes[0].body.refresh_token).toBe(first.refresh);
+    const issued = await fakeOAuthProvider.issued();
+    expect(issued).toHaveLength(2);
+    expect(issued[1].access).not.toBe(first.access);
+    const authorized = (await fakeMcpServer.requests()).slice(before)
+      .filter((item) => item.path.startsWith("/mcp-oauth") && item.headers.authorization);
+    expect(authorized.length).toBeGreaterThan(0);
+    expect(authorized.every((item) => item.headers.authorization === `Bearer ${issued[1].access}`)).toBe(true);
+    await expectNoSecrets(context, left);
+    const storedRight = await waitForStoredEvents(context.user, secondSession.id, (items) =>
+      items.some(({ payload }) => payload.meta.id === right.at(-1)?.meta.id));
+    const visible = JSON.stringify({ left, right, storedRight }) + appOutput();
+    for (const grant of issued) {
+      expect(visible).not.toContain(grant.access);
+      expect(visible).not.toContain(grant.refresh);
+    }
+  }, 90_000);
+
   test.each(["server_error", "invalid_grant"] as const)("evict сохраняет refresh, а %s при обновлении обрабатывается без утечки", async (failure) => {
     const context = await setupOAuth();
     const boundary = await authorizeAtBoundary(context);
@@ -458,6 +497,53 @@ describe("MCP OAuth", () => {
     await expectConnected(context, false);
     expect((await fakeOAuthProvider.requests()).filter((item) => item.path === "/token")).toHaveLength(0);
   }, 90_000);
+
+  test("удаление удерживает OAuth-блокировку до удаления строки и не обменивает код ожидающего callback", async () => {
+    const context = await setupOAuth();
+    const boundary = await authorizeAtBoundary(context);
+    await fakeOAuthProvider.holdRevocation();
+    const deleting = fetchApp(`/api/mcp-servers/${context.server.id}`, {
+      method: "DELETE", headers: { cookie: context.cookie },
+    });
+    let completion: Promise<{ ok: true } | { ok: false; error: unknown }> | undefined;
+    try {
+      // Revoke has already cleared credentials, but its HTTP response is still held.
+      await fakeOAuthProvider.waitForRevocation();
+      expect(await encryptedCredentials(context.server.id)).toBeNull();
+      const pending = await boundary.auth.startAuthorization({
+        principal: boundary.principal, connection: boundary.connection, callbackUrl: boundary.callbackUrl,
+      });
+      const authorization = await fetch(pending.challenge.url!, { redirect: "manual" });
+      expect(authorization.status).toBe(302);
+      const callback = new URL(authorization.headers.get("location")!);
+      const beforeExchange = (await fakeOAuthProvider.requests()).filter((item) => item.path === "/token").length;
+      completion = boundary.auth.completeAuthorization({
+        principal: boundary.principal, connection: boundary.connection, callbackUrl: boundary.callbackUrl,
+        resume: pending.resume,
+        callback: { method: "GET", params: Object.fromEntries(callback.searchParams) },
+      }).then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }));
+      // Observe the queued callback rather than relying on a scheduling delay.
+      await expect.poll(async () => {
+        const waiting = await getSqlClient()`select 1 from pg_locks
+          where locktype = 'advisory' and classid = 3 and not granted
+          and objid::bigint = (hashtext(${context.server.id})::bigint & 4294967295)`;
+        return waiting.length;
+      }, { timeout: 3000, interval: 25 }).toBeGreaterThan(0);
+      await fakeOAuthProvider.releaseRevocation();
+      expect((await deleting).status).toBe(204);
+      const completed = await completion;
+      expect(completed.ok).toBe(false);
+      if (!completed.ok) expect(completed.error).toMatchObject({ reason: "wrong_user", retryable: false });
+      expect(await db().select().from(mcpServers).where(eq(mcpServers.id, context.server.id))).toHaveLength(0);
+      const providerRequests = await fakeOAuthProvider.requests();
+      expect(providerRequests.filter((item) => item.path === "/token")).toHaveLength(beforeExchange);
+      expect(providerRequests.filter((item) => item.path === "/revoke")).toHaveLength(1);
+      expect(await fakeOAuthProvider.issued()).toHaveLength(1);
+    } finally {
+      await fakeOAuthProvider.releaseRevocation();
+      await Promise.allSettled([deleting, ...(completion ? [completion] : [])]);
+    }
+  }, 30_000);
 
   test("getToken и completeAuthorization отвергают чужого владельца, authenticator и app principal", async () => {
     const context = await setupOAuth();

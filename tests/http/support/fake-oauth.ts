@@ -9,7 +9,8 @@ interface Snapshot {
 async function control(body?: object): Promise<Snapshot> {
   const response = await fetch(`${OAUTH_ORIGIN}/__control`, body ? {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-  } : undefined);
+    signal: AbortSignal.timeout(5000),
+  } : { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error(`fake OAuth control: ${response.status}`);
   return response.json();
 }
@@ -19,6 +20,9 @@ export const fakeOAuthProvider = {
   setModes: (modes: OAuthModes) => control({ modes }),
   expiresIn: (seconds: number) => control({ modes: { expiresIn: seconds } }),
   revokeAll: () => control({ revokeAll: true }),
+  holdRevocation: () => control({ holdRevocation: true }),
+  waitForRevocation: () => control({ waitForRevocation: true }),
+  releaseRevocation: () => control({ releaseRevocation: true }),
   requests: async () => (await control()).requests,
   issued: async () => (await control()).issued,
 };

@@ -12,7 +12,7 @@ import { loadConfig } from "@/lib/config";
 import { discoverOAuth, registerOAuthClient } from "./discovery";
 import { authorizationFailure, OAuthProtocolError } from "./errors";
 import { buildAuthorizationUrl, equalState, publicCallbackUrl, tokenIsUsable, TOKEN_EXPIRY_MARGIN_MS, validIssuerResponse } from "./protocol";
-import { clearOAuthServer, compareAndSetCredentials, openOAuthValue, ownedOAuthServer, readOAuthServer, sealOAuthValue, withOAuthLock } from "./store";
+import { clearOAuthServer, compareAndSetCredentials, deleteOwnedOAuthServerRow, openOAuthValue, ownedOAuthServer, readOAuthServer, sealOAuthValue, withOAuthLock, type OAuthServer } from "./store";
 import { credentialsSchema, exchangeOAuthToken, InvalidRefreshGrant, revokeAtProvider, type OAuthCredentials } from "./tokens";
 
 export { TOKEN_EXPIRY_MARGIN_MS } from "./protocol";
@@ -87,19 +87,33 @@ export async function getMcpOAuthToken(
   });
 }
 
+/** Caller holds the OAuth lock; decryption/provider failures must not prevent local signout. */
+async function revokeAndClearOAuthCredentials(server: OAuthServer): Promise<void> {
+  await clearOAuthServer(server.id);
+  try {
+    const credentials = readCredentials(server);
+    if (credentials) await revokeAtProvider(credentials);
+  } catch {
+    // Corrupt/old credentials must never prevent local signout.
+  }
+}
+
 /** Caller must resolve/authorize the server ID first. Safe to call repeatedly and on missing rows. */
 export async function revokeMcpOAuthCredentials(serverId: string): Promise<void> {
   await withOAuthLock(serverId, async () => {
     const server = await readOAuthServer(serverId);
     if (!server || server.authKind !== "oauth") return;
-    // Clear before network/decryption, even if the encrypted grant is corrupt.
-    await clearOAuthServer(serverId);
-    try {
-      const credentials = readCredentials(server);
-      if (credentials) await revokeAtProvider(credentials);
-    } catch {
-      // Corrupt/old credentials must never prevent local signout.
-    }
+    await revokeAndClearOAuthCredentials(server);
+  });
+}
+
+/** Keep revocation and deletion inside one lock so a queued callback cannot install a new grant. */
+export async function deleteMcpOAuthServer(serverId: string, userId: string): Promise<boolean> {
+  return withOAuthLock(serverId, async () => {
+    const server = await readOAuthServer(serverId);
+    if (!server || server.userId !== userId || server.authKind !== "oauth") return false;
+    await revokeAndClearOAuthCredentials(server);
+    return deleteOwnedOAuthServerRow(serverId, userId);
   });
 }
 

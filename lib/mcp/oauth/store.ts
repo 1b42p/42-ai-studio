@@ -87,3 +87,11 @@ export async function clearOAuthServer(id: string) {
     credentialsEncrypted: null, updatedAt: sql`clock_timestamp()`,
   }).where(and(eq(mcpServers.id, id), eq(mcpServers.authKind, "oauth")));
 }
+
+/** Caller holds the OAuth lock continuously from reading/revoking the grant through this deletion. */
+export async function deleteOwnedOAuthServerRow(id: string, userId: string): Promise<boolean> {
+  const deleted = await getDb().delete(mcpServers).where(and(
+    eq(mcpServers.id, id), eq(mcpServers.userId, userId), eq(mcpServers.authKind, "oauth"),
+  )).returning({ id: mcpServers.id });
+  return deleted.length === 1;
+}
