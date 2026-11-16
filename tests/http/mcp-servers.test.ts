@@ -210,7 +210,7 @@ describe("MCP-серверы пользователя", () => {
       body: JSON.stringify(body),
     });
     const base = { name: "Сервер", url: `${upstreamUrl}/mcp`, authKind: "none" };
-    expect((await add({ ...base, authKind: "oauth" })).status).toBe(400);
+    expect((await add({ ...base, authKind: "unknown" })).status).toBe(400);
     expect((await add(base, "https://evil.example")).status).toBe(403);
     expect((await add(base)).status).toBe(201);
     expect((await add({ ...base, name: "сервер", url: `${upstreamUrl}/other` })).status).toBe(409);

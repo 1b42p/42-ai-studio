@@ -4,6 +4,7 @@ import { defineDynamic, defineMcpClientConnection } from "eve/connections";
 
 import { signInternalToken } from "@/lib/auth/internal-tokens";
 import { loadConfig } from "@/lib/config";
+import { createMcpOAuthAuthorization } from "@/lib/mcp/oauth";
 import { listEnabledMcpServers } from "@/lib/mcp/service";
 
 export default defineDynamic({
@@ -21,6 +22,9 @@ export default defineDynamic({
             protocolVersionDiscovery: false,
             description: `Подключённый пользователем MCP-сервер «${server.name.replace(/[\p{Cc}]/gu, "").slice(0, 60)}»`,
             instanceKey: `${principal.principalId}:${server.id}:${fingerprint}`,
+            ...(server.authKind === "oauth" ? {
+              auth: { ...createMcpOAuthAuthorization(server.id), displayName: server.name },
+            } : {}),
             headers: async () => ({
               "x-studio-mcp-token": await signInternalToken("mcp_proxy", { uid: principal.principalId, srv: server.id }),
             }),

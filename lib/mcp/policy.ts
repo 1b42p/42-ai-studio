@@ -22,7 +22,7 @@ export async function validateMcpAddress(input: string, authKind: string, signal
   if (!parsed.ok) throw new SafeFetchError(parsed.reason);
   const url = parsed.url;
   if (url.protocol !== "https:" && authKind !== "none" && !policy.allowHosts?.includes(hostPort(url))) {
-    throw new McpValidationError("Токен и заголовки передаются только по https.");
+    throw new McpValidationError("Авторизация доступна только по https.");
   }
   await checkOutboundAddress(url.href, policy, signal);
   url.hash = "";

@@ -7,6 +7,7 @@ import { mcpServers } from "@/lib/db/schema";
 import { errorResponse } from "@/lib/http/errors";
 import { findMcpServer, serializeServer } from "@/lib/mcp/service";
 import { McpBodyError, readMcpJson } from "@/lib/mcp/read-json";
+import { deleteMcpOAuthServer } from "@/lib/mcp/oauth";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -39,7 +40,12 @@ export async function DELETE(request: Request, context: Context): Promise<Respon
   const origin = checkOrigin(request, loadConfig().appUrl);
   if (origin) return origin;
   const { id } = await context.params;
-  if (!(await findMcpServer(user.id, id))) return errorResponse(404, "not_found", "Сервер не найден.");
+  const server = await findMcpServer(user.id, id);
+  if (!server) return errorResponse(404, "not_found", "Сервер не найден.");
+  if (server.authKind === "oauth") {
+    const deleted = await deleteMcpOAuthServer(id, user.id);
+    return deleted ? new Response(null, { status: 204 }) : errorResponse(404, "not_found", "Сервер не найден.");
+  }
   const deleted = await getDb().delete(mcpServers).where(and(eq(mcpServers.id, id), eq(mcpServers.userId, user.id))).returning({ id: mcpServers.id });
   return deleted.length ? new Response(null, { status: 204 }) : errorResponse(404, "not_found", "Сервер не найден.");
 }

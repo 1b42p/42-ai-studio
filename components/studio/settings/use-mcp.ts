@@ -44,5 +44,14 @@ export function useMcp(initialServers: McpServerView[]): McpState {
       await api(`/api/mcp-servers/${id}`, { method: "DELETE" });
       setServers((current) => current.filter((item) => item.id !== id));
     },
+    async signout(id) {
+      await api(`/api/mcp-servers/${id}/signout`, { method: "POST" });
+      setServers((current) => current.map((item) => item.id === id ? { ...item, connected: false } : item));
+      setChecks((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    },
   };
 }

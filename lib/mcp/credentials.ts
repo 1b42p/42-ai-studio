@@ -1,5 +1,6 @@
 export type McpCredentials =
   | { authKind: "none"; credentials: null }
+  | { authKind: "oauth"; credentials: null }
   | { authKind: "bearer"; credentials: { token: string } }
   | { authKind: "headers"; credentials: { headers: Record<string, string> } };
 
@@ -14,6 +15,12 @@ const FORBIDDEN_HEADERS = new Set([
 
 export function parseMcpCredentials(input: Record<string, unknown>): McpCredentials {
   if (input.authKind === "none") return { authKind: "none", credentials: null };
+  if (input.authKind === "oauth") {
+    if (Object.hasOwn(input, "token") || Object.hasOwn(input, "headers")) {
+      throw new McpValidationError("Для входа через браузер токен и заголовки не нужны.");
+    }
+    return { authKind: "oauth", credentials: null };
+  }
   if (input.authKind === "bearer") {
     if (typeof input.token !== "string" || input.token.length < 1 || input.token.length > 4096 ||
         /[\s\p{Cc}]/u.test(input.token)) {

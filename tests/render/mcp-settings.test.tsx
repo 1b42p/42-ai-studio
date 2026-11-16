@@ -12,10 +12,45 @@ const state: McpState = {
     authKind: "bearer", enabled: true, headerNames: [], createdAt: "",
   }],
   checks: { a: { ok: true, toolCount: 1, tools: ["echo"] } },
-  add: vi.fn(), toggle: vi.fn(), remove: vi.fn(), check: vi.fn(),
+  add: vi.fn(), toggle: vi.fn(), remove: vi.fn(), check: vi.fn(), signout: vi.fn(),
 };
 
 for (const [label, render] of [["телефон", renderOnPhone], ["компьютер", renderOnDesktop]] as const) {
+  test(`${label}: OAuth, статус и подтверждение сброса`, async () => {
+    const signout = vi.fn(async () => {});
+    await render(<McpContext.Provider value={{
+      ...state, signout, servers: [
+        { ...state.servers[0], authKind: "oauth", connected: true },
+        { ...state.servers[0], id: "b", name: "ДлинноеНазвание".repeat(40), authKind: "oauth", connected: false },
+      ],
+    }}><McpSection /></McpContext.Provider>);
+    await expect.element(page.getByText("Подключён", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("Не подключён", { exact: true })).toBeVisible();
+    expectNoHorizontalScroll();
+    await page.getByRole("button", { name: "Сбросить вход: Тестовый сервер", exact: true }).click();
+    await expect.element(page.getByRole("alertdialog")).toBeVisible();
+    expect(signout).not.toHaveBeenCalled();
+    await page.getByRole("button", { name: "Сбросить вход", exact: true }).click();
+    expect(signout).toHaveBeenCalledWith("a");
+  });
+
+  test(`${label}: добавление OAuth не отправляет сохранённые поля токена`, async () => {
+    const add = vi.fn(async () => {});
+    await render(<McpContext.Provider value={{ ...state, add }}><McpSection /></McpContext.Provider>);
+    await page.getByRole("button", { name: "Добавить сервер" }).click();
+    await page.getByRole("combobox").click();
+    await page.getByRole("option", { name: "Токен (Bearer)" }).click();
+    const input = document.querySelector<HTMLInputElement>("#mcp-token");
+    expect(input).not.toBeNull();
+    await page.getByLabelText("Токен", { exact: true }).fill("previous-secret");
+    await page.getByRole("combobox").click();
+    await page.getByRole("option", { name: "Вход через браузер (OAuth)" }).click();
+    expect(document.querySelector("#mcp-token")).toBeNull();
+    await expect.element(page.getByText("Вход выполнится в чате, когда агент впервые обратится к серверу")).toBeVisible();
+    await page.getByRole("button", { name: "Добавить", exact: true }).click();
+    expect(add).toHaveBeenCalledWith({ name: "", url: "", authKind: "oauth" });
+  });
+
   test(`${label}: сервер и диалог подключения`, async () => {
     await render(<McpContext.Provider value={state}><McpSection /></McpContext.Provider>);
     await expect.element(page.getByText("Тестовый сервер")).toBeVisible();
@@ -26,6 +61,21 @@ for (const [label, render] of [["телефон", renderOnPhone], ["компью
     expectNoHorizontalScroll();
   });
 }
+
+test("сброс входа: отмена не вызывает обработчик, ошибка сохраняет подключение", async () => {
+  const signout = vi.fn(async () => { throw new Error("Не удалось сбросить вход."); });
+  await renderOnPhone(<McpContext.Provider value={{
+    ...state, signout, servers: [{ ...state.servers[0], authKind: "oauth", connected: true }],
+  }}><McpSection /></McpContext.Provider>);
+  const trigger = page.getByRole("button", { name: "Сбросить вход: Тестовый сервер", exact: true });
+  await trigger.click();
+  await page.getByRole("button", { name: "Отмена", exact: true }).click();
+  expect(signout).not.toHaveBeenCalled();
+  await trigger.click();
+  await page.getByRole("button", { name: "Сбросить вход", exact: true }).click();
+  await expect.element(page.getByRole("alertdialog").getByText("Не удалось сбросить вход.")).toBeVisible();
+  await expect.element(page.getByRole("alertdialog")).toBeVisible();
+});
 
 test("пустой список, выбор авторизации и управление заголовками", async () => {
   await renderOnPhone(<McpContext.Provider value={{ ...state, servers: [], checks: {} }}><McpSection /></McpContext.Provider>);

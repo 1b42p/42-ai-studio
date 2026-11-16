@@ -24,9 +24,18 @@ describe("учётные данные MCP", () => {
     })).toThrow();
   });
 
+  it("принимает OAuth без статических учётных данных", () => {
+    expect(parseMcpCredentials({ authKind: "oauth" })).toEqual({
+      authKind: "oauth",
+      credentials: null,
+    });
+    expect(() => parseMcpCredentials({ authKind: "oauth", token: "secret" })).toThrow();
+    expect(() => parseMcpCredentials({ authKind: "oauth", headers: [] })).toThrow();
+  });
+
   it("отвергает управляющие символы и неподдерживаемые способы входа", () => {
     expect(() => parseMcpCredentials({ authKind: "bearer", token: "a b" })).toThrow();
     expect(() => parseMcpCredentials({ authKind: "headers", headers: [{ name: "X-Key", value: "a\r\nb" }] })).toThrow();
-    expect(() => parseMcpCredentials({ authKind: "oauth" })).toThrow();
+    expect(() => parseMcpCredentials({ authKind: "password" })).toThrow();
   });
 });

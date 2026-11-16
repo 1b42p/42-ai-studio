@@ -1,15 +1,17 @@
 import { decryptSecret } from "@/lib/secrets";
 import { loadConfig } from "@/lib/config";
 import { fetch } from "undici";
+import { isConnectionAuthorizationRequiredError } from "eve/connections";
 
 import { checkOutboundAddress, classifySafeFetchError, createSafeAgent, safeFetch, SafeFetchError } from "@/lib/web/safe-fetch";
 import type { mcpServers } from "@/lib/db/schema";
 
 import { mcpPolicy, validateMcpAddress } from "./policy";
 import { McpValidationError } from "./credentials";
+import { getMcpOAuthToken } from "./oauth";
 
 type Server = typeof mcpServers.$inferSelect;
-type Reason = "blocked_address" | "dns" | "unreachable" | "timeout" | "redirect" | "unauthorized" | "forbidden" | "not_mcp" | "too_large" | "tls";
+type Reason = "blocked_address" | "dns" | "unreachable" | "timeout" | "redirect" | "unauthorized" | "authorization_required" | "forbidden" | "not_mcp" | "too_large" | "tls";
 
 const MESSAGES: Record<Reason, string> = {
   blocked_address: "Адрес сервера указывает во внутреннюю сеть. Подключение запрещено.",
@@ -18,6 +20,7 @@ const MESSAGES: Record<Reason, string> = {
   timeout: "Сервер не ответил за 15 секунд.",
   redirect: "Сервер перенаправляет запросы. Укажите конечный адрес.",
   unauthorized: "Сервер отказал в доступе. Проверьте токен или заголовки.",
+  authorization_required: "Нужен вход через браузер: он выполнится в чате, когда агент впервые обратится к серверу.",
   forbidden: "Доступ запрещён сервером.",
   not_mcp: "Ответ не похож на ответ MCP-сервера.",
   too_large: "Ответ сервера слишком большой.",
@@ -26,7 +29,7 @@ const MESSAGES: Record<Reason, string> = {
 
 export function serverHeaders(server: Server): Record<string, string> {
   const headers: Record<string, string> = Object.create(null);
-  if (server.credentialsEncrypted) {
+  if (server.credentialsEncrypted && server.authKind !== "oauth") {
     const credentials = JSON.parse(decryptSecret(server.credentialsEncrypted, loadConfig().secretsEncryptionKey, `mcp-server:${server.id}`));
     if (server.authKind === "bearer") headers.authorization = `Bearer ${credentials.token}`;
     if (server.authKind === "headers") Object.assign(headers, credentials.headers);
@@ -128,8 +131,16 @@ async function checkLegacyMcp(server: Server, headers: Record<string, string>, s
 export async function checkMcpServer(server: Server) {
   const signal = AbortSignal.timeout(15_000);
   let authenticationHeaders: Record<string, string>;
-  try { authenticationHeaders = serverHeaders(server); }
-  catch { return { ok: false as const, reason: "unreachable" as const, message: MESSAGES.unreachable }; }
+  try {
+    authenticationHeaders = serverHeaders(server);
+    if (server.authKind === "oauth") {
+      const { token } = await getMcpOAuthToken(server.id, { type: "user", id: server.userId, issuer: "studio" });
+      authenticationHeaders.authorization = `Bearer ${token}`;
+    }
+  } catch (error) {
+    const reason = isConnectionAuthorizationRequiredError(error) ? "authorization_required" : "unreachable";
+    return { ok: false as const, reason, message: MESSAGES[reason] };
+  }
   const headers = {
     ...authenticationHeaders, accept: "application/json, text/event-stream",
     "content-type": "application/json",
@@ -213,7 +224,9 @@ export async function checkMcpServer(server: Server) {
     const redirectHost = error instanceof SafeFetchError || error instanceof CheckFailure ? error.redirectHost : undefined;
     const message = reason === "redirect" && redirectHost
       ? `Сервер перенаправляет запросы на ${redirectHost}. Укажите конечный адрес.`
-      : MESSAGES[reason];
+      : reason === "unauthorized" && server.authKind === "oauth"
+        ? "Сервер не принял сохранённый вход. Сбросьте вход."
+        : MESSAGES[reason];
     return { ok: false as const, reason, message };
   } finally {
     if (sessionId && !signal.aborted) {

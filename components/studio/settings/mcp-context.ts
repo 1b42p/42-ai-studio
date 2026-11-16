@@ -8,6 +8,7 @@ export interface McpServerView {
   url: string;
   authKind: "none" | "bearer" | "headers" | "oauth";
   enabled: boolean;
+  connected?: boolean;
   headerNames: string[];
   createdAt: string;
 }
@@ -20,6 +21,7 @@ export interface McpState {
   toggle: (id: string, enabled: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;
   check: (id: string) => Promise<void>;
+  signout: (id: string) => Promise<void>;
 }
 
 export const McpContext = createContext<McpState | null>(null);

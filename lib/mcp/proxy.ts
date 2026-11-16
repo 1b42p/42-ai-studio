@@ -99,6 +99,10 @@ export async function proxyMcp(request: Request, id: string, endpoint?: string):
     const value = request.headers.get(key);
     if (value !== null) headers.set(key, value);
   }
+  if (server.authKind === "oauth") {
+    const authorization = request.headers.get("authorization");
+    if (authorization !== null) headers.set("authorization", authorization);
+  }
   const abort = new AbortController();
   const deadline = setTimeout(() => abort.abort(new SafeFetchError("timeout")), 30_000);
   const signal = AbortSignal.any([abort.signal, request.signal]);
