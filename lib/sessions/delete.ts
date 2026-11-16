@@ -14,8 +14,17 @@ import { errorStatus, isMissingSandbox } from "@/lib/sandbox/errors";
 export interface SessionDeletionResult {
   status: "deleted" | "not_found" | "conflict" | "upstream_error";
   message?: string;
+  /** Удаление остановлено внешним дедлайном; вызывающий решает, повторять ли. */
+  timedOut?: boolean;
   /** Длительности завершённых шагов; ключи подходят для ручных замеров. */
   timings: Partial<Record<"mark" | "eve" | "daytona" | "s3" | "database" | "s3Final", number>>;
+}
+
+export interface SessionDeletionOptions {
+  /** Общий дедлайн операции; по умолчанию 120 секунд от вызова. */
+  readonly deadline?: number;
+  /** Внешний сигнал отмены, например бюджет пачки удаления пользователя. */
+  readonly signal?: AbortSignal;
 }
 
 interface DeletingSession {
@@ -69,10 +78,16 @@ async function transactionOnReserved<T>(
  * Удаляет данные без проверки владельца (маршрут делает её заранее).
  * Не выпускает advisory locks, пока запросы не завершились/были остановлены.
  */
-export async function deleteSessionData(appSessionId: string): Promise<SessionDeletionResult> {
+export async function deleteSessionData(
+  appSessionId: string,
+  options: SessionDeletionOptions = {},
+): Promise<SessionDeletionResult> {
   const config = loadConfig();
-  const deadline = Date.now() + 120_000;
-  const signal = AbortSignal.timeout(120_000);
+  const deadline = options.deadline ?? Date.now() + 120_000;
+  const timeoutMs = Math.max(1, deadline - Date.now());
+  const signal = options.signal === undefined
+    ? AbortSignal.timeout(timeoutMs)
+    : AbortSignal.any([options.signal, AbortSignal.timeout(timeoutMs)]);
   const timings: SessionDeletionResult["timings"] = {};
   // Собственный пул из одного соединения исключает ожидание места в общем
   // пуле, занятом параллельными удалениями/стартами. Транзакции короткие;
@@ -229,7 +244,12 @@ export async function deleteSessionData(appSessionId: string): Promise<SessionDe
       appSessionId, steps: Object.keys(timings), timings,
       status: errorStatus(error), timedOut: signal.aborted,
     });
-    return { status: "upstream_error", message: "Не удалось полностью удалить сессию. Повторите удаление.", timings };
+    return {
+      status: "upstream_error",
+      message: "Не удалось полностью удалить сессию. Повторите удаление.",
+      timedOut: signal.aborted,
+      timings,
+    };
   } finally {
     // Все действия выше await-ятся; здесь не остаётся продолжающего удалять
     // Promise.race. Закрытие отдельного клиента также освобождает advisory locks.

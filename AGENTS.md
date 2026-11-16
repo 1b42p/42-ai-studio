@@ -143,8 +143,8 @@ npx shadcn@latest mcp init --client claude   # подключить MCP-серв
 | --- | --- |
 | `AppShell` | компоновка приложения. Свойства: `navItems`, `pathname`, `userSlot`, `children`. На компьютере постоянная боковая панель, на телефоне (ниже 768 px) она скрыта и открывается кнопкой в верхней строке поверх экрана |
 | `PublicShell` | компоновка публичных страниц: шапка с названием сервиса и `ThemeToggle`, контент по центру, без боковой панели |
-| `NavItem` | `{ title, href, icon, requires?: "operator" }`; `requires` показывает пункт только оператору (использует #30) |
-| `navItems` | единственный массив пунктов навигации, один на проект («Сессии» → `/s`, «Настройки» → `/settings`; «Админку» добавит #30) |
+| `NavItem` | `{ title, href, icon, requires?: "operator" }`; `requires` показывает пункт только оператору |
+| `navItems` | единственный массив пунктов навигации, один на проект («Сессии» → `/s`, «Настройки» → `/settings`, «Админка» → `/admin` с `requires: "operator"`); `navItemsFor(isOperator)` фильтрует его для оболочки |
 
 Группы маршрутов Next.js: `(app)` с layout на `AppShell` и `(public)` с layout на `PublicShell`. `AppShell` и `PublicShell` не импортируют `next/font`, `next/navigation` и другие модули, которые работают только внутри Next.js: тестам отрисовки они нужны без роутера. Текущий путь приходит свойством.
 
@@ -188,6 +188,19 @@ npx shadcn@latest mcp init --client claude   # подключить MCP-серв
 - Клиент чата отправляет в каждом запросе к eve заголовок `x-studio-session-id` с id сессии приложения. На `POST /eve/v1/session` он обязателен (403 `session_binding_required`), на остальных маршрутах владелец определяется по `<id>` в пути.
 - Все ответы приложения отдают `Cross-Origin-Opener-Policy: same-origin-allow-popups`; текущий поток идёт редиректами, политика сохраняет совместимость с popup-входом.
 - Токены и тела входа не попадают в журнал разработки: маршруты `/api/auth/` исключены из `logging.incomingRequests`.
+
+## Админка
+
+- `requireOperator(path)` — страницы `/admin`: вызывает `requireUser`, затем `notFound()` при `is_operator = false`. `requireOperatorApi(request)` — маршруты `/api/admin/*`: `requireApiUser`, затем 403 `forbidden` «Нужны права оператора». Флаг читается из строки пользователя каждый раз; из cookie, адреса или тела ничего не доверяется. Каждая страница и каждый обработчик вызывает помощник сам, проверки layout недостаточно.
+- `/admin` перенаправляет в `/admin/users`. `app/(app)/admin/layout.tsx` дополнительно до всех границ отдаёт 404 вошедшему не оператору и redirect заблокированному. Файлы `loading.tsx` в `app/admin` и родителях группы `(app)` запрещены: они начинают потоковую отдачу со статусом 200.
+- `app/(app)/layout.tsx` фильтрует `navItemsFor(isOperator)` и передаёт готовый `navItems` в `AppFrame` → `AppShell`. Значок пункта — имя `NavIcon` из `navIcons`, поэтому массив сериализуем через границу серверного и клиентского компонентов. `AppShell` признака оператора не получает и не фильтрует; скрытие пункта — удобство, не защита.
+- Разделы админки — один массив `adminSections` в `components/studio/admin/sections.ts`. `AdminShell` рисует вкладки-ссылки на компьютере и `Select` на телефоне; `AdminFrame` связывает его с `usePathname`/`useRouter`. #31 и #32 добавляют свои разделы в этот массив.
+- `GET /api/admin/users`: `q` (до 64 символов, ведущий `@` отбрасывается, поиск по началу Telegram ID и подстроке `username` через `strpos(lower(...), lower(...))`, а не `LIKE`), `userId` (uuid), `limit` 1–100 (по умолчанию 50), `cursor` по паре (`created_at`, `id`). `totals` считаются по всем пользователям, `sessionCount` — сессии с `eve_session_id` без `deleted_at`, `stuckDeletions` — `deleted_at` старше часа. `PATCH /api/admin/users/:id` принимает `{blocked}` и меняет флаг одним условным обновлением; `DELETE` удаляет со всеми данными.
+- `PATCH`: оператора нельзя заблокировать (409), разблокировать заблокированного в базе оператора можно; цель с `deletion_requested_at` нельзя разблокировать (409), блокировать можно. `deleted_at` в сессиях и `users.deletion_requested_at` — разные вещи.
+- `DELETE /api/admin/users/:id`: отдельный пул из одного соединения, `pg_try_advisory_lock(4, hashtext(<uuid>::text))` (класс 4; занято — 409), пометка `is_blocked = true` и `deletion_requested_at = coalesce(..., now())`, удаление `auth_sessions`, пачка до пяти `app_sessions` через `deleteSessionData` с бюджетом 90 с (уже падавшие с `deleted_at` идут в конец), ответ `202 {done:false, deleted, total, remaining:{sessions}}` пока остались сессии, 502 при сбоях, затем очистка префикса `u/<user_id>/` и удаление `users` с каскадом (204). Повторный `DELETE` продолжает с места остановки, после успеха — 404. Блокировку снимать явным `pg_advisory_unlock` в `finally`: `release()` возвращает соединение в пул и оставляет сеансовую блокировку.
+- В журнал пишутся `[admin:user] blocked|unblocked|delete started|delete completed|delete incomplete` с uuid оператора и цели; имени, `username`, Telegram ID и секретов там нет.
+- Интерфейс `/admin/users`: заголовок и итоги, поиск с задержкой 300 мс, «Показать ещё», таблица на компьютере и карточки на телефоне, метки «Оператор»/«Заблокирован»/«Удаляется»/«Застряло удалений: N», меню действий и диалоги `alert-dialog`. У оператора действия неактивны с подсказкой на обёртке. Для строки без `last_login_at` подпись «Первый вход» не выводится. Компоненты списка и диалогов получают данные и обработчики свойствами и сами в сеть не ходят; `AdminUsersPanel` — контроллер с подменяемыми `request`/`blockRequest`/`deleteRequest`.
+- `?userId=<uuid>` показывает одного пользователя и чип «Фильтр: пользователь» со сбросом на `/admin/users`; неверный uuid — 404 страницы.
 
 ## Агент
 
@@ -271,6 +284,7 @@ Postgres, Drizzle ORM + drizzle-kit, драйвер `postgres` (postgres.js). С
 
 Сессии чата:
 
+- `users` — профиль входа: `telegram_id` (unique, `bigint` в схеме как `number`), `name`, `username`, `photo_url`, `custom_instructions`, `is_operator`, `is_blocked`, `deletion_requested_at` (удаление начато, но не закончено; разрешает только продолжение `DELETE`) и `created_at` с точностью до миллисекунд для курсора `#30`. Флаг оператора меняется только в базе; вход по `INSERT … ON CONFLICT` обновляет профиль, но не сбрасывает флаг.
 - `app_sessions` — сессия приложения: `id` в адресе `/s/<id>`, `user_id`, `eve_session_id` (пуст до первого сообщения, unique), `title`, `stream_cursor` (сколько событий потока сохранено), `start_requested_at` (окно привязки 60 секунд), `created_at` и `updated_at` с точностью до миллисекунд. `updated_at` меняется при сохранении `message.received` и `session.waiting`.
 - `session_events` — события потока eve: `id` (bigserial), `seq` — абсолютный номер события в потоке (с нуля), `event_id` — `meta.id`, `payload` — событие целиком. unique(`app_session_id`, `seq`) и unique(`app_session_id`, `event_id`); таблица хранит непрерывный префикс потока.
 - `media` — объект S3 пользователя и сессии (`kind`: `upload`, `tool_media`, `message_file`, `preview`); `message_files` — файл ответа агента с состоянием `copying`/`ready`/`missing` и причиной, unique(`app_session_id`, `message_id`, `sandbox_path`); `tool_call_media` — медиа вызова инструмента, unique(`app_session_id`, `call_id`, `sandbox_path`). Внешние ключи на `users`, `app_sessions` и `media` — с `ON DELETE CASCADE`.

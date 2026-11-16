@@ -33,7 +33,16 @@ export const users = pgTable("users", {
   memoryEnabled: boolean("memory_enabled").notNull().default(false),
   isOperator: boolean("is_operator").notNull().default(false),
   isBlocked: boolean("is_blocked").notNull().default(false),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  /**
+   * Удаление пользователя начато, но не закончено. Блокирует повторный вход и
+   * повторное удаление; снимается только вместе со строкой пользователя.
+   */
+  deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
+  /**
+   * Миллисекундная точность: по этой паре #30 строит постраничную выдачу,
+   * а `Date` в JavaScript не хранит микросекунды.
+   */
+  createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
 });
 

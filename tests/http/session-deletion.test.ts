@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 
 import { signInternalToken } from "../../lib/auth/internal-tokens";
 import { loadConfig } from "../../lib/config";
+import { deleteSessionData } from "../../lib/sessions/delete";
 import { getSqlClient } from "../../lib/db/client";
 import {
   agentSessions, appSessions, bashJobs, daytonaKeys, media, messageFiles,
@@ -152,6 +153,17 @@ async function storageFailureStub(state: { prefix: string; mode: "partial" | "fi
 }
 
 describe("удаление всех данных сессии", () => {
+  test("внешний дедлайн останавливает удаление и помечает timedOut", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+
+    const result = await deleteSessionData(id, { deadline: Date.now() - 1 });
+
+    expect(result.status).toBe("upstream_error");
+    expect(result.timedOut).toBe(true);
+    expect((await row(id))?.deletedAt).toBeNull();
+  });
+
   test("каскад, четыре вида S3, fake-каталог и eve; другая сессия не затронута", async () => {
     const target = await fixture({ sandbox: true, files: true });
     const other = await createSessionAs(target.user);

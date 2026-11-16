@@ -90,6 +90,7 @@ describe("принципал аутентификатора", () => {
     memoryEnabled: false,
     isOperator: true,
     isBlocked: false,
+    deletionRequestedAt: null,
     createdAt: new Date(),
     lastLoginAt: null,
   } satisfies User;
