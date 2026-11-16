@@ -159,8 +159,22 @@
     {
       "idx": 22,
       "version": "7",
-      "when": 1794821281313,
-      "tag": "0022_slimy_whirlwind",
+      "when": 1794821794821,
+      "tag": "0022_even_stellaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1794823066990,
+      "tag": "0023_mean_gravity",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794828833776,
+      "tag": "0024_familiar_vector",
       "breakpoints": true
     }
   ]

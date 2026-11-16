@@ -8,11 +8,14 @@
  * - `/slow <секунды> <текст>` — ответ `Эхо: <текст>` через указанное время
  *   (от 1 до 120 секунд);
  * - `/prompt` — системные и пользовательские сообщения запроса;
+ * - `/usage <вход> <кэш> <выход>` — явные счётчики провайдера;
+ * - `/usage none` — провайдер без сведений о токенах;
  * - иначе — `Эхо: <текст>`.
  *
  * Логика вынесена в чистую функцию, чтобы проверять её без eve и сети.
  */
 import type { MockModelMessage, MockModelRequest, MockModelResponse } from "eve/evals";
+import { mockModel } from "eve/evals";
 
 import { sleep } from "@/lib/sleep";
 
@@ -32,6 +35,13 @@ const SLOW_MAX_SECONDS = 120;
 export type FixtureCommand =
   | { readonly kind: "echo"; readonly text: string }
   | { readonly kind: "prompt" }
+  | { readonly kind: "usage-none" }
+  | {
+      readonly kind: "usage";
+      readonly inputTokens: number;
+      readonly cacheReadTokens: number;
+      readonly outputTokens: number;
+    }
   | { readonly kind: "invalid-json" }
   | { readonly kind: "slow"; readonly seconds: number; readonly text: string }
   | { readonly kind: "tool"; readonly name: string; readonly input: unknown };
@@ -94,6 +104,14 @@ export function unwrapSubagentMessage(message: string): string {
 /** Разбирает последнее сообщение пользователя в команду фикстуры. */
 export function parseFixtureCommand(message: string): FixtureCommand {
   const text = unwrapSubagentMessage(message);
+  if (text.trim() === "/usage none") return { kind: "usage-none" };
+  const usage = /^\/usage\s+(\d+)\s+(\d+)\s+(\d+)\s*$/.exec(text);
+  if (usage !== null) {
+    const [inputTokens, cacheReadTokens, outputTokens] = usage.slice(1).map(Number);
+    if ([inputTokens, cacheReadTokens, outputTokens].every(Number.isSafeInteger)) {
+      return { kind: "usage", inputTokens, cacheReadTokens, outputTokens };
+    }
+  }
   if (startsWithCommand(text, "/prompt")) return { kind: "prompt" };
   if (startsWithCommand(text, "/tool")) return parseToolCommand(text);
   if (startsWithCommand(text, "/slow")) return parseSlowCommand(text);
@@ -152,6 +170,13 @@ export async function respondToFixture(request: MockModelRequest): Promise<MockM
   const command = parseFixtureCommand(message);
 
   switch (command.kind) {
+    case "usage":
+      return {
+        text: `${FIXTURE_ECHO_PREFIX}${unwrapSubagentMessage(message)}`,
+        usage: { inputTokens: command.inputTokens, outputTokens: command.outputTokens },
+      };
+    case "usage-none":
+      return { text: `${FIXTURE_ECHO_PREFIX}/usage none` };
     case "prompt":
       return { text: buildFixturePrompt(request.messages) };
     case "invalid-json":
@@ -167,4 +192,72 @@ export async function respondToFixture(request: MockModelRequest): Promise<MockM
     case "echo":
       return { text: `${FIXTURE_ECHO_PREFIX}${command.text}` };
   }
+}
+
+type FixtureModel = Extract<ReturnType<typeof mockModel>, { specificationVersion: "v4" }>;
+type ProviderUsage = Awaited<ReturnType<FixtureModel["doGenerate"]>>["usage"];
+
+function fixtureMock(respond: typeof respondToFixture): FixtureModel {
+  const model = mockModel(respond);
+  if (typeof model === "string" || model.specificationVersion !== "v4") {
+    throw new Error("Фикстурной модели нужен mockModel с протоколом v4.");
+  }
+  return model;
+}
+
+function fixtureProviderUsage(command: FixtureCommand): ProviderUsage | undefined {
+  if (command.kind !== "usage" && command.kind !== "usage-none") return undefined;
+  const explicit = command.kind === "usage" ? command : undefined;
+  return {
+    inputTokens: {
+      total: explicit?.inputTokens,
+      noCache: explicit === undefined ? undefined : Math.max(0, explicit.inputTokens - explicit.cacheReadTokens),
+      cacheRead: explicit?.cacheReadTokens,
+      cacheWrite: explicit === undefined ? undefined : 0,
+    },
+    outputTokens: {
+      total: explicit?.outputTokens,
+      text: explicit?.outputTokens,
+      reasoning: explicit === undefined ? undefined : 0,
+    },
+  };
+}
+
+/**
+ * mockModel 0.83 оценивает отсутствующий usage и не принимает кэш.
+ * Меняем только usage результата SDK, сохраняя штатные ответы и идентичность
+ * mockModel. Отдельный delegate на вызов исключает гонки счётчиков.
+ */
+export function createFixtureModel(): FixtureModel {
+  const model = fixtureMock(respondToFixture);
+  function createCall() {
+    let usage: ProviderUsage | undefined;
+    const delegate = fixtureMock((request) => {
+      usage = fixtureProviderUsage(parseFixtureCommand(request.lastUserMessage ?? ""));
+      return respondToFixture(request);
+    });
+    return { delegate, usage: () => usage };
+  }
+
+  model.doGenerate = async (options) => {
+    const call = createCall();
+    const result = await call.delegate.doGenerate(options);
+    const usage = call.usage();
+    return usage === undefined ? result : { ...result, usage };
+  };
+  model.doStream = async (options) => {
+    const call = createCall();
+    const result = await call.delegate.doStream(options);
+    const usage = call.usage();
+    if (usage === undefined) return result;
+    return {
+      ...result,
+      stream: result.stream.pipeThrough(new TransformStream({
+        transform(part, controller) {
+          controller.enqueue(part.type === "finish" ? { ...part, usage } : part);
+        },
+      })),
+    };
+  };
+  return model;
 }

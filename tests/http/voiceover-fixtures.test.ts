@@ -79,6 +79,16 @@ async function tool(target: ClientSession, name: string, input: object) {
   return event.data;
 }
 
+test("изолированная оценка не ждёт привязки расхода к пользовательской сессии", async () => {
+  const target = await session(false);
+  try {
+    await tool(target, "read_file", { filePath: `${PROJECT}/src/Root.tsx` });
+    expect(eve.output()).not.toContain("[usage:model] session_not_found");
+  } finally {
+    await target.reset();
+  }
+}, 30_000);
+
 type ToolResult = Awaited<ReturnType<typeof tool>>;
 type RequestedActionsEvent = Extract<
   EveEvalStreamEvent,

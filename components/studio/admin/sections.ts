@@ -10,4 +10,6 @@ export interface AdminSection {
 
 export const adminSections: readonly AdminSection[] = [
   { id: "users", title: "Пользователи", href: "/admin/users" },
+  { id: "sandboxes", title: "Песочницы", href: "/admin/sandboxes" },
+  { id: "usage", title: "Расход", href: "/admin/usage" },
 ];

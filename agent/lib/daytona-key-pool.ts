@@ -9,6 +9,7 @@
 import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
 
 import { loadConfig } from "@/lib/config";
+import { recordSandboxTransition, reserveSandbox } from "@/lib/usage/sandbox";
 import { getDb, getSqlClient } from "@/lib/db/client";
 import {
   daytonaKeys,
@@ -286,21 +287,9 @@ export async function pickKey(
       if (olderCanUsePool) continue;
 
       if (options.appSessionId !== undefined) {
-        await tx`
-          insert into sandboxes
-             (app_session_id, daytona_key_id, daytona_sandbox_id, state, starting_since, starting_kind, last_active_at,
-              wait_generation, launch_started_at)
-          values (${options.appSessionId}, ${row.id}, '', 'starting', now(), ${options.launch ?? "create"}, now(),
-            (select sandbox_wait_generation from app_sessions where id = ${options.appSessionId}), null)
-          on conflict (app_session_id) do update set
-            daytona_key_id = excluded.daytona_key_id,
-            daytona_sandbox_id = case when ${options.launch ?? "create"} = 'create' then '' else sandboxes.daytona_sandbox_id end,
-            state = 'starting',
-            starting_since = excluded.starting_since,
-            starting_kind = excluded.starting_kind,
-             last_active_at = excluded.last_active_at,
-             wait_generation = excluded.wait_generation,
-             launch_started_at = null`;
+        await reserveSandbox(tx, {
+          appSessionId: options.appSessionId, keyId: row.id, launch: options.launch ?? "create",
+        });
         if (options.queueEntryId !== undefined) {
           await tx`update sandboxes set slot_request_id = ${options.queueEntryId}
             where app_session_id = ${options.appSessionId}`;
@@ -487,14 +476,14 @@ export async function deleteKey(keyId: string): Promise<DeleteKeyResult> {
   // сети: отмечаем `gone` только ту же пару «ключ + машина».
   const markGone = async (rowIds: string[], sandboxId: string): Promise<void> => {
     if (rowIds.length === 0) return;
-    await db
-      .update(sandboxes)
-      .set({ state: "gone" })
-      .where(and(
+    await recordSandboxTransition({
+      newState: "gone", source: "app",
+      where: and(
         inArray(sandboxes.id, rowIds),
         eq(sandboxes.daytonaKeyId, keyId),
         eq(sandboxes.daytonaSandboxId, sandboxId),
-      ));
+      ),
+    });
   };
 
   for (const [sandboxId, rowIds] of targets) {

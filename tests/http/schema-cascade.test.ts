@@ -2,7 +2,10 @@ import { expect, test } from "vitest";
 import { getSqlClient } from "../../lib/db/client";
 
 /** Только согласованные доменные исключения, каждое с объяснением. */
-const CASCADE_EXCEPTIONS: Readonly<Record<string, string>> = {};
+const CASCADE_EXCEPTIONS: Readonly<Record<string, string>> = {
+  "usage_records.app_session_id": "Расход остаётся после удаления сессии.",
+  "pending_sandbox_usage.app_session_id": "Квитанция расхода остаётся после удаления сессии.",
+};
 
 test("каждая колонка app_session_id/user_id имеет правильный ON DELETE CASCADE", async () => {
   const columns = await getSqlClient()<{ table_name: string; column_name: string; cascade: boolean }[]>`
