@@ -177,4 +177,25 @@ describe("ограничения eval-аутентификации", () => {
     expect(authenticateEval(request(), { ...config, appUrl: "https://example.com" }, "development")).toBeNull();
     expect(authenticateEval(request("https://example.com/eve/v1/info"), config, "development")).toBeNull();
   });
+
+  test("передаёт режим видеосценария только внутри песочницы оценок видео", () => {
+    const config = {
+      appEvalMode: true, eveEvalAuthToken: TOKEN, appUrl: "http://localhost:3100", appVideoEvalSandbox: true,
+    };
+    const principal = (mode: string) => authenticateEval(new Request("http://localhost:3100/eve/v1/info", {
+      headers: { authorization: `Bearer ${TOKEN}`, "x-studio-video-eval": mode },
+    }), config, "development");
+    expect(principal("broken-layout")?.attributes).toMatchObject({
+      videoEval: "1", videoEvalBrokenLayout: "1", videoEvalMissingEntrypoint: "0", videoEvalRenderFails: "0",
+    });
+    expect(principal("missing-entrypoint")?.attributes).toMatchObject({
+      videoEvalBrokenLayout: "0", videoEvalMissingEntrypoint: "1",
+    });
+    expect(principal("standard")?.attributes).toMatchObject({
+      videoEvalBrokenLayout: "0", videoEvalMissingEntrypoint: "0", videoEvalRenderFails: "0",
+    });
+    expect(authenticateEval(new Request("http://localhost:3100/eve/v1/info", {
+      headers: { authorization: `Bearer ${TOKEN}`, "x-studio-video-eval": "broken-layout" },
+    }), { ...config, appVideoEvalSandbox: false }, "development")?.attributes.videoEvalBrokenLayout).toBeUndefined();
+  });
 });

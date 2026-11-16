@@ -5,6 +5,7 @@ import { DaytonaSandbox } from "../lib/daytona-provider";
 import { isEvalPrincipal } from "../lib/eval-auth";
 import { stubEvalEnvironment } from "../lib/stub-eval-media";
 import { prepareNativeVideoEval, initializeNativeVideoEval, NATIVE_VIDEO_EVAL_REVISION } from "../lib/video-eval-native";
+import { BROKEN_LAYOUT_ENTRY, BROKEN_LAYOUT_NOTES, BROKEN_LAYOUT_ROOT } from "./eval-projects";
 
 const videoEval = readVideoEvalSandbox();
 const stubEval = readStubEvalSandbox();
@@ -38,6 +39,22 @@ if ! test -e /workspace/.eve/missing-entrypoint-seeded; then
   touch /workspace/.eve/missing-entrypoint-seeded
 fi` });
       if (seeded.exitCode !== 0) throw new Error(`Cannot seed missing entrypoint eval project: ${seeded.stderr}`);
+    }
+    if (session.auth.initiator?.attributes.videoEvalBrokenLayout === "1") {
+      // The project is prepared once; later opens must not undo the agent's fixes.
+      const marker = await sandbox.run({ command: "test -e /workspace/.eve/broken-layout-seeded" });
+      if (marker.exitCode !== 0) {
+        const prepared = await sandbox.run({ command: `
+mkdir -p /workspace/broken/src /workspace/.eve &&
+cp /opt/remotion/package.json /opt/remotion/tsconfig.json /opt/remotion/remotion.config.ts /workspace/broken/ &&
+ln -sfn /opt/remotion/node_modules /workspace/broken/node_modules` });
+        if (prepared.exitCode !== 0) throw new Error(`Cannot prepare broken layout eval project: ${prepared.stderr}`);
+        await sandbox.writeTextFile({ path: "/workspace/broken/src/index.ts", content: BROKEN_LAYOUT_ENTRY });
+        await sandbox.writeTextFile({ path: "/workspace/broken/src/Root.tsx", content: BROKEN_LAYOUT_ROOT });
+        await sandbox.writeTextFile({ path: "/workspace/broken/NOTES.md", content: BROKEN_LAYOUT_NOTES });
+        const seeded = await sandbox.run({ command: "touch /workspace/.eve/broken-layout-seeded" });
+        if (seeded.exitCode !== 0) throw new Error(`Cannot finish broken layout eval seed: ${seeded.stderr}`);
+      }
     }
   }
   return sandbox;
