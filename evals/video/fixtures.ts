@@ -26,10 +26,12 @@ function videoStubs(): readonly ToolStub[] {
 }
 
 /** Файлы исполняются в выделенной виртуальной среде; внешние инструменты изолированы. */
-export async function videoSession(t: EveEvalContext, { caseId, renderFails = false, missingEntrypoint = false }: {
-  caseId: string; renderFails?: boolean; missingEntrypoint?: boolean;
+export async function videoSession(t: EveEvalContext, { caseId, renderFails = false, missingEntrypoint = false, brokenLayout = false }: {
+  caseId: string; renderFails?: boolean; missingEntrypoint?: boolean; brokenLayout?: boolean;
 }) {
-  if (renderFails && missingEntrypoint) throw new Error("Choose one video eval fixture");
+  if ([renderFails, missingEntrypoint, brokenLayout].filter(Boolean).length > 1) {
+    throw new Error("Choose one video eval fixture");
+  }
   const health = await t.target.fetch("/api/health");
   if (health.headers.get("x-studio-video-eval") !== "1") {
     throw new Error("Оценкам видео нужен выделенный локальный сервер с APP_VIDEO_EVAL_SANDBOX=1.");
@@ -52,7 +54,7 @@ export async function videoSession(t: EveEvalContext, { caseId, renderFails = fa
   }
   // eve__skill не подменяется: инструкции загружаются из настоящих навыков агента.
   const headers = {
-    "x-studio-video-eval": renderFails ? "render-failure" : missingEntrypoint ? "missing-entrypoint" : "standard",
+    "x-studio-video-eval": brokenLayout ? "broken-layout" : renderFails ? "render-failure" : missingEntrypoint ? "missing-entrypoint" : "standard",
   };
   const session = await resumableSession(t, caseId, { stubs, headers });
   // The initiator is initialized by the first message, not session creation.
