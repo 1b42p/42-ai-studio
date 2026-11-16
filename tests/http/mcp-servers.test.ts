@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, test } from "vitest";
 
 import { signInternalToken } from "@/lib/auth/internal-tokens";
 import { eq } from "drizzle-orm";
-import { mcpServers } from "@/lib/db/schema";
+import { mcpServers, users } from "@/lib/db/schema";
 import { decryptSecret } from "@/lib/secrets";
 import { loadConfig } from "@/lib/config";
-import { fetchApp } from "./support/app";
+import { appOutput, fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, sendAndWait } from "./support/chat";
 import { createUser, db } from "./support/db";
@@ -68,6 +68,15 @@ describe("MCP-серверы пользователя", () => {
     expect(serialized).toContain("echo: привет");
     expect(serialized).not.toContain("secret-token");
     expect(serialized).not.toContain(upstreamHost);
+    const prompt = JSON.stringify(await sendAndWait(user, session.id, "/prompt"));
+    expect(prompt).not.toContain("secret-token");
+    expect(prompt).not.toContain(upstreamHost);
+    const storedEvents = await fetchApp(`/api/sessions/${session.id}/events`, { headers: { cookie } });
+    const storedText = await storedEvents.text();
+    expect(storedText).not.toContain("secret-token");
+    expect(storedText).not.toContain(upstreamHost);
+    expect(appOutput()).not.toContain("secret-token");
+    expect(appOutput()).not.toContain("key=private");
     const changed = await fetchApp(`/api/mcp-servers/${server.id}`, {
       method: "PATCH", headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ enabled: false }),
@@ -107,6 +116,27 @@ describe("MCP-серверы пользователя", () => {
     expect((await fetchApp(`/api/mcp-servers/${id}/check`, { method: "POST", headers: { cookie } })).status).toBe(429);
     expect((await fetchApp(`/api/mcp-proxy/${id}`, { method: "POST" })).status).toBe(401);
   });
+
+  test("не допускает к прокси чужую сессию и заблокированного пользователя", async () => {
+    const user = await createUser();
+    const other = await createUser();
+    const cookie = await loginAs(user);
+    const created = await fetchApp("/api/mcp-servers", {
+      method: "POST", headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "Изоляция", url: `${upstreamUrl}/mcp`, authKind: "none" }),
+    });
+    const { id } = await created.json();
+    const otherSession = await createSessionAs(other);
+    const before = (await fakeMcpServer.requests()).length;
+    const events = await sendAndWait(other, otherSession.id, '/tool eve__tool {"name":"mcp-izolyatsiya__echo","input":{"text":"чужой"}}');
+    expect(JSON.stringify(events)).not.toContain("echo: чужой");
+    expect(await fakeMcpServer.requests()).toHaveLength(before);
+    const token = await signInternalToken("mcp_proxy", { uid: user.id, srv: id });
+    await db().update(users).set({ isBlocked: true }).where(eq(users.id, user.id));
+    const denied = await fetchApp(`/api/mcp-proxy/${id}`, { headers: { "x-studio-mcp-token": token } });
+    expect(denied.status).toBe(403);
+    expect((await fetchApp(`/api/mcp-proxy/${id}`, { headers: { "x-studio-mcp-token": `${token}invalid` } })).status).toBe(401);
+  }, 90000);
 
   test("защищает исходящие запросы даже для адреса, записанного непосредственно в базу", async () => {
     const user = await createUser();

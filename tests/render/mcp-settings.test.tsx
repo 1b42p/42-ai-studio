@@ -51,6 +51,35 @@ test("удаление запрашивает подтверждение", async
   expect(remove).toHaveBeenCalledWith("a");
 });
 
+test("три способа входа и управление сервером", async () => {
+  const toggle = vi.fn(async () => {});
+  const check = vi.fn(async () => {});
+  const servers: McpState["servers"] = [
+    { ...state.servers[0], id: "none", name: "Открытый", authKind: "none" },
+    { ...state.servers[0], id: "bearer", name: "С токеном", authKind: "bearer" },
+    { ...state.servers[0], id: "headers", name: "С заголовком", authKind: "headers", headerNames: ["x-api-key"] },
+  ];
+  await renderOnDesktop(<McpContext.Provider value={{ ...state, servers, toggle, check }}><McpSection /></McpContext.Provider>);
+  for (const label of ["Без авторизации", "Токен", "Заголовки"]) {
+    await expect.element(page.getByText(label, { exact: true })).toBeVisible();
+  }
+  await page.getByRole("switch", { name: "Включён: Открытый" }).click();
+  expect(toggle).toHaveBeenCalledWith("none", false);
+  await page.getByRole("button", { name: "Проверить С токеном" }).click();
+  expect(check).toHaveBeenCalledWith("bearer");
+  expect(document.body.textContent).not.toContain("secret-token");
+  expectNoHorizontalScroll();
+});
+
+test("ошибка добавления показывается под полем", async () => {
+  const add = vi.fn(async () => { throw new Error("Укажите название сервера (до 60 символов)."); });
+  await renderOnPhone(<McpContext.Provider value={{ ...state, servers: [], add }}><McpSection /></McpContext.Provider>);
+  await page.getByRole("button", { name: "Добавить сервер" }).click();
+  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  await expect.element(page.getByText("Укажите название сервера (до 60 символов).")).toBeVisible();
+  await expect.element(page.getByRole("textbox", { name: "Название" })).toHaveAttribute("aria-invalid", "true");
+});
+
 test.each([
   "Адрес сервера указывает во внутреннюю сеть. Подключение запрещено.",
   "Имя сервера не найдено.",

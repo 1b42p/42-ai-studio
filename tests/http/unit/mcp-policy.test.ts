@@ -6,7 +6,8 @@ import { checkOutboundAddress, parseOutboundUrl, safeFetch } from "@/lib/web/saf
 test("политика MCP разрешает публичные нестандартные порты и блокирует внутренние адреса", () => {
   const policy = mcpPolicy();
   for (const address of [
-    "https://2130706433/", "https://0x7f.1/", "https://[::ffff:7f00:1]/", "https://[::1]/",
+    "https://2130706433/", "https://0x7f.1/", "https://[::ffff:7f00:1]/", "https://[::ffff:127.0.0.1]/", "https://[::1]/",
+    "https://localhost/", "https://a.localhost/", "https://x.local/", "https://metadata.google.internal/", "https://intranet/",
     "https://0.0.0.1/", "https://169.254.169.254/", "https://10.0.0.5/", "https://100.64.0.1/",
     "https://172.16.0.1/", "https://192.0.0.1/", "https://192.0.2.1/", "https://192.88.99.1/",
     "https://192.168.0.1/", "https://198.18.0.1/", "https://198.51.100.1/", "https://203.0.113.1/",
@@ -18,7 +19,7 @@ test("политика MCP разрешает публичные нестанд�
   for (const address of ["https://8.8.8.8:8443/", "https://1.1.1.1/", "https://[2606:4700:4700::1111]/"]) {
     expect(parseOutboundUrl(address, policy).ok).toBe(true);
   }
-  for (const address of ["ftp://example.com/", "file:///etc/passwd", "https://user:pw@example.com/"]) {
+  for (const address of ["ftp://example.com/", "file:///etc/passwd", "https://user:pw@example.com/", "https://example.com:0/"]) {
     expect(parseOutboundUrl(address, policy)).toEqual({ ok: false, reason: "bad_url" });
   }
 });
