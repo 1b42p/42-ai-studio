@@ -5,6 +5,7 @@ import { renderToString } from "react-dom/server";
 
 import { LandingPage } from "@/components/studio/landing/landing-page";
 import { ExamplesSection } from "@/components/studio/landing/examples-section";
+import { disposeKineticModel, loadKineticAssets } from "@/components/studio/landing/kinetic-assets";
 import type { ExampleVideo } from "@/lib/examples";
 
 import { fourLandingExamples, landingExamples, landingFeatures, landingSteps } from "./fixtures/landing";
@@ -21,7 +22,7 @@ function authCalls() {
 }
 
 function scene() {
-  return page.getByRole("img", { name: "Объёмная оранжевая кнопка воспроизведения в орбите киноленты", exact: true }).element();
+  return page.getByRole("img", { name: "Кинетическая скульптура из оранжевых кинолент", exact: true }).element();
 }
 
 function hasPaintedModel(canvas: HTMLCanvasElement) {
@@ -29,12 +30,30 @@ function hasPaintedModel(canvas: HTMLCanvasElement) {
   sample.width = sample.height = 32;
   const context = sample.getContext("2d")!;
   context.drawImage(canvas, 0, 0, 32, 32);
-  return context.getImageData(0, 0, 32, 32).data.some((value, index) => index % 4 === 3 && value > 0);
+  const pixels = context.getImageData(0, 0, 32, 32).data;
+  let orange = 0;
+  for (let index = 0; index < pixels.length; index += 4) {
+    const [red, green, blue, alpha] = pixels.slice(index, index + 4);
+    if (alpha > 128 && red > 90 && red > green * 1.25 && green > blue * 1.1) orange++;
+  }
+  return orange > 8;
 }
 
 async function expectSceneReady() {
   await expect.poll(() => scene().querySelector("canvas"), { timeout: 15000 }).not.toBeNull();
-  await expect.poll(() => getComputedStyle(scene().querySelector("img")!).opacity, { timeout: 15000 }).toBe("0");
+  try {
+    await expect.poll(() => getComputedStyle(scene().querySelector("img")!).opacity, { timeout: 15000 }).toBe("0");
+  } catch (cause) {
+    const canvas = scene().querySelector("canvas");
+    throw new Error(`Сцена не показала первый кадр: ${JSON.stringify({
+      hidden: document.hidden,
+      bounds: scene().getBoundingClientRect().toJSON(),
+      canvas: canvas ? { width: canvas.width, height: canvas.height } : null,
+      assets: performance.getEntriesByType("resource")
+        .filter(({ name }) => /kinetic-.*\.(?:glb|gz)/.test(name))
+        .map((entry) => ({ name: entry.name, duration: entry.duration })),
+    })}`, { cause });
+  }
   const canvas = scene().querySelector("canvas")!;
   await expect.poll(() => hasPaintedModel(canvas), { timeout: 15000 }).toBe(true);
   return canvas;
@@ -153,6 +172,102 @@ for (const [viewport, renderLanding] of [
   ["телефон", renderOnPhone],
   ["компьютер", renderOnDesktop],
 ] as const) {
+  test(`${viewport}: этапы истории доступны с клавиатуры, кадры и повтор монтажа работают`, async () => {
+    await protocol().send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+    await renderLanding(landing());
+    const steps = page.getByRole("tablist", { name: "Этапы создания видео" }).getByRole("tab");
+    await expect.element(steps.nth(0)).toHaveAttribute("aria-selected", "true");
+    (steps.nth(0).element() as HTMLElement).focus();
+    await userEvent.keyboard("{ArrowRight}");
+    await expect.element(steps.nth(1)).toHaveFocus();
+    await expect.element(steps.nth(1)).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("button", { name: "Дальше", exact: true }).click();
+    await expect.element(steps.nth(2)).toHaveAttribute("aria-selected", "true");
+    await expect.element(page.getByRole("img", { name: viewport === "телефон" ? "Графика со звуком и субтитрами" : "Графика, звуковая дорожка и субтитры", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Дальше", exact: true }).click();
+    const third = page.getByRole("button", { name: "Кадр 3", exact: true });
+    await third.click();
+    await expect.element(third).toHaveAttribute("aria-pressed", "true");
+    await expect.element(page.getByRole("button", { name: "Кадр 1", exact: true })).toHaveAttribute("aria-pressed", "false");
+    await expect.element(page.getByRole("button", { name: "Смотреть монтаж", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Кадр 1", exact: true }).click();
+    await expect.element(page.getByRole("button", { name: "Кадр 1", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await third.click();
+    await expect.element(third).toHaveAttribute("aria-pressed", "true");
+    expectNoHorizontalScroll();
+  });
+
+  test(`${viewport}: интерактивные демо меняют композицию и работают при reduced motion`, async () => {
+    await protocol().send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+    });
+    await renderLanding(landing());
+    const titleScene = page.getByRole("button", { name: "Сменить титровую сцену", exact: true });
+    const kinetic = titleScene.element().closest("[data-capability]")!;
+    const originalTitle = kinetic.querySelector("p")!.style.transform;
+    await titleScene.click();
+    await expect.poll(() => kinetic.querySelector("p")!.style.transform).not.toBe(originalTitle);
+    const caption = page.getByRole("button", { name: "Показать выделение слов" });
+    const captions = caption.element().closest("[data-capability]")!;
+    const highlighted = () => captions.querySelector(".text-primary-foreground")?.textContent?.trim();
+    expect(highlighted()).toBe("У");
+    await caption.click();
+    await expect.poll(highlighted).toBe("каждого");
+    await page.getByRole("button", { name: "Вернуться к первому слову" }).click();
+    await expect.poll(highlighted).toBe("У");
+    const table = page.getByRole("button", { name: "Показать исходную таблицу" });
+    const data = table.element().closest("[data-capability]")!;
+    const bar = data.querySelector<HTMLElement>(".absolute.flex.items-start")!;
+    const height = bar.style.height;
+    await table.click();
+    await expect.poll(() => bar.style.height).toBe("28px");
+    await page.getByRole("button", { name: "Превратить таблицу в диаграмму" }).click();
+    await expect.poll(() => bar.style.height).toBe(height);
+    await page.getByRole("button", { name: "Выбрать кадр 3", exact: true }).click();
+    await expect.element(page.getByRole("button", { name: "Выбрать кадр 3", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect.element(page.getByRole("button", { name: "Выбрать кадр 1", exact: true })).toHaveAttribute("aria-pressed", "false");
+    const rhythm = page.getByRole("button", { name: "Показать ритм", exact: true });
+    const music = rhythm.element().closest("[data-capability]")!;
+    const cursor = music.querySelector<HTMLElement>(".absolute.inset-y-0.w-px")!;
+    const position = cursor.style.left;
+    await rhythm.click();
+    await expect.poll(() => cursor.style.left).not.toBe(position);
+    const enlarge = page.getByRole("button", { name: "Сделай заголовок крупнее", exact: true });
+    const preview = document.getElementById(enlarge.element().getAttribute("aria-controls")!)!;
+    const text = preview.querySelector<HTMLElement>("p")!;
+    const size = parseFloat(getComputedStyle(text).fontSize);
+    await enlarge.click();
+    await expect.poll(() => parseFloat(getComputedStyle(text).fontSize)).toBeGreaterThan(size);
+    await expect.element(page.getByRole("status", { name: "" })).toHaveTextContent("Заголовок в композиции увеличен.");
+    await page.getByRole("button", { name: "Вернуть как было", exact: true }).click();
+    await expect.poll(() => parseFloat(getComputedStyle(text).fontSize)).toBe(size);
+    expectNoHorizontalScroll();
+  });
+
+  test(`${viewport}: настоящая озвучка загружается только по нажатию и ставится на паузу`, async () => {
+    await renderLanding(landing());
+    const audio = document.querySelector<HTMLAudioElement>("#features audio")!;
+    expect(audio.getAttribute("src")).toBeNull();
+    expect(performance.getEntriesByType("resource").filter(({ name }) => /voice-sample-v1\.mp3/.test(name))).toEqual([]);
+    const play = page.getByRole("button", { name: "Послушать озвучку", exact: true });
+    play.element().scrollIntoView({ block: "center" });
+    await nextFrame();
+    await nextFrame();
+    audio.muted = true;
+    await play.click();
+    await expect.poll(() => audio.paused).toBe(false);
+    await expect.poll(() => audio.currentTime).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Приостановить озвучку", exact: true }).click();
+    await expect.poll(() => audio.paused).toBe(true);
+    const slider = page.getByRole("slider", { name: "Позиция воспроизведения озвучки" });
+    (slider.element() as HTMLElement).focus();
+    await userEvent.keyboard("{End}");
+    await expect.poll(() => audio.currentTime).toBeGreaterThan(audio.duration - 0.1);
+    expectNoHorizontalScroll();
+  });
+
   for (const theme of ["light", "dark"] as const) {
     test(`${viewport}/${theme}: весь контент, три ссылки входа, якоря и раскладка`, async () => {
       localStorage.setItem("theme", theme);
@@ -172,16 +287,16 @@ for (const [viewport, renderLanding] of [
       await expect.element(page.getByText("Опишите ролик одним сообщением — первый результат уже в чате.", { exact: true })).toBeVisible();
       await expect.element(page.getByText("© 42 AI Studio", { exact: true })).toBeVisible();
       for (const [title, description] of landingSteps) {
-        await expect.element(page.elementLocator(section("how")).getByRole("heading", { name: title, exact: true })).toBeVisible();
+        await expect.element(page.elementLocator(section("how")).getByRole("tab", { name: new RegExp(title) })).toBeVisible();
         await expect.element(page.getByText(description, { exact: true })).toBeVisible();
       }
       for (const [title, description] of landingFeatures) {
         await expect.element(page.elementLocator(section("features")).getByText(title, { exact: true })).toBeVisible();
         await expect.element(page.getByText(description, { exact: true })).toBeVisible();
       }
-      expect(section("how").querySelectorAll("h3")).toHaveLength(4);
+      expect(section("how").querySelectorAll('[role="tab"]')).toHaveLength(4);
       expect(section("features").querySelectorAll("h3")).toHaveLength(8);
-      expect(section("features").querySelector('[data-slot="studio-bento"]')?.children).toHaveLength(8);
+      expect(section("features").querySelectorAll("[data-capability]")).toHaveLength(8);
       for (const image of document.querySelectorAll<HTMLImageElement>("#how img, #features img[alt]:not([alt=''])")) {
         expect(landingExamples.map(({ poster }) => poster)).toContain(image.src);
       }
@@ -316,7 +431,7 @@ for (const [viewport, renderLanding] of [
       expect(heading.textContent).toBe(hero);
       expectReadable(heading);
       for (const [title] of landingSteps) {
-        expectReadable(page.elementLocator(section("how")).getByRole("heading", { name: title, exact: true }).element() as HTMLElement);
+        expectReadable(page.elementLocator(section("how")).getByRole("tab", { name: new RegExp(title) }).element() as HTMLElement);
       }
       for (const [, description] of landingFeatures) {
         expectReadable(page.getByText(description, { exact: true }).element() as HTMLElement);
@@ -325,8 +440,8 @@ for (const [viewport, renderLanding] of [
         await expectStillScene(await expectSceneReady());
       } else {
         expect(scene().querySelector("canvas")).toBeNull();
-        expect(vi.mocked(globalThis.fetch).mock.calls.filter(([input]) => /studio-orbit\.glb/.test(String(input)))).toEqual([]);
-        expect(performance.getEntriesByType("resource").filter(({ name }) => /ModelViewer|react-three|studio-orbit\.glb/.test(name))).toEqual([]);
+        expect(vi.mocked(globalThis.fetch).mock.calls.filter(([input]) => /kinetic-(?:light|dark)\.glb/.test(String(input)))).toEqual([]);
+        expect(performance.getEntriesByType("resource").filter(({ name }) => /kinetic-canvas|react-three|kinetic-(?:light|dark)\.glb/.test(name))).toEqual([]);
       }
       expect(document.getAnimations().filter((animation) => animation.playState === "running")).toEqual([]);
       expectNoHorizontalScroll();
@@ -340,7 +455,7 @@ for (const [viewport, renderLanding] of [
       for (const [, description] of landingFeatures) await expect.element(page.getByText(description, { exact: true })).toBeVisible();
       expect(loginLinks().elements()).toHaveLength(3);
       if (viewport === "компьютер") {
-        await expect.poll(() => context.mock.calls.some(([kind]) => kind === "webgl2")).toBe(true);
+        await expect.poll(() => context.mock.calls.some(([kind]) => String(kind) === "webgl2")).toBe(true);
       }
       const poster = scene().querySelector("img")!;
       await expect.poll(() => poster.naturalWidth).toBeGreaterThan(0);
@@ -377,10 +492,23 @@ test("серверная разметка содержит восемь возм
     expect(document.body.textContent).toContain(title);
     expect(document.body.textContent).toContain(description);
   }
-  expect(document.querySelector('[data-slot="studio-bento"]')?.children).toHaveLength(8);
-  expect(document.querySelector('img[src="/landing/studio-orbit.webp"]')).not.toBeNull();
+  expect(document.querySelectorAll("[data-capability]")).toHaveLength(8);
+  expect(document.querySelector('img[src="/landing/kinetic-light.webp"]')).not.toBeNull();
   expect(document.querySelector("canvas")).toBeNull();
   expect(globalThis.fetch).not.toHaveBeenCalled();
+});
+
+test.each(["light", "dark"] as const)("локальные ассеты kinetic/%s содержат скульптуру и совместимое HDR-окружение", async (theme) => {
+  const assets = await loadKineticAssets(theme, new AbortController().signal);
+  try {
+    expect(assets.sculpture.name).toBe("Light-Cut");
+    expect(assets.sculpture.children).toHaveLength(4);
+    expect(assets.environment.image.width).toBe(768);
+    expect(assets.environment.image.height).toBe(1024);
+  } finally {
+    assets.environment.dispose();
+    disposeKineticModel(assets.model);
+  }
 });
 
 test("изменение reduced motion останавливает и возобновляет настоящую 3D-сцену без перезагрузки", async () => {

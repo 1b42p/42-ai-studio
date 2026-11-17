@@ -6,7 +6,7 @@ import { useTheme } from "next-themes";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { cn } from "@/lib/utils";
 
-const ModelViewer = dynamic(() => import("@/components/ModelViewer"), {
+const KineticCanvas = dynamic(() => import("./kinetic-canvas"), {
   ssr: false,
   loading: () => null,
 });
@@ -49,43 +49,25 @@ function SceneVisual({
   return (
     <>
       <img
-        src="/landing/studio-orbit.webp"
+        src={`/landing/kinetic-${dark ? "dark" : "light"}.webp`}
         alt=""
-        width={1040}
-        height={960}
+        width={1920}
+        height={1080}
         fetchPriority="high"
         decoding="async"
         className={cn(
-          "absolute inset-0 size-full object-contain transition-opacity duration-500 motion-reduce:transition-none",
+          "absolute inset-0 size-full object-cover object-[70%_center] transition-opacity duration-500 motion-reduce:transition-none md:object-center",
           ready && showModel && "opacity-0",
         )}
       />
       {showModel && (
         <SceneBoundary onFailure={onFailure}>
-          <ModelViewer
-            url="/landing/studio-orbit.glb"
-            width="100%"
-            height="100%"
-            className="absolute! inset-0"
-            environment="studio"
-            environmentIntensity={dark ? 1.3 : 1.15}
-            exposure={dark ? 1.15 : 1.05}
-            fit={1.12}
-            startAngle={-8}
-            tilt={5}
-            intro="none"
-            autoRotate={!reducedMotion}
-            autoRotateSpeed={0.025}
-            autoRotateDelay={0}
-            float={reducedMotion ? 0 : 0.18}
-            hoverTilt={reducedMotion ? 0 : 0.07}
-            dragRotate
-            turntable
-            zoom={false}
-            shadow
-            shadowOpacity={dark ? 0.22 : 0.13}
+          <KineticCanvas
+            theme={dark ? "dark" : "light"}
+            reducedMotion={reducedMotion}
             active={visible}
-            onModelLoaded={handleReady}
+            onReady={handleReady}
+            onFailure={onFailure}
           />
         </SceneBoundary>
       )}
@@ -102,6 +84,7 @@ export function HeroScene({ className }: { className?: string }) {
   const [painted, setPainted] = useState(false);
   const [failed, setFailed] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(true);
+  const handleFailure = useCallback(() => setFailed(true), []);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 768px)");
@@ -157,18 +140,18 @@ export function HeroScene({ className }: { className?: string }) {
   return (
     <AspectRatio
       ref={root}
-      ratio={13 / 12}
-      className={cn("relative isolate", className)}
+      ratio={16 / 9}
+      className={cn("relative isolate size-full overflow-hidden", className)}
       role="img"
-      aria-label="Объёмная оранжевая кнопка воспроизведения в орбите киноленты"
+      aria-label="Кинетическая скульптура из оранжевых кинолент"
     >
       <SceneVisual
-        key={showModel ? "model" : "poster"}
+        key={`${showModel ? "model" : "poster"}-${dark ? "dark" : "light"}`}
         showModel={showModel}
         dark={dark}
         reducedMotion={reducedMotion}
         visible={visible}
-        onFailure={() => setFailed(true)}
+        onFailure={handleFailure}
       />
     </AspectRatio>
   );

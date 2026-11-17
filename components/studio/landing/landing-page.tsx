@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Cta1 } from "@/components/ui/cta-1";
 import Features3 from "@/components/ui/feature-3";
 import { Footer3 } from "@/components/ui/footer-3";
-import Hero25 from "@/components/ui/hero-25";
+import Hero31 from "@/components/ui/hero-31";
 import { Separator } from "@/components/ui/separator";
 import type { ExampleVideo } from "@/lib/examples";
 
@@ -33,16 +33,16 @@ export function LandingPage({ examples }: LandingPageProps) {
   return (
     <AuthStateProvider>
       <PublicShell fullWidth navLinks={landingNavLinks(examples.length > 0)} actions={<StudioLoginButton compact />}>
-        <Hero25
-          badge={<Badge className="rounded-lg px-3 py-1.5">Видео из одной просьбы</Badge>}
+        <Hero31
+          badge={<Badge variant="outline" className="rounded-md border-primary/25 bg-background/65 px-3 py-1.5 backdrop-blur-sm">Видео из одной просьбы</Badge>}
           title={heroTitle}
-          description="Агент-видеограф сам напишет анимацию, озвучит текст, добавит субтитры, проверит кадры и пришлёт файл прямо в чат."
+          subtitle="Агент-видеограф сам напишет анимацию, озвучит текст, добавит субтитры, проверит кадры и пришлёт файл прямо в чат."
           note="Отдельный аккаунт не нужен: вход через Telegram"
           visual={<HeroScene />}
           actions={<>
             <StudioLoginButton />
             {examples.length > 0 && (
-              <Button variant="outline" size="xl" nativeButton={false} render={<a href="#examples" role="link" />}>
+              <Button variant="secondary" size="xl" nativeButton={false} render={<a href="#examples" role="link" />}>
                 Смотреть примеры
                 <ArrowDown data-icon="inline-end" aria-hidden="true" />
               </Button>
@@ -50,7 +50,7 @@ export function LandingPage({ examples }: LandingPageProps) {
           </>}
         />
         <ExamplesSection examples={examples} />
-        <Features3 steps={landingSteps} preview={examples.find(({ id }) => id === "explainer")} />
+        <Features3 steps={landingSteps} />
         <section id="features" aria-labelledby="features-title" className="mx-auto flex w-full max-w-7xl scroll-mt-24 flex-col gap-10 px-5 py-16 md:gap-14 md:px-8 md:py-24">
           <h2 id="features-title" className="font-heading text-4xl font-semibold tracking-tighter md:text-5xl">Возможности</h2>
           <LandingCapabilities examples={examples} />

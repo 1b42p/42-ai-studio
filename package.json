@@ -38,8 +38,6 @@
     "@joplin/turndown-plugin-gfm": "1.0.68",
     "@mozilla/readability": "0.6.0",
     "@next/env": "^16.4.3",
-    "@react-three/drei": "^10.7.9",
-    "@react-three/fiber": "^9.8.2",
     "@shadcn/react": "^0.3.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@vercel/connect": "2.5.2",
