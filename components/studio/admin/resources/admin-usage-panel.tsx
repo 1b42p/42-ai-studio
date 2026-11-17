@@ -9,6 +9,8 @@ import { validUsageDates } from "@/lib/admin/usage-period";
 import { fetchAdminUsage, usagePeriod, type UsageQuery } from "./resource-data";
 import { ResourceError, ResourceLoading, useBrowserTimeZone } from "./shared";
 import { UsageUserFilter, UsageView } from "./usage-view";
+import { AdminHeading } from "../admin-heading";
+import { Card, CardContent } from "@/components/ui/card";
 
 const PERIODS = [
   { value: "1", label: "Сегодня" }, { value: "7", label: "7 дней" },
@@ -75,47 +77,46 @@ export function AdminUsagePanel({
 
   return (
     <section aria-label="Расход" className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-medium">Расход</h2>
-        <p className="text-sm text-muted-foreground">
-          Время песочниц считается, пока песочница запущена; остановку самой Daytona по бездействию учитывает приблизительно. Токены — по данным провайдера модели.
-        </p>
-      </div>
+      <AdminHeading title="Расход" description="Время песочниц считается, пока песочница запущена; остановку самой Daytona по бездействию учитывает приблизительно. Токены — по данным провайдера модели." />
       {initialUser ? <UsageUserFilter user={initialUser} onReset={onResetFilter} resetHref={href()} /> : null}
-      <FieldGroup>
-        <Field>
-          <FieldLabel>Период</FieldLabel>
-          <ToggleGroup aria-label="Период" className="w-full flex-wrap justify-start" variant="outline"
-            value={[period]} onValueChange={(values) => {
-              const next = values[0];
-              if (!PERIODS.some((item) => item.value === next)) return;
-              if (next === "custom" && custom.from === "" && range) setCustom(range);
-              setPeriod(next);
-            }}>
-            {PERIODS.map((item) => (
-              <ToggleGroupItem key={item.value} value={item.value}>{item.label}</ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <FieldDescription>Часовой пояс: {zone ?? "определяется…"}</FieldDescription>
-        </Field>
-        {period === "custom" ? (
-          <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field data-invalid={!valid}>
-              <FieldLabel htmlFor="usage-from">Начало периода</FieldLabel>
-              <Input id="usage-from" type="date" value={custom.from} aria-invalid={!valid}
-                onChange={(event) => setCustom((value) => ({ ...value, from: event.target.value }))} />
+      <Card className="shadow-none">
+        <CardContent>
+          <FieldGroup>
+            <Field>
+              <FieldLabel>Период</FieldLabel>
+              <ToggleGroup aria-label="Период" className="w-full flex-wrap justify-start" variant="outline"
+                value={[period]} onValueChange={(values) => {
+                  const next = values[0];
+                  if (!PERIODS.some((item) => item.value === next)) return;
+                  if (next === "custom" && custom.from === "" && range) setCustom(range);
+                  setPeriod(next);
+                }}>
+                {PERIODS.map((item) => (
+                  <ToggleGroupItem key={item.value} value={item.value} className="text-foreground">{item.label}</ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              <FieldDescription>Часовой пояс: {zone ?? "определяется…"}</FieldDescription>
             </Field>
-            <Field data-invalid={!valid}>
-              <FieldLabel htmlFor="usage-to">Конец периода</FieldLabel>
-              <Input id="usage-to" type="date" value={custom.to} aria-invalid={!valid}
-                onChange={(event) => setCustom((value) => ({ ...value, to: event.target.value }))} />
-            </Field>
-            {!valid ? <FieldDescription role="alert" className="sm:col-span-2">
-              Выберите от 1 до 366 дней; начало не должно быть позже конца.
-            </FieldDescription> : null}
+            {period === "custom" ? (
+              <FieldGroup className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Field data-invalid={!valid}>
+                  <FieldLabel htmlFor="usage-from">Начало периода</FieldLabel>
+                  <Input id="usage-from" type="date" value={custom.from} aria-invalid={!valid}
+                    onChange={(event) => setCustom((value) => ({ ...value, from: event.target.value }))} />
+                </Field>
+                <Field data-invalid={!valid}>
+                  <FieldLabel htmlFor="usage-to">Конец периода</FieldLabel>
+                  <Input id="usage-to" type="date" value={custom.to} aria-invalid={!valid}
+                    onChange={(event) => setCustom((value) => ({ ...value, to: event.target.value }))} />
+                </Field>
+                {!valid ? <FieldDescription role="alert" className="sm:col-span-2">
+                  Выберите от 1 до 366 дней; начало не должно быть позже конца.
+                </FieldDescription> : null}
+              </FieldGroup>
+            ) : null}
           </FieldGroup>
-        ) : null}
-      </FieldGroup>
+        </CardContent>
+      </Card>
       {loading ? <ResourceLoading /> : error ? <ResourceError onRetry={() => setRetry((value) => value + 1)} />
         : data && valid ? <UsageView data={data} metric={metric} onMetricChange={setMetric} userHref={href} /> : null}
     </section>

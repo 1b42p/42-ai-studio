@@ -5,7 +5,7 @@ import { PowerIcon, PowerOffIcon, RefreshCwIcon, Trash2Icon } from "lucide-react
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress, ProgressLabel } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -77,13 +77,13 @@ export function KeyCard({
 
   return (
     <Card
-      className="min-w-0 data-highlighted:ring-2 data-highlighted:ring-primary"
+      className="min-w-0 gap-5 shadow-none data-highlighted:ring-2 data-highlighted:ring-primary"
       data-highlighted={highlighted ? "" : undefined}
       data-key-id={item.id}
     >
-      <CardHeader className="gap-2">
+      <CardHeader className="gap-3 border-b border-border">
         <div className="flex min-w-0 items-start justify-between gap-2">
-          <CardTitle className="min-w-0 truncate">{item.label}</CardTitle>
+          <CardTitle className="min-w-0 truncate text-xl font-semibold tracking-tight">{item.label}</CardTitle>
           <Button
             aria-label={`Обновить ${item.label}`}
             disabled={refreshing}
@@ -106,14 +106,14 @@ export function KeyCard({
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="flex flex-col gap-4">
         {item.warning !== null ? (
           <Alert>
             <AlertDescription>{item.warning}</AlertDescription>
           </Alert>
         ) : null}
         {numbers && usage?.cpu && usage.memoryGb && usage.diskGb ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-4 rounded-xl bg-muted/50 p-4 tabular-nums">
             <UsageBar label={amountLabel("vCPU", usage.cpu.used, usage.cpu.quota, "")} quota={usage.cpu.quota} used={usage.cpu.used} />
             <UsageBar
               label={amountLabel("Память", usage.memoryGb.used, usage.memoryGb.quota, "ГиБ")}
@@ -142,7 +142,9 @@ export function KeyCard({
           </Alert>
         ) : null}
         {item.fits !== null ? (
-          <p className="text-sm">{fitsLabel(item.fits, defaults)}</p>
+          <Alert className="border-primary/15 bg-primary/5">
+            <AlertDescription>{fitsLabel(item.fits, defaults)}</AlertDescription>
+          </Alert>
         ) : null}
         <p className="text-sm">{sandboxesLabel(item)}</p>
         {usage?.maxPerSandbox != null ? (
@@ -165,24 +167,24 @@ export function KeyCard({
             <AlertDescription>{remainingSandboxesWarning(item.remainingSandboxes)}</AlertDescription>
           </Alert>
         ) : null}
-        <div className="flex flex-wrap gap-2">
-          {item.enabled ? (
-            <Button aria-label={`Отключить ${item.label}`} onClick={onDisable} variant="outline">
-              <PowerOffIcon data-icon="inline-start" />
-              Отключить
-            </Button>
-          ) : (
-            <Button aria-label={`Включить ${item.label}`} onClick={onEnable} variant="outline">
-              <PowerIcon data-icon="inline-start" />
-              Включить
-            </Button>
-          )}
-          <Button aria-label={`Удалить ${item.label}`} onClick={onDelete} variant="destructive">
-            <Trash2Icon data-icon="inline-start" />
-            Удалить
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="flex-wrap justify-between gap-2">
+        {item.enabled ? (
+          <Button aria-label={`Отключить ${item.label}`} onClick={onDisable} variant="outline">
+            <PowerOffIcon data-icon="inline-start" />
+            Отключить
+          </Button>
+        ) : (
+          <Button aria-label={`Включить ${item.label}`} onClick={onEnable} variant="outline">
+            <PowerIcon data-icon="inline-start" />
+            Включить
+          </Button>
+        )}
+        <Button aria-label={`Удалить ${item.label}`} onClick={onDelete} variant="ghost" className="text-destructive">
+          <Trash2Icon data-icon="inline-start" />
+          Удалить
+        </Button>
+      </CardFooter>
     </Card>
   );
 }

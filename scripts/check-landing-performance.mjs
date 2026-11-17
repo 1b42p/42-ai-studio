@@ -15,8 +15,8 @@ async function observeEnhancement(page) {
     else setTimeout(afterIdle, 0);
   }));
   await page.waitForLoadState("networkidle");
-  // The longest entrance lasts 600 ms. Sample a full second of rendered
-  // frames after idle imports, including animation callbacks, not just fetches.
+  // Sample a full second of rendered frames after loading or interaction,
+  // including scheduled browser callbacks, not just network requests.
   await page.evaluate(() => new Promise((resolve) => {
     const until = performance.now() + 1000;
     const sample = (now) => now >= until ? resolve() : requestAnimationFrame(sample);
@@ -54,8 +54,17 @@ try {
       await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
       await cdp.send("Network.enable");
       await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
-      const response = await page.goto(url, { waitUntil: "networkidle" });
+      const profileResponse = page.waitForResponse((response) =>
+        response.url() === new URL("/api/auth/me", url).href,
+      );
+      const [response, profile] = await Promise.all([
+        page.goto(url, { waitUntil: "domcontentloaded" }),
+        profileResponse,
+      ]);
       if (response?.status() !== 200) throw new Error(`Главная ответила ${response?.status()}`);
+      if (profile.status() !== 401) throw new Error(`Профиль гостя ответил ${profile.status()}`);
+      const profileError = await profile.finished();
+      if (profileError) throw profileError;
       await page.getByRole("heading", { level: 1 }).waitFor();
       await observeEnhancement(page);
       const expand = page.getByRole("button", { name: "Показать полностью", exact: true }).first();
@@ -67,7 +76,7 @@ try {
       await page.locator("#how").scrollIntoViewIfNeeded();
       await observeEnhancement(page);
       await page.locator("#features").scrollIntoViewIfNeeded();
-      await page.locator("#features .magic-bento").waitFor({ state: "attached" });
+      await page.locator('#features [data-slot="studio-bento"]').waitFor({ state: "attached" });
       await observeEnhancement(page);
       await page.getByRole("button", { name: theme === "light" ? "Тёмная" : "Светлая", exact: true }).click();
       await observeEnhancement(page);

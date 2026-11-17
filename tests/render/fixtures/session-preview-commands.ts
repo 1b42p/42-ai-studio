@@ -8,6 +8,7 @@ interface PreviewRequests {
   readonly requests: string[];
   readonly ready: Promise<void>;
   readonly release: () => void;
+  readonly pending: Set<Promise<void>>;
 }
 
 const states = new WeakMap<object, PreviewRequests>();
@@ -40,30 +41,38 @@ export const sessionPreviewMedia: BrowserCommand<[Action, { pending?: boolean }?
   }
 
   previous?.release();
+  // Завершаем уже начатые ответы перед снятием маршрута. Иначе ошибка
+  // утверждения до release оставляет fulfill за пределами текущего теста.
+  if (previous) await Promise.all(previous.pending);
   await context.page.unroute(pattern);
   states.delete(context.page);
   if (action === "reset") return [];
 
   let release = () => {};
   const ready = new Promise<void>((resolve) => { release = resolve; });
-  const state: PreviewRequests = { requests: [], ready, release };
+  const state: PreviewRequests = { requests: [], ready, release, pending: new Set() };
   states.set(context.page, state);
   if (!options?.pending) release();
 
   await context.page.route(pattern, async (route) => {
     const url = new URL(route.request().url());
     state.requests.push(`${url.pathname}${url.search}`);
-    await state.ready;
     const mediaId = url.pathname.split("/").at(-1);
     const unavailable = mediaId === previewMedia.missing ||
       (mediaId === previewMedia.retry && !url.searchParams.has("retry"));
-    await route.fulfill(unavailable
+    const response = state.ready.then(() => route.fulfill(unavailable
       ? { status: 404, contentType: "text/plain", body: "not found" }
       : {
           status: 200,
           contentType: "image/svg+xml",
           body: mediaId === previewMedia.portrait ? image(180, 320) : image(320, 180),
-        });
+        }));
+    state.pending.add(response);
+    try {
+      await response;
+    } finally {
+      state.pending.delete(response);
+    }
   });
   return [];
 };

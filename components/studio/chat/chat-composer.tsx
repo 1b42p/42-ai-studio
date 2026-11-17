@@ -1,7 +1,7 @@
 "use client";
 
 import type { UserContent } from "ai";
-import { ArrowUpIcon, PaperclipIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, PaperclipIcon, SquareIcon, WandSparklesIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { isTouchInput } from "@/components/studio/chat/keyboard";
@@ -10,12 +10,12 @@ import { AttachmentCard } from "@/components/studio/chat/attachment-card";
 import { messageContent, type AttachmentsController } from "@/components/studio/chat/attachments";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AttachmentGroup } from "@/components/ui/attachment";
-import { Button } from "@/components/ui/button";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupTextarea,
+  InputGroupText,
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -111,10 +111,10 @@ export function ChatComposer({
         type="file"
       />
 
-      <InputGroup>
+      <InputGroup className="overflow-hidden rounded-2xl border-border bg-card shadow-lg shadow-foreground/5 ring-1 ring-border/40 transition-shadow focus-within:shadow-primary/5 md:rounded-3xl">
         <InputGroupTextarea
           aria-label="Сообщение агенту"
-          className="max-h-36 min-h-10 p-3"
+          className="max-h-40 min-h-20 px-4 pt-4 pb-2 text-base leading-relaxed md:min-h-24 md:px-5 md:pt-5"
           disabled={inputDisabled}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -136,16 +136,21 @@ export function ChatComposer({
           rows={1}
           value={text}
         />
-        <InputGroupAddon align="block-end">
+        <InputGroupAddon align="block-end" className="gap-2 px-3 pb-3 md:px-4 md:pb-4">
           <InputGroupButton
             aria-label="Прикрепить файлы"
             disabled={inputDisabled || attachments === undefined}
             onClick={() => fileInput.current?.click()}
             size="icon-sm"
             variant="ghost"
+            className="rounded-xl border border-border bg-background"
           >
             <PaperclipIcon />
           </InputGroupButton>
+          <InputGroupText className="gap-1.5 text-xs">
+            <WandSparklesIcon className="text-foreground" />
+            <span className="hidden sm:inline">Агент-видеограф</span>
+          </InputGroupText>
           {busy ? (
             <InputGroupButton
               aria-label="Стоп"
@@ -168,6 +173,7 @@ export function ChatComposer({
                 size="icon-sm"
                 type="submit"
                 variant="default"
+                className="size-9 rounded-xl shadow-sm"
               >
                 <ArrowUpIcon />
               </InputGroupButton>
@@ -177,7 +183,7 @@ export function ChatComposer({
         </InputGroupAddon>
       </InputGroup>
       {hasFiles || attachments?.notice !== undefined ? (
-        <div className="mt-2 flex flex-col gap-2">
+        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-card/60 p-2.5">
           {attachments !== undefined && attachments.items.length > 0 ? (
             <AttachmentGroup>
               {attachments.items.map((item) => (

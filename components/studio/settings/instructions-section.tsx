@@ -56,7 +56,7 @@ export function InstructionsSection({ settings, save }: SettingsSectionProps) {
           aria-invalid={tooLong}
           aria-describedby={`${id}-count`}
           placeholder="Опишите, как агенту работать с вами"
-          className="min-h-40 min-w-0 resize-y [field-sizing:fixed]"
+          className="min-h-48 min-w-0 resize-y rounded-xl bg-muted/25 p-4 leading-relaxed [field-sizing:fixed]"
           onChange={(event) => {
             setDraft(event.target.value);
             setSaved(false);

@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOutIcon } from "lucide-react";
+import { ChevronsUpDownIcon, LogOutIcon } from "lucide-react";
 
 import { navIcons, type NavItem } from "@/components/studio/nav";
 import { useLogout } from "@/components/studio/use-logout";
@@ -41,12 +41,12 @@ export function UserMenu({ user, onLogout, items = [] }: UserMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<SidebarMenuButton size="lg" className="min-w-0" />}
+        render={<SidebarMenuButton size="lg" className="h-auto min-w-0 rounded-xl bg-background/70 px-2.5 py-3 ring-1 ring-border" />}
         aria-label={`Аккаунт ${user.name}`}
       >
         <Avatar size="sm">
           {user.photoUrl !== null ? <AvatarImage src={user.photoUrl} alt="" /> : null}
-          <AvatarFallback>{initialsOf(user.name)}</AvatarFallback>
+          <AvatarFallback className="bg-primary/12 text-foreground">{initialsOf(user.name)}</AvatarFallback>
         </Avatar>
         <span className="flex min-w-0 flex-1 flex-col items-start text-left leading-tight">
           <span className="w-full truncate text-sm font-medium">{user.name}</span>
@@ -56,6 +56,7 @@ export function UserMenu({ user, onLogout, items = [] }: UserMenuProps) {
             </span>
           ) : null}
         </span>
+        <ChevronsUpDownIcon className="text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="w-56">
         <DropdownMenuGroup>

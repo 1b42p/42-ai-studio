@@ -26,13 +26,13 @@ export function PublicShell({
 }: PublicShellProps) {
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="sticky top-0 z-30 h-14 shrink-0 border-b bg-background">
-        <div className="mx-auto flex h-full w-full max-w-7xl items-center justify-between gap-2 px-4 lg:px-8">
+      <header className="sticky top-0 z-30 shrink-0 bg-background/85 px-3 py-3 backdrop-blur-xl md:px-4">
+        <div className="mx-auto flex min-h-14 w-full max-w-7xl items-center justify-between gap-2 rounded-2xl border border-border/70 bg-card/90 px-3 shadow-sm lg:px-6">
           <a href="/" aria-label="42 AI Studio — главная" className="shrink-0">
             <Brand />
           </a>
           {navLinks.length > 0 && (
-            <nav aria-label="Главная" className="ml-auto hidden items-center gap-1 md:flex">
+            <nav aria-label="Главная" className="ml-auto hidden items-center md:flex">
               {navLinks.map((link) => (
                 <Button
                   key={link.href}

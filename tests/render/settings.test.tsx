@@ -86,7 +86,7 @@ test("настройки показывают разделы, заполненн
   expectNoHorizontalScroll();
 });
 
-test("компьютер: навигация настроек, одна колонка и длинное поле не расширяют страницу", async () => {
+test("компьютер: боковая навигация настроек, секции и длинное поле не расширяют страницу", async () => {
   await renderOnDesktop(
     <AppShell navItems={navItems} pathname="/settings">
       <StatefulSettings initial={"Я".repeat(4000)} />
@@ -101,7 +101,10 @@ test("компьютер: навигация настроек, одна коло
     "settings-theme", "settings-instructions", "settings-memory", "settings-mcp", "settings-account",
   ]);
   const bounds = regions.map((region) => region.getBoundingClientRect());
-  expect(bounds.every((rect) => rect.width <= 672)).toBe(true);
+  const navigation = page.getByRole("navigation", { name: "Разделы настроек" }).element().getBoundingClientRect();
+  const main = page.getByRole("main").element().getBoundingClientRect();
+  expect(navigation.right).toBeLessThanOrEqual(bounds[0].left);
+  expect(bounds.every((rect) => rect.right <= main.right && rect.left >= main.left)).toBe(true);
   expect(bounds[0].x).toBe(bounds[1].x);
   expect(bounds[1].bottom).toBeLessThan(bounds[2].top);
   expectNoHorizontalScroll();

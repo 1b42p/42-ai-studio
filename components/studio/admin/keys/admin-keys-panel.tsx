@@ -17,6 +17,7 @@ import { remainingSandboxesWarning } from "@/lib/admin/key-view";
 import { AddKeyDialog } from "./add-key-dialog";
 import { KeyActionDialog, type KeyAction } from "./key-action-dialog";
 import { KeyCard } from "./key-card";
+import { AdminHeading } from "../admin-heading";
 
 const STALE_MS = 60_000;
 const REFRESH_LIMIT = 5;
@@ -258,9 +259,10 @@ export function AdminKeysPanel({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Ключи Daytona</h2>
-        <div className="flex gap-2">
+      <AdminHeading
+        title="Ключи Daytona"
+        description="Песочницы создаются на ключах по порядку: когда на первом нет места, берётся следующий. Отключённый ключ не получает новых песочниц, а запущенные на нём продолжают работать."
+        actions={<>
           <Button onClick={openAdd}>
             <PlusIcon data-icon="inline-start" />
             Добавить ключ
@@ -273,11 +275,8 @@ export function AdminKeysPanel({
             <RefreshCwIcon data-icon="inline-start" />
             Обновить
           </Button>
-        </div>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Песочницы создаются на ключах по порядку: когда на первом нет места, берётся следующий. Отключённый ключ не получает новых песочниц, а запущенные на нём продолжают работать.
-      </p>
+        </>}
+      />
       {noEnabled(page.items) ? (
         <Alert>
           <AlertDescription>Нет включённых ключей: новые сессии не смогут запустить песочницу.</AlertDescription>
@@ -316,7 +315,7 @@ export function AdminKeysPanel({
           </EmptyContent>
         </Empty>
       ) : null}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         {page.items.map((item) => (
           <KeyCard
             defaults={page.defaults}
@@ -333,7 +332,7 @@ export function AdminKeysPanel({
           />
         ))}
       </div>
-      <Collapsible onOpenChange={(open) => void loadDeleted(open)} open={deletedOpen}>
+      <Collapsible className="rounded-xl border border-border bg-muted/30 p-3" onOpenChange={(open) => void loadDeleted(open)} open={deletedOpen}>
         <CollapsibleTrigger className="text-sm font-medium" render={<Button variant="ghost" />}>
           Удалённые ключи ({deleted?.length ?? "…"})
         </CollapsibleTrigger>

@@ -10,6 +10,7 @@ import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AdminResourceUser } from "@/lib/admin/resource-types";
+import { cn } from "@/lib/utils";
 
 const integer = new Intl.NumberFormat("ru-RU");
 const decimal = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -44,7 +45,7 @@ export function ResourceUser({
 }) {
   return (
     <ItemContent className="min-w-0">
-      <ItemTitle className="block w-full truncate" title={user.name}>
+      <ItemTitle className="block w-full truncate text-foreground" title={user.name}>
         <a href={href}>{user.name}</a>
       </ItemTitle>
       <ItemDescription className="truncate">{user.username ? `@${user.username}` : "Нет @username"}</ItemDescription>
@@ -52,18 +53,19 @@ export function ResourceUser({
   );
 }
 
-export function ResourceCounter({ title, value, description }: {
+export function ResourceCounter({ title, value, description, emphasis = false }: {
   title: string;
   value: ReactNode;
   description?: ReactNode;
+  emphasis?: boolean;
 }) {
   return (
-    <Card size="sm" className="min-w-0">
-      <CardHeader>
-        <CardDescription>{title}</CardDescription>
-        <CardTitle className="tabular-nums">{value}</CardTitle>
+    <Card className={cn("min-w-0 gap-0 border-0 bg-muted/50 py-0 shadow-none ring-0", emphasis && "bg-primary/8 ring-1 ring-primary/15")}>
+      <CardHeader className="gap-2 px-3 py-4 sm:px-5">
+        <CardDescription className="text-xs sm:text-sm">{title}</CardDescription>
+        <CardTitle className="text-2xl font-semibold tracking-tight tabular-nums md:text-3xl">{value}</CardTitle>
       </CardHeader>
-      {description ? <CardContent>{description}</CardContent> : null}
+      {description ? <CardContent className="px-3 pb-4 sm:px-5">{description}</CardContent> : null}
     </Card>
   );
 }

@@ -13,9 +13,9 @@ export function Footer3({ logo, brandName, copyright }: Footer3Props) {
   return (
     <footer className="w-full">
       <Separator />
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-8 md:flex-row md:items-center md:justify-between md:px-8">
-        <span className="font-heading text-sm font-medium">{logo ?? brandName}</span>
-        {copyright && <p className="text-muted-foreground text-sm">{copyright}</p>}
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-10 md:flex-row md:items-end md:justify-between md:px-8 md:py-12">
+        <span className="font-heading text-3xl font-semibold tracking-tighter md:text-5xl">{logo ?? brandName}</span>
+        {copyright && <p className="text-muted-foreground text-xs md:pb-1">{copyright}</p>}
       </div>
     </footer>
   );

@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
  */
 export function ChatFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="-mx-4 -my-4 h-[calc(100dvh-3.5rem)] md:-mx-6 md:-my-6 md:h-dvh">
+    <div className="-mx-3 -my-3 h-[calc(100dvh-4rem)] min-w-0 md:-mx-6 md:-my-6 md:h-dvh lg:-mx-8 lg:-my-8">
       {children}
     </div>
   );

@@ -8,7 +8,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemGroup, ItemTitle } from "@/components/ui/item";
@@ -61,9 +61,9 @@ export function McpSectionView({ state }: { state: McpState }) {
       </Button>
       {error && !open && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {state.servers.length === 0 ? (
-        <Empty><EmptyHeader><EmptyDescription>Серверов пока нет</EmptyDescription></EmptyHeader></Empty>
-      ) : <ItemGroup>{state.servers.map((server) => (
-        <Item className="min-w-0" role="listitem" key={server.id}>
+        <Empty className="rounded-xl border border-dashed bg-muted/25"><EmptyHeader><EmptyMedia variant="icon" className="bg-primary/10 text-foreground"><UnplugIcon /></EmptyMedia><EmptyDescription>Серверов пока нет</EmptyDescription></EmptyHeader></Empty>
+      ) : <ItemGroup className="gap-3">{state.servers.map((server) => (
+        <Item className="min-w-0 items-start rounded-xl border-border bg-muted/20 p-4" role="listitem" key={server.id}>
             <ItemContent className="min-w-0">
               <ItemTitle className="max-w-full truncate">{server.name}</ItemTitle>
               <ItemDescription className="truncate">{server.url}</ItemDescription>
@@ -76,7 +76,7 @@ export function McpSectionView({ state }: { state: McpState }) {
                 {server.connected ? "Подключён" : "Не подключён"}
               </Badge>}
             </ItemContent>
-            <ItemActions>
+             <ItemActions className="flex-wrap">
              <Switch aria-label={`Включён: ${server.name}`} checked={server.enabled} onCheckedChange={(enabled) => void run(() => state.toggle(server.id, enabled))} />
              <Button size="icon" variant="ghost" aria-label={`Проверить ${server.name}`} onClick={() => void state.check(server.id)}><RefreshCwIcon /></Button>
              <Button size="icon" variant="ghost" aria-label={`Удалить ${server.name}`} onClick={() => setDeleting(server.id)}><Trash2Icon /></Button>

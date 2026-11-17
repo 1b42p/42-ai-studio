@@ -111,8 +111,8 @@ export function InputPrompt({ input, disabled = false, onRespond }: {
   }
 
   return (
-    <Card size="sm" className="min-w-0" aria-label={input.taskId ? "Вопрос от копии агента" : "Вопрос от агента"}>
-      <CardHeader>
+    <Card size="sm" className="min-w-0 overflow-hidden rounded-2xl border-primary/20 bg-card shadow-sm" aria-label={input.taskId ? "Вопрос от копии агента" : "Вопрос от агента"}>
+      <CardHeader className="border-b border-primary/10 bg-primary/5">
         <CardTitle className="flex items-center gap-2"><CircleHelpIcon />{input.taskId ? "Вопрос от копии агента" : "Вопрос от агента"}</CardTitle>
       </CardHeader>
       <CardContent>

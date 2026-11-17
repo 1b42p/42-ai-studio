@@ -20,10 +20,11 @@ export function AuthStateProvider({ children }: { children: ReactNode }) {
     request.current ??= fetch("/api/auth/me", {
       credentials: "same-origin",
       cache: "no-store",
-    }).then(
-      (response): AuthState => response.status === 200 ? "authenticated" : "anonymous",
-      (): AuthState => "anonymous",
-    );
+    }).then(async (response): Promise<AuthState> => {
+      // Drain no-store responses so the browser can finish the network request.
+      await response.arrayBuffer();
+      return response.status === 200 ? "authenticated" : "anonymous";
+    }).catch((): AuthState => "anonymous");
     void request.current.then((result) => {
       if (active) setState(result);
     });
@@ -37,14 +38,21 @@ export function useAuthState() {
   return useContext(AuthContext);
 }
 
-export function StudioLoginButton({ compact = false }: { compact?: boolean }) {
+export function StudioLoginButton({
+  compact = false,
+  tone = "brand",
+}: {
+  compact?: boolean;
+  tone?: "brand" | "contrast";
+}) {
   const authenticated = useAuthState() === "authenticated";
   const title = authenticated ? "Открыть студию" : "Войти через Telegram";
   const Icon = authenticated ? ArrowRight : Send;
 
   return (
     <Button
-      size={compact ? "default" : "lg"}
+      size={compact ? "default" : "xl"}
+      variant={tone === "contrast" ? "secondary" : "default"}
       className={cn(
         "w-60 shrink-0",
         compact && "size-9 p-0 md:h-9 md:w-46 md:px-3",

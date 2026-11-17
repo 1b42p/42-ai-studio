@@ -19,11 +19,11 @@ export function AccountSection() {
 
   return (
     <FieldGroup>
-      <Item className="min-w-0 p-0">
+      <Item className="min-w-0 rounded-xl bg-muted/50 p-4">
         <ItemMedia>
           <Avatar size="lg">
             {user.photoUrl !== null ? <AvatarImage src={user.photoUrl} alt="" /> : null}
-            <AvatarFallback>{initialsOf(user.name)}</AvatarFallback>
+            <AvatarFallback className="bg-primary/12 text-foreground">{initialsOf(user.name)}</AvatarFallback>
           </Avatar>
         </ItemMedia>
         <ItemContent className="min-w-0">

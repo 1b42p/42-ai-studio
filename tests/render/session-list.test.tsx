@@ -11,6 +11,9 @@ import { page } from "vitest/browser";
 
 import { ChatPanel, type ChatAgent } from "@/components/studio/chat/chat-panel";
 import { ChatView } from "@/components/studio/chat/chat-view";
+import { ChatFrame } from "@/components/studio/chat/chat-frame";
+import { AppShell } from "@/components/studio/app-shell";
+import { navItems } from "@/components/studio/nav";
 import {
   SessionList,
   type SessionListItem,
@@ -365,6 +368,42 @@ test("на /s поле ввода выше списка и остаётся те
     desktopHeading!.getBoundingClientRect().top,
   );
   expectNoHorizontalScroll();
+});
+
+test.each(["light", "dark"] as const)("телефон/%s: стартовая студия со списком имеет одну вертикальную прокрутку", async (theme) => {
+  localStorage.setItem("theme", theme);
+  try {
+    const items = Array.from({ length: 12 }, (_, index) =>
+      item(`00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, `Проект ${index + 1}`, coffee.updatedAt),
+    );
+    await renderOnPhone(
+      <AppShell navItems={navItems} pathname="/s">
+        <ChatFrame>
+          <ChatView
+            agent={{ data: stateOf([]), events: [], status: "ready" }}
+            onCancel={() => undefined}
+            onRespond={() => undefined}
+            onSend={() => undefined}
+            sessions={<SessionList initialPage={pageOf(items)} initialQuery="" now={NOW} request={async () => pageOf(items)} timeZone={ZONE} />}
+          />
+        </ChatFrame>
+      </AppShell>,
+    );
+    await expect.element(page.getByRole("textbox", { name: "Сообщение агенту" })).toBeVisible();
+    const scrollers = [...document.querySelectorAll<HTMLElement>("body *")].filter((node) =>
+      /^(auto|scroll)$/.test(getComputedStyle(node).overflowY) &&
+      node.clientHeight > 0 && node.scrollHeight > node.clientHeight + 1,
+    );
+    expect(scrollers).toHaveLength(1);
+    expect(document.documentElement.scrollHeight).toBeLessThanOrEqual(window.innerHeight);
+    const scroller = scrollers[0]!;
+    expect(scroller.contains(page.getByRole("textbox", { name: "Сообщение агенту" }).element())).toBe(true);
+    scroller.scrollTop = scroller.scrollHeight;
+    await expect.poll(() => page.getByRole("link", { name: /Проект 12/ }).element().getBoundingClientRect().bottom).toBeLessThanOrEqual(window.innerHeight);
+    expectNoHorizontalScroll();
+  } finally {
+    localStorage.clear();
+  }
 });
 
 function agentOf(events: readonly MessageStreamEvent[]): ChatAgent {

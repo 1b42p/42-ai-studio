@@ -1,7 +1,8 @@
-import { CodeIcon, SendIcon, TriangleAlertIcon } from "lucide-react";
+import { ArrowUpRightIcon, ClapperboardIcon, CodeIcon, SendIcon, TriangleAlertIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
@@ -32,12 +33,16 @@ export function LoginCard({
   const nothingConfigured = !telegramEnabled && !devLoginEnabled;
 
   return (
-    <Card className="w-full max-w-sm">
-      <CardHeader className="text-center">
-        <CardTitle className="text-xl">Вход</CardTitle>
-        <CardDescription>Войдите через Telegram, отдельный аккаунт не нужен</CardDescription>
+    <Card className="w-full max-w-3xl gap-0 overflow-hidden rounded-3xl py-0 md:grid md:grid-cols-2 [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
+      <CardHeader className="relative flex flex-col justify-between gap-8 overflow-hidden rounded-none border-b bg-primary/8 p-7 md:min-h-96 md:border-r md:border-b-0 md:p-10">
+        <Badge variant="outline" className="w-fit gap-2"><ClapperboardIcon />42 AI Studio</Badge>
+        <span aria-hidden="true" className="pointer-events-none absolute -right-5 top-4 select-none text-[13rem] font-semibold leading-none tracking-tighter text-primary/8 md:top-20">42</span>
+        <div className="relative flex flex-col gap-3">
+          <CardTitle className="text-4xl font-semibold tracking-tight">Вход</CardTitle>
+          <CardDescription className="max-w-60 text-base leading-relaxed">Войдите через Telegram, отдельный аккаунт не нужен</CardDescription>
+        </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+      <CardContent className="flex min-w-0 flex-col justify-center gap-5 p-7 md:p-10">
         {error === "blocked" ? (
           <Alert variant="destructive">
             <TriangleAlertIcon />
@@ -74,10 +79,10 @@ export function LoginCard({
           {telegramEnabled ? (
             <a
               href={`/api/auth/telegram/login?next=${encodeURIComponent(next)}`}
-              className={buttonVariants({ size: "lg", className: "w-full" })}
+              className={buttonVariants({ size: "lg", className: "w-full justify-between" })}
             >
-              <SendIcon data-icon="inline-start" />
-              Войти через Telegram
+              <span className="flex items-center gap-2"><SendIcon data-icon="inline-start" />Войти через Telegram</span>
+              <ArrowUpRightIcon data-icon="inline-end" />
             </a>
           ) : null}
 

@@ -45,11 +45,11 @@ export function FrameThumbnail({
 
   return (
     <Dialog>
-      <Attachment className="w-full max-w-full has-data-[slot=attachment-content]:w-full" orientation="vertical">
-        <AttachmentMedia className="aspect-auto min-h-16 w-full" variant="image">
+      <Attachment className="w-full max-w-full overflow-hidden rounded-xl bg-background shadow-sm has-data-[slot=attachment-content]:w-full" orientation="vertical">
+        <AttachmentMedia className="aspect-video min-h-16 w-full bg-muted/40" variant="image">
           <img
             alt={label}
-            className="block h-auto max-h-[180px] w-auto min-w-0 max-w-full object-contain"
+            className="block h-full max-h-[220px] w-full min-w-0 max-w-full object-contain"
             onError={retry.onError}
             src={retry.src}
           />

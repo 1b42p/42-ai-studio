@@ -4,6 +4,7 @@ import { cdp, commands, page, userEvent } from "vitest/browser";
 import { renderToString } from "react-dom/server";
 
 import { LandingPage } from "@/components/studio/landing/landing-page";
+import { ExamplesSection } from "@/components/studio/landing/examples-section";
 import type { ExampleVideo } from "@/lib/examples";
 
 import { fourLandingExamples, landingExamples, landingFeatures, landingSteps } from "./fixtures/landing";
@@ -13,6 +14,39 @@ const hero = "Опишите ролик словами — получите го
 const loginHref = "/api/auth/telegram/login?next=%2Fs";
 const protocol = () => cdp() as Pick<CDPSession, "send">;
 const diagnostics: string[] = [];
+let authResponse: () => Promise<Response>;
+
+function authCalls() {
+  return vi.mocked(globalThis.fetch).mock.calls.filter(([input]) => input === "/api/auth/me");
+}
+
+function scene() {
+  return page.getByRole("img", { name: "Объёмная оранжевая кнопка воспроизведения в орбите киноленты", exact: true }).element();
+}
+
+function hasPaintedModel(canvas: HTMLCanvasElement) {
+  const sample = document.createElement("canvas");
+  sample.width = sample.height = 32;
+  const context = sample.getContext("2d")!;
+  context.drawImage(canvas, 0, 0, 32, 32);
+  return context.getImageData(0, 0, 32, 32).data.some((value, index) => index % 4 === 3 && value > 0);
+}
+
+async function expectSceneReady() {
+  await expect.poll(() => scene().querySelector("canvas"), { timeout: 15000 }).not.toBeNull();
+  await expect.poll(() => getComputedStyle(scene().querySelector("img")!).opacity, { timeout: 15000 }).toBe("0");
+  const canvas = scene().querySelector("canvas")!;
+  await expect.poll(() => hasPaintedModel(canvas), { timeout: 15000 }).toBe(true);
+  return canvas;
+}
+
+async function expectStillScene(canvas: HTMLCanvasElement) {
+  await expect.poll(async () => {
+    const image = canvas.toDataURL();
+    for (let frame = 0; frame < 6; frame++) await nextFrame();
+    return canvas.toDataURL() === image;
+  }).toBe(true);
+}
 
 function recordDiagnostic(...args: unknown[]) {
   const message = args.map(String).join(" ");
@@ -76,7 +110,11 @@ beforeEach(async () => {
   await commands.emulateColorScheme("light");
   vi.spyOn(console, "error").mockImplementation(recordDiagnostic);
   vi.spyOn(console, "warn").mockImplementation(recordWarning);
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 401 }));
+  const fetch = globalThis.fetch.bind(globalThis);
+  authResponse = async () => new Response(null, { status: 401 });
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) =>
+    input === "/api/auth/me" ? authResponse() : fetch(input, init),
+  );
 });
 
 afterEach(async () => {
@@ -85,6 +123,30 @@ afterEach(async () => {
   vi.restoreAllMocks();
   localStorage.clear();
   expect(diagnostics).toEqual([]);
+});
+
+test.each([200, 401])("ответ профиля %s дочитывается, общий запрос завершается", async (status) => {
+  const response = new Response("{}", { status });
+  authResponse = async () => response;
+  await renderOnPhone(landing());
+  await expect.poll(() => response.bodyUsed).toBe(true);
+  const links = status === 200 ? studioLinks() : loginLinks();
+  await expect.poll(() => links.elements().length).toBe(3);
+  expect(authCalls()).toHaveLength(1);
+});
+
+test("ошибка чтения тела профиля сохраняет ссылки входа", async () => {
+  const response = new Response(new ReadableStream({
+    start(controller) {
+      controller.error(new Error("Не удалось прочитать ответ"));
+    },
+  }), { status: 200 });
+  authResponse = async () => response;
+  await renderOnPhone(landing());
+  await expect.poll(() => response.bodyUsed).toBe(true);
+  await expect.poll(() => loginLinks().elements().length).toBe(3);
+  expect(authCalls()).toHaveLength(1);
+  await nextFrame();
 });
 
 for (const [viewport, renderLanding] of [
@@ -110,7 +172,7 @@ for (const [viewport, renderLanding] of [
       await expect.element(page.getByText("Опишите ролик одним сообщением — первый результат уже в чате.", { exact: true })).toBeVisible();
       await expect.element(page.getByText("© 42 AI Studio", { exact: true })).toBeVisible();
       for (const [title, description] of landingSteps) {
-        await expect.element(page.elementLocator(section("how")).getByText(title, { exact: true })).toBeVisible();
+        await expect.element(page.elementLocator(section("how")).getByRole("heading", { name: title, exact: true })).toBeVisible();
         await expect.element(page.getByText(description, { exact: true })).toBeVisible();
       }
       for (const [title, description] of landingFeatures) {
@@ -119,6 +181,10 @@ for (const [viewport, renderLanding] of [
       }
       expect(section("how").querySelectorAll("h3")).toHaveLength(4);
       expect(section("features").querySelectorAll("h3")).toHaveLength(8);
+      expect(section("features").querySelector('[data-slot="studio-bento"]')?.children).toHaveLength(8);
+      for (const image of document.querySelectorAll<HTMLImageElement>("#how img, #features img[alt]:not([alt=''])")) {
+        expect(landingExamples.map(({ poster }) => poster)).toContain(image.src);
+      }
       const heading = document.querySelector("h1")!;
       expect(heading.scrollWidth).toBeLessThanOrEqual(heading.clientWidth + 1);
 
@@ -128,8 +194,7 @@ for (const [viewport, renderLanding] of [
         expect(link.getAttribute("href")).toBe(loginHref);
         expect(link.querySelector("svg")).not.toBeNull();
       }
-      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-      expect(vi.mocked(globalThis.fetch).mock.calls[0]![0]).toBe("/api/auth/me");
+      expect(authCalls()).toHaveLength(1);
       await expect.element(page.getByRole("link", { name: "Смотреть примеры" })).toHaveAttribute("href", "#examples");
 
       for (const [name, href] of [["Примеры", "#examples"], ["Как это работает", "#how"], ["Возможности", "#features"]] as const) {
@@ -150,13 +215,13 @@ for (const [viewport, renderLanding] of [
       test(`${viewport}/${theme}: один отложенный запрос входа, результат ${result}`, async () => {
         localStorage.setItem("theme", theme);
         const pending = Promise.withResolvers<Response>();
-        vi.mocked(globalThis.fetch).mockImplementation(() => pending.promise);
+        authResponse = () => pending.promise;
         await renderLanding(landing());
         await expect.element(page.getByRole("heading", { level: 1, name: hero })).toBeVisible();
         const buttons = loginLinks().elements();
         expect(buttons).toHaveLength(3);
         const before = buttons.map((button) => button.getBoundingClientRect().width);
-        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(authCalls()).toHaveLength(1);
         await nextFrame();
         expect(loginLinks().elements().map((button) => button.getBoundingClientRect().width)).toEqual(before);
 
@@ -179,7 +244,7 @@ for (const [viewport, renderLanding] of [
           await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
           expect(document.body.textContent).not.toContain("network unavailable");
         }
-        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+        expect(authCalls()).toHaveLength(1);
         expectNoHorizontalScroll();
       });
     }
@@ -251,22 +316,21 @@ for (const [viewport, renderLanding] of [
       expect(heading.textContent).toBe(hero);
       expectReadable(heading);
       for (const [title] of landingSteps) {
-        expectReadable(page.elementLocator(section("how")).getByText(title, { exact: true }).element() as HTMLElement);
+        expectReadable(page.elementLocator(section("how")).getByRole("heading", { name: title, exact: true }).element() as HTMLElement);
       }
       for (const [, description] of landingFeatures) {
         expectReadable(page.getByText(description, { exact: true }).element() as HTMLElement);
       }
       if (viewport === "компьютер") {
-        await expect.poll(() => document.querySelector("canvas")).not.toBeNull();
+        await expectStillScene(await expectSceneReady());
+      } else {
+        expect(scene().querySelector("canvas")).toBeNull();
+        expect(vi.mocked(globalThis.fetch).mock.calls.filter(([input]) => /studio-orbit\.glb/.test(String(input)))).toEqual([]);
+        expect(performance.getEntriesByType("resource").filter(({ name }) => /ModelViewer|react-three|studio-orbit\.glb/.test(name))).toEqual([]);
       }
-      const canvas = document.querySelector("canvas");
-      const frame = canvas?.toDataURL();
-      await nextFrame();
-      await nextFrame();
-      if (canvas) expect(canvas.toDataURL()).toBe(frame);
       expect(document.getAnimations().filter((animation) => animation.playState === "running")).toEqual([]);
       expectNoHorizontalScroll();
-    });
+    }, 20000);
 
     test(`${viewport}/${theme}: отсутствие canvas-контекста не ломает страницу`, async () => {
       localStorage.setItem("theme", theme);
@@ -278,6 +342,10 @@ for (const [viewport, renderLanding] of [
       if (viewport === "компьютер") {
         await expect.poll(() => context.mock.calls.some(([kind]) => kind === "webgl2")).toBe(true);
       }
+      const poster = scene().querySelector("img")!;
+      await expect.poll(() => poster.naturalWidth).toBeGreaterThan(0);
+      expect(getComputedStyle(poster).opacity).toBe("1");
+      expect(scene().querySelector("canvas")).toBeNull();
       await nextFrame();
       expectNoHorizontalScroll();
     });
@@ -309,17 +377,21 @@ test("серверная разметка содержит восемь возм
     expect(document.body.textContent).toContain(title);
     expect(document.body.textContent).toContain(description);
   }
+  expect(document.querySelector('[data-slot="studio-bento"]')?.children).toHaveLength(8);
+  expect(document.querySelector('img[src="/landing/studio-orbit.webp"]')).not.toBeNull();
+  expect(document.querySelector("canvas")).toBeNull();
   expect(globalThis.fetch).not.toHaveBeenCalled();
 });
 
-test("изменение reduced motion останавливает и возобновляет фон без перезагрузки", async () => {
-  const drawing = vi.spyOn(WebGL2RenderingContext.prototype, "drawArrays");
+test("изменение reduced motion останавливает и возобновляет настоящую 3D-сцену без перезагрузки", async () => {
+  const drawing = vi.spyOn(WebGL2RenderingContext.prototype, "drawElements");
   await protocol().send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-motion", value: "reduce" }],
   });
   await renderOnDesktop(landing());
+  const canvas = await expectSceneReady();
   await expect.poll(() => drawing.mock.calls.length).toBeGreaterThan(0);
-  for (let frame = 0; frame < 4; frame++) await nextFrame();
+  await expectStillScene(canvas);
   const stopped = drawing.mock.calls.length;
   await nextFrame();
   await nextFrame();
@@ -329,15 +401,32 @@ test("изменение reduced motion останавливает и возоб
     features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
   });
   await expect.poll(() => drawing.mock.calls.length).toBeGreaterThan(stopped + 2);
+  const moving = canvas.toDataURL();
+  await expect.poll(() => canvas.toDataURL()).not.toBe(moving);
   await protocol().send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-motion", value: "reduce" }],
   });
-  for (let frame = 0; frame < 4; frame++) await nextFrame();
+  await expectStillScene(canvas);
   const pausedAgain = drawing.mock.calls.length;
   await nextFrame();
   await nextFrame();
   expect(drawing.mock.calls.length).toBe(pausedAgain);
-});
+}, 20000);
+
+test("3D-сцена не остаётся пустой после перехода компьютер → телефон → планшет", async () => {
+  await protocol().send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
+  await renderOnDesktop(landing());
+  const original = await expectSceneReady();
+  await page.viewport(390, 844);
+  await expect.poll(() => scene().querySelector("canvas")).toBeNull();
+  expect(getComputedStyle(scene().querySelector("img")!).opacity).toBe("1");
+  await page.viewport(768, 800);
+  const remounted = await expectSceneReady();
+  expect(remounted).not.toBe(original);
+  expectNoHorizontalScroll();
+}, 30000);
 
 test("пустой манифест не показывает примеры, пустую карусель и ссылки на отсутствующий якорь", async () => {
   await renderOnDesktop(landing([]));
@@ -371,16 +460,24 @@ test.each(["light", "dark"] as const)("компьютер/%s: якоря шап�
   }
 });
 
-test.each(["light", "dark"] as const)("компьютер/%s: три карточки в ряд без стрелок, четвёртая доступна кнопками Вперёд и Назад", async (theme) => {
+test.each(["light", "dark"] as const)("компьютер/%s: редакционная сетка 2+1 без стрелок, четвёртая доступна кнопками Вперёд и Назад", async (theme) => {
   localStorage.setItem("theme", theme);
-  const screen = await renderOnDesktop(landing());
+  const screen = await renderOnDesktop(<ExamplesSection examples={landingExamples} />);
   await expect.element(page.getByRole("button", { name: "Вперёд", exact: true })).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Назад", exact: true })).not.toBeInTheDocument();
   const rects = videos().map((video) => video.closest('[data-slot="carousel-item"]')!.getBoundingClientRect());
-  expect(new Set(rects.map((rect) => rect.top)).size).toBe(1);
-  expect(rects[2]!.right).toBeLessThanOrEqual(window.innerWidth);
+  const [first, portrait, third] = rects;
+  expect(third!.left).toBe(first!.left);
+  expect(third!.top).toBeGreaterThan(first!.bottom);
+  expect(portrait!.left).toBeGreaterThan(first!.right);
+  expect(portrait!.top).toBe(first!.top);
+  const portraitItem = videos()[1]!.closest<HTMLElement>('[data-slot="carousel-item"]')!;
+  expect(getComputedStyle(portraitItem).gridRowStart).toBe("1");
+  expect(getComputedStyle(portraitItem).gridRowEnd).toBe("span 2");
+  expect(portrait!.right).toBeLessThanOrEqual(window.innerWidth);
+  expect(first!.width).toBeGreaterThan(portrait!.width);
   await screen.unmount();
-  await renderOnDesktop(landing(fourLandingExamples));
+  await renderOnDesktop(<ExamplesSection examples={fourLandingExamples} />);
   const next = page.getByRole("button", { name: "Вперёд", exact: true });
   const previous = page.getByRole("button", { name: "Назад", exact: true });
   section("examples").scrollIntoView({ block: "start" });
@@ -408,6 +505,26 @@ test.each(["light", "dark"] as const)("телефон/%s: просьба огр�
   expect(request.textContent).toContain(landingExamples[0]!.request);
   expect(request.getBoundingClientRect().height).toBeGreaterThan(collapsedHeight);
   expect(request.scrollHeight).toBeLessThanOrEqual(request.clientHeight + 1);
+  expectNoHorizontalScroll();
+});
+
+test.each(["light", "dark"] as const)("телефон/%s: клавиатура меняет карточки, высота галереи следует активной карточке без пустого поля", async (theme) => {
+  localStorage.setItem("theme", theme);
+  await renderOnPhone(landing());
+  const viewport = section("examples").querySelector<HTMLElement>('[data-slot="carousel-content"]')!;
+  viewport.scrollIntoView({ block: "center" });
+  const slides = [...viewport.querySelectorAll<HTMLElement>('[data-slot="carousel-item"]')];
+  const track = viewport.firstElementChild as HTMLElement;
+  await expect.poll(() => track.style.height).not.toBe("");
+  await expect.poll(() => Math.abs(viewport.getBoundingClientRect().height - slides[0]!.getBoundingClientRect().height)).toBeLessThanOrEqual(1);
+  const landscapeHeight = viewport.getBoundingClientRect().height;
+  expect(slides[1]!.getBoundingClientRect().height).toBeGreaterThan(landscapeHeight);
+  (page.getByRole("button", { name: "Показать полностью", exact: true }).first().element() as HTMLElement).focus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.poll(() => Math.abs(viewport.getBoundingClientRect().height - slides[1]!.getBoundingClientRect().height)).toBeLessThanOrEqual(1);
+  await expect.poll(() => videos()[1]!.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
+  await userEvent.keyboard("{ArrowLeft}");
+  await expect.poll(() => viewport.getBoundingClientRect().height).toBe(landscapeHeight);
   expectNoHorizontalScroll();
 });
 

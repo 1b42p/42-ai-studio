@@ -5,6 +5,7 @@ import type { AdminSandboxesResponse } from "@/lib/admin/resource-types";
 import { fetchAdminSandboxes } from "./resource-data";
 import { ResourceError, ResourceLoading, useBrowserTimeZone } from "./shared";
 import { SandboxesView } from "./sandboxes-view";
+import { AdminHeading } from "../admin-heading";
 
 export function AdminSandboxesPanel({ initialData, request = fetchAdminSandboxes, timeZone }: {
   initialData?: AdminSandboxesResponse;
@@ -61,7 +62,7 @@ export function AdminSandboxesPanel({ initialData, request = fetchAdminSandboxes
 
   return (
     <section aria-label="Песочницы" className="flex min-w-0 flex-col gap-4">
-      <h2 className="text-lg font-medium">Песочницы</h2>
+      <AdminHeading title="Песочницы" description="Рабочие среды студии и очередь запуска." />
       {error ? <ResourceError onRetry={load} /> : null}
       {data ? <SandboxesView data={data} onRefresh={load} refreshing={loading} timeZone={zone} />
         : !error ? <ResourceLoading /> : null}

@@ -43,7 +43,7 @@ export function SandboxesView({ data, refreshing, onRefresh, timeZone }: {
           ["running", "Запущено"], ["stopped", "Остановлено"],
           ["archived", "В архиве"], ["queued", "В очереди"],
         ] as const).map(([key, title]) => (
-          <ResourceCounter key={key} title={title} value={new Intl.NumberFormat("ru-RU").format(data.counts[key])} />
+          <ResourceCounter key={key} title={title} value={new Intl.NumberFormat("ru-RU").format(data.counts[key])} emphasis={key === "running"} />
         ))}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -56,14 +56,14 @@ export function SandboxesView({ data, refreshing, onRefresh, timeZone }: {
           <RefreshCwIcon data-icon="inline-start" />Обновить
         </Button>
       </div>
-      <Card className="min-w-0">
-        <CardHeader><CardTitle>Запущенные песочницы</CardTitle></CardHeader>
+      <Card className="min-w-0 shadow-none">
+        <CardHeader className="border-b border-border"><CardTitle>Запущенные песочницы</CardTitle></CardHeader>
         <CardContent className="min-w-0">
           {data.running.length === 0 ? <ResourceEmpty>Запущенных песочниц нет</ResourceEmpty> : (
             <>
               <div className="hidden md:block">
-                <Table aria-label="Запущенные песочницы" className="table-fixed">
-                  <TableHeader><TableRow>
+                <Table aria-label="Запущенные песочницы" className="table-fixed tabular-nums [&_td]:py-4">
+                  <TableHeader className="bg-muted/50"><TableRow>
                     <TableHead className="w-[23%]">Пользователь</TableHead>
                     <TableHead className="w-[13%]">Сессия</TableHead>
                     <TableHead className="w-[14%]">Ключ</TableHead>
@@ -84,7 +84,7 @@ export function SandboxesView({ data, refreshing, onRefresh, timeZone }: {
                 </Table>
               </div>
               <ItemGroup aria-label="Запущенные песочницы" className="md:hidden">{data.running.map((item) => (
-                <Item key={item.appSessionId} variant="outline">
+                <Item key={item.appSessionId} variant="muted" className="rounded-xl p-4">
                   <ItemContent className="min-w-0">
                     <ResourceUser user={item.user} />
                     <ItemDescription>Сессия: #{item.sessionRef}</ItemDescription>
@@ -99,14 +99,14 @@ export function SandboxesView({ data, refreshing, onRefresh, timeZone }: {
           )}
         </CardContent>
       </Card>
-      <Card className="min-w-0">
-        <CardHeader><CardTitle>Очередь</CardTitle></CardHeader>
+      <Card className="min-w-0 shadow-none">
+        <CardHeader className="border-b border-border"><CardTitle>Очередь</CardTitle></CardHeader>
         <CardContent className="min-w-0">
           {data.queue.length === 0 ? <ResourceEmpty>Очередь пуста</ResourceEmpty> : (
             <>
               <div className="hidden md:block">
-                <Table aria-label="Очередь" className="table-fixed">
-                  <TableHeader><TableRow>
+                <Table aria-label="Очередь" className="table-fixed tabular-nums [&_td]:py-4">
+                  <TableHeader className="bg-muted/50"><TableRow>
                     <TableHead className="w-[7%]">Место</TableHead>
                     <TableHead className="w-[20%]">Пользователь</TableHead>
                     <TableHead className="w-[13%]">Сессия</TableHead>
@@ -129,7 +129,7 @@ export function SandboxesView({ data, refreshing, onRefresh, timeZone }: {
                 </Table>
               </div>
               <ItemGroup aria-label="Очередь" className="md:hidden">{data.queue.map((item) => (
-                <Item key={item.appSessionId} variant="outline">
+                <Item key={item.appSessionId} variant="muted" className="rounded-xl p-4">
                   <ItemContent className="min-w-0">
                     <ResourceUser user={item.user} />
                     <ItemDescription>Место: {item.position} · Сессия: #{item.sessionRef}</ItemDescription>

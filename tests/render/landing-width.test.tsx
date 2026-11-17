@@ -15,7 +15,10 @@ for (const theme of ["light", "dark"] as const) {
   test(`главная/${theme}: все элементы шапки помещаются при 768 px до и после входа`, async () => {
     localStorage.setItem("theme", theme);
     const pending = Promise.withResolvers<Response>();
-    vi.spyOn(globalThis, "fetch").mockImplementation(() => pending.promise);
+    const fetch = globalThis.fetch.bind(globalThis);
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) =>
+      input === "/api/auth/me" ? pending.promise : fetch(input, init),
+    );
     await renderAtSize(<LandingPage examples={landingExamples} />, { width: 768, height: 800 });
     await document.fonts.ready;
 

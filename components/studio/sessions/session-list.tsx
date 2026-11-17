@@ -3,6 +3,8 @@
 import {
   AlertCircleIcon,
   ChevronDownIcon,
+  ArrowUpRightIcon,
+  FilmIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react";
@@ -15,6 +17,8 @@ import { useSessionDeletion } from "@/components/studio/sessions/use-session-del
 import { SessionPreview } from "@/components/studio/sessions/session-preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import {
   InputGroup,
@@ -206,15 +210,21 @@ export function SessionList({
   const searching = status === "loading" && purpose === "search";
 
   return (
-    <section aria-label="Сессии" className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-4 md:px-6">
-      <h2 className="text-sm font-medium">Сессии</h2>
+    <section aria-label="Сессии" className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-6 px-1 py-8 md:px-6 md:py-10">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <Badge variant="outline" className="w-fit gap-1.5"><FilmIcon />Ваша медиатека</Badge>
+          <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Сессии</h2>
+          <p className="text-sm text-muted-foreground">Идеи, исходники и готовые ролики — в одном месте.</p>
+        </div>
       {showSearch ? (
-        <InputGroup>
+        <InputGroup className="w-full bg-card sm:w-72">
           <InputGroupAddon>
             <SearchIcon />
           </InputGroupAddon>
           <InputGroupInput
             aria-label="Поиск по названиям"
+            placeholder="Найти сессию…"
             onChange={(event) => setQueryInput(event.target.value)}
             value={queryInput}
           />
@@ -227,32 +237,35 @@ export function SessionList({
           )}
         </InputGroup>
       ) : null}
+      </div>
+      <Separator />
 
       {searching ? (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="aspect-video w-full" />
+          <Skeleton className="aspect-video w-full" />
+          <Skeleton className="aspect-video w-full" />
         </div>
       ) : null}
 
       {!searching && items.length > 0 ? (
-        <ItemGroup>
+        <ItemGroup className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((item) => (
-            <Item className="flex-nowrap" key={item.id} role="listitem">
+            <Item className="group/session relative min-w-0 flex-col flex-nowrap items-stretch gap-0 overflow-hidden rounded-2xl bg-card p-0 ring-1 ring-border transition-shadow hover:shadow-lg hover:ring-primary/35" key={item.id} role="listitem">
               <Item
-                className="min-w-0 flex-1 flex-nowrap p-0"
+                className="min-w-0 max-w-full flex-1 flex-col flex-nowrap items-stretch gap-0 rounded-none p-0"
                 render={<a href={`/s/${item.id}`} />}
               >
-                <SessionPreview preview={item.preview} />
-                <ItemContent className="min-w-0">
-                  <ItemTitle className="line-clamp-none w-full min-w-0 truncate">
+                <SessionPreview preview={item.preview} className="w-full rounded-none bg-muted/60 text-foreground md:w-full [&_svg]:size-9" />
+                <ItemContent className="w-full min-w-0 gap-2 px-5 py-5 pr-14">
+                  <ItemTitle className="line-clamp-none block w-full min-w-0 truncate text-base">
                     {item.title ?? "Без названия"}
                   </ItemTitle>
                   <SessionWhen now={now} timeZone={timeZone} value={item.updatedAt} />
+                  <span className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-foreground">Продолжить<ArrowUpRightIcon className="size-3.5" /></span>
                 </ItemContent>
               </Item>
-              <ItemActions>
+              <ItemActions className="absolute right-3 bottom-5">
                 <DeleteSessionButton
                   title={item.title ?? "Без названия"}
                   onClick={() => {

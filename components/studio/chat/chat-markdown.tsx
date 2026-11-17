@@ -165,7 +165,7 @@ export function ChatMarkdown({
   return (
     <SandboxFileContext.Provider value={resolver}>
       <Streamdown
-        className="w-full min-w-0 text-sm leading-relaxed break-words"
+        className="w-full min-w-0 text-sm leading-7 break-words [&_h1]:tracking-tight [&_h2]:tracking-tight [&_h3]:tracking-tight [&_blockquote]:border-primary/40 [&_blockquote]:text-muted-foreground"
         components={components}
         rehypePlugins={rehypePlugins}
         remarkPlugins={remarkPlugins}
