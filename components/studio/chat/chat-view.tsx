@@ -306,7 +306,7 @@ export function ChatView({
       ) : null}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-card/60 px-4 py-3 md:px-8 md:py-4">
         <div className="flex min-w-0 items-center gap-3">
-          <EmptyMedia variant="icon" className="mb-0 hidden size-9 rounded-xl bg-primary/10 text-foreground sm:flex">
+          <EmptyMedia variant="icon" className="hidden sm:flex">
             <ClapperboardIcon />
           </EmptyMedia>
           <div className="flex min-w-0 flex-col gap-0.5">
@@ -354,7 +354,7 @@ export function ChatView({
           <MessageScrollerProvider autoScroll>
         <MessageScroller className="min-h-0 flex-1">
           <MessageScrollerViewport>
-            <MessageScrollerContent className="mx-auto w-full max-w-4xl gap-7 px-4 py-6 md:gap-9 md:px-10 md:py-10">
+            <MessageScrollerContent className="mx-auto w-full max-w-4xl px-4 py-6 md:px-10 md:py-10">
               {messages.length === 0 && !thinking ? (
                 <StudioWelcome title={emptyTitle} description={emptyDescription} />
               ) : null}

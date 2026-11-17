@@ -21,28 +21,28 @@ export function StudioWelcome({
   compact?: boolean;
 }) {
   return (
-    <Empty className={compact ? "items-start gap-4 border-0 p-0 text-left" : "gap-6 border-0 px-0 py-10 md:py-16"}>
-      <EmptyHeader className={compact ? "max-w-xl items-start gap-3" : "max-w-xl gap-4"}>
-        <EmptyMedia variant="icon" className="size-12 rounded-2xl bg-primary/10 text-foreground ring-1 ring-primary/15">
+    <Empty className={compact ? "items-start text-left" : undefined}>
+      <EmptyHeader className={compact ? "max-w-xl items-start" : "max-w-xl"}>
+        <EmptyMedia variant="icon">
           <ClapperboardIcon />
         </EmptyMedia>
-        <EmptyTitle className={compact ? "text-2xl leading-tight font-semibold tracking-tight md:text-3xl" : "text-3xl leading-tight font-semibold tracking-tight md:text-4xl"}>
+        <EmptyTitle>
           {title}
         </EmptyTitle>
-        <EmptyDescription className="max-w-lg text-sm leading-7">
+        <EmptyDescription className="max-w-lg">
           {description}
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent className={compact ? "max-w-none flex-row flex-wrap justify-start gap-2" : "max-w-none flex-row flex-wrap justify-center gap-2"}>
-        <Badge variant="outline" className="gap-2 rounded-full bg-card px-3 py-1.5">
+        <Badge variant="outline">
           <WandSparklesIcon data-icon="inline-start" />
           Идея и сценарий
         </Badge>
-        <Badge variant="outline" className="gap-2 rounded-full bg-card px-3 py-1.5">
+        <Badge variant="outline">
           <FilmIcon data-icon="inline-start" />
           Сцены и монтаж
         </Badge>
-        <Badge variant="outline" className="gap-2 rounded-full bg-card px-3 py-1.5">
+        <Badge variant="outline">
           <AudioLinesIcon data-icon="inline-start" />
           Голос и музыка
         </Badge>

@@ -40,8 +40,8 @@ export function AttachmentCard({ item, onRemove, onRetry }: AttachmentCardProps)
         : size;
 
   return (
-    <Attachment size="sm" state={item.state} className="rounded-xl bg-background shadow-sm">
-      <AttachmentMedia className="rounded-lg bg-primary/10 text-foreground" variant={isImageType(item.contentType) ? "image" : "icon"}>
+    <Attachment size="sm" state={item.state}>
+      <AttachmentMedia variant={isImageType(item.contentType) ? "image" : "icon"}>
         {item.previewUrl === undefined ? (
           <Icon />
         ) : (

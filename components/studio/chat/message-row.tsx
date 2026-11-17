@@ -171,7 +171,7 @@ function AssistantContent({
         }
         if (group.kind === "reasoning") {
           return (
-            <Trace key={group.id} className="rounded-xl border border-border/60 bg-muted/20 p-3 [&_[data-slot=trace-icon]]:text-foreground">
+            <Trace key={group.id}>
               <ReasoningRow running={group.running} text={group.text} />
             </Trace>
           );
@@ -179,7 +179,7 @@ function AssistantContent({
 
         if (group.kind === "tools") {
           return (
-            <Trace key={group.id} className="gap-3 rounded-2xl border border-border/70 bg-card p-3 shadow-sm [&_[data-slot=trace-icon]]:text-foreground [&_[data-status=error]_[data-slot=trace-icon]]:text-destructive [&_[data-slot=trace-collapsible-content-inner]]:border-primary/20 [&_[data-slot=trace-collapsible-trigger]]:py-1 [&_[data-slot=trace-line]]:min-h-6">
+            <Trace key={group.id}>
               {group.parts.map((part, index) => part.type === "authorization" ? (
                 <AuthorizationCard key={part.attemptId ?? `authorization-${index}`} part={part} allowHosts={authorizationAllowHosts} />
               ) : (
@@ -239,8 +239,8 @@ export function MessageRow({ message, data, files, appSessionId, onCopyPanelChan
         {message.role === "user" ? (
           <>
             {text.trim().length === 0 ? null : (
-              <Bubble align="end" variant="tinted" className="max-w-[92%] md:max-w-[85%]">
-                <BubbleContent className="rounded-2xl rounded-tr-md border-primary/10 px-4 py-3 whitespace-pre-wrap md:px-5 md:py-4">{text}</BubbleContent>
+              <Bubble align="end" variant="secondary">
+                <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
               </Bubble>
             )}
             <MessageAttachments parts={message.parts} />

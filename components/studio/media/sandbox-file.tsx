@@ -18,7 +18,7 @@ import {
   AttachmentTitle,
 } from "@/components/ui/attachment";
 import { ButtonLink } from "@/components/studio/button-link";
-import { Card, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatFileSize } from "@/lib/format-size";
 import type { MessageFileView } from "@/lib/media/types";
@@ -154,9 +154,9 @@ function MediaCard({
   children: ReactNode;
 }) {
   return (
-    <Card className="w-full max-w-xl gap-0 py-0">
-      {children}
-      <CardFooter className="justify-between gap-3 py-3">
+    <Card className="w-full max-w-xl">
+      <CardContent>{children}</CardContent>
+      <CardFooter className="justify-between gap-3">
         <div className="min-w-0">
           <span className="block truncate text-sm font-medium">{entry.name}</span>
           <Caption name={entry.name} text={label} />

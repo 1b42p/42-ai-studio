@@ -214,10 +214,10 @@ export function ChatComposer({
         type="file"
       />
 
-      <InputGroup className="overflow-hidden rounded-2xl border-border bg-card shadow-lg shadow-foreground/5 ring-1 ring-border/40 transition-shadow focus-within:shadow-primary/5 md:rounded-3xl">
+      <InputGroup>
         <InputGroupTextarea
           aria-label="Сообщение агенту"
-          className="max-h-40 min-h-20 px-4 pt-4 pb-2 text-base leading-relaxed md:min-h-24 md:px-5 md:pt-5"
+          className="max-h-40"
           disabled={inputDisabled}
           onChange={(event) => {
             draft.setValue(event.target.value);
@@ -242,14 +242,13 @@ export function ChatComposer({
           rows={1}
           value={text}
         />
-        <InputGroupAddon align="block-end" className="gap-2 px-3 pb-3 md:px-4 md:pb-4">
+        <InputGroupAddon align="block-end">
           <InputGroupButton
             aria-label="Прикрепить файлы"
             disabled={inputDisabled || attachments === undefined}
             onClick={() => fileInput.current?.click()}
             size="icon-sm"
             variant="ghost"
-            className="rounded-xl border border-border bg-background"
           >
             <PaperclipIcon />
           </InputGroupButton>
@@ -279,7 +278,6 @@ export function ChatComposer({
                 size="icon-sm"
                 type="submit"
                 variant="default"
-                className="size-9 rounded-xl shadow-sm"
               >
                 {sending ? <Spinner /> : <ArrowUpIcon />}
               </InputGroupButton>
@@ -348,7 +346,7 @@ export function ChatComposer({
         </Alert>
       ) : null}
       {hasFiles || attachments?.notice !== undefined ? (
-        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-card/60 p-2.5">
+        <div className="mt-3 flex flex-col gap-2">
           {attachments !== undefined && editableFiles.length > 0 ? (
             <AttachmentGroup>
               {editableFiles.map((item) => (

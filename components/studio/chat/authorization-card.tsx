@@ -51,8 +51,8 @@ export function AuthorizationCard({ part, allowHosts }: {
 
   const url = safeAuthorizationUrl(part.authorization?.url, allowHosts);
   return (
-    <Item variant="outline" className="min-w-0 rounded-2xl border-primary/20 bg-primary/5">
-      <ItemMedia variant="icon" className="border-primary/15 bg-background text-foreground"><KeyRoundIcon /></ItemMedia>
+    <Item variant="outline" className="min-w-0">
+      <ItemMedia variant="icon"><KeyRoundIcon /></ItemMedia>
       <ItemContent className="min-w-0 basis-0">
         <ItemTitle className="max-w-full truncate" title={part.displayName}>Нужен вход в «{part.displayName}»</ItemTitle>
         <ItemDescription className="line-clamp-none">
