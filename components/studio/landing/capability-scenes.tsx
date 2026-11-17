@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { ArrowDown, ArrowRight, ArrowUpRight, FileText, Maximize2, Pause, Play, RotateCcw, Scissors } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useBentoActivity } from "@/components/watermelon/bento-02";
 import { WaveformScrub } from "@/components/watermelon/waveform-scrub";
 import { cn } from "@/lib/utils";
@@ -223,46 +224,210 @@ export function DocumentScene() {
   );
 }
 
-/** Original vector frames, not screenshots or reused product examples. */
 function FilmFrame({ variant }: { variant: number }) {
   return (
-    <svg viewBox="0 0 180 112" fill="none" className="size-full" aria-hidden="true">
-      <path d="M0 90 44 47 78 72 118 23 180 68V112H0Z" className="fill-foreground/10" />
-      <circle cx={variant === 1 ? 58 : 132} cy="34" r={variant === 2 ? 28 : 19} className="fill-primary" />
-      {variant === 1 ? (
-        <><path d="m50 112 30-82h23l30 82" className="stroke-foreground" strokeWidth="3" /><path d="M0 98h180M0 103h180" className="stroke-foreground/30" /><path d="M88 38h5v10h-5z" className="fill-background" /></>
-      ) : (
-        <><path d={variant === 0 ? "M0 95Q40 55 80 90T180 72" : "M0 78Q45 110 88 72T180 84"} className="stroke-foreground" strokeWidth="2" /><path d="M22 112V68m-7 13 7-13 9 13" className="stroke-foreground/50" strokeWidth="2" /></>
-      )}
-    </svg>
+    <img src={`/studio-design/film-frame-v1-${variant + 1}.webp`} alt="" width={320} height={180} loading="lazy" className="size-full object-cover" />
   );
 }
 
 export function FilmScene() {
-  const { step, setStep, toggle, running, reduced } = useSceneSteps(3, 1100);
+  const { visible, reduced } = useBentoActivity();
+  const [selected, setSelected] = useState(1);
+  const [source, setSource] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [showVideo, setShowVideo] = useState(false);
+  const [error, setError] = useState(false);
+  const video = useRef<HTMLVideoElement>(null);
+  const playback = useRef({ start: 1.5, end: 3 });
+  const pending = useRef(false);
+  const id = useId();
+  const intervals = ["0–1,5 с", "1,5–3 с", "3–4,5 с"];
+
+  useEffect(() => {
+    if (!visible) {
+      pending.current = false;
+      video.current?.pause();
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!playing) return;
+    let frame = 0;
+    const advance = () => {
+      const element = video.current;
+      if (!element || element.paused) return;
+      if (element.currentTime >= playback.current.end) {
+        pending.current = false;
+        element.pause();
+        element.currentTime = playback.current.end - 1 / 24;
+        return;
+      }
+      frame = requestAnimationFrame(advance);
+    };
+    frame = requestAnimationFrame(advance);
+    return () => cancelAnimationFrame(frame);
+  }, [playing]);
+
+  // A changed preference stops existing motion, but never prevents explicit playback.
+  useEffect(() => {
+    if (reduced) {
+      pending.current = false;
+      video.current?.pause();
+    }
+  }, [reduced]);
+
+  useEffect(() => {
+    const element = video.current;
+    const pause = () => {
+      if (document.hidden) {
+        pending.current = false;
+        element?.pause();
+      }
+    };
+    document.addEventListener("visibilitychange", pause);
+    return () => {
+      pending.current = false;
+      element?.pause();
+      document.removeEventListener("visibilitychange", pause);
+    };
+  }, []);
+
+  function selectFragment(index: number) {
+    pending.current = false;
+    video.current?.pause();
+    setSelected(index);
+    setSource(false);
+    setShowVideo(false);
+    setError(false);
+    playback.current = { start: index * 1.5, end: (index + 1) * 1.5 };
+  }
+
+  function play(useSource: boolean) {
+    const element = video.current;
+    if (!element) return;
+    if (!element.paused && source === useSource) {
+      pending.current = false;
+      element.pause();
+      return;
+    }
+    element.pause();
+    setSource(useSource);
+    setError(false);
+    setShowVideo(false);
+    playback.current = useSource
+      ? { start: 0, end: 4.5 }
+      : { start: selected * 1.5, end: (selected + 1) * 1.5 };
+    pending.current = true;
+    // No src at all before a play gesture: preload="none" alone is only a hint.
+    if (!element.getAttribute("src") || element.error) {
+      element.src = "/studio-design/film-source-v1.mp4";
+      element.load();
+    } else {
+      beginPlayback();
+    }
+  }
+
+  function beginPlayback() {
+    const element = video.current;
+    if (!element || !pending.current || document.hidden) return;
+    element.currentTime = playback.current.start;
+    void element.play().catch((failure: unknown) => {
+      if (failure instanceof DOMException && failure.name === "AbortError") return;
+      pending.current = false;
+      setError(true);
+      setShowVideo(false);
+    });
+  }
+
   return (
-    <div className="flex min-h-[230px] flex-col justify-center gap-5 overflow-hidden pt-3">
-      <div className="flex items-center gap-2 px-6">
-        <Scissors aria-hidden="true" className="size-4 text-primary" />
-        <span className="text-xs text-muted-foreground">Выберите свой фрагмент</span>
+    <div className="@container/film flex min-h-[230px] flex-col gap-3 px-6 lg:px-7">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Button size="xs" variant="ghost" onClick={() => play(true)} aria-controls={id} aria-label={playing && source ? "Остановить исходный клип" : "Посмотреть исходный клип целиком"}>
+          {playing && source ? <Pause data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+          Исходник · 4,5 с
+        </Button>
+        <span className="text-[10px] text-muted-foreground">Съёмка с МКС</span>
       </div>
-      <div className="relative overflow-hidden border-y border-border bg-foreground/5 py-3">
-        <div aria-hidden="true" className="absolute inset-x-0 top-1 flex justify-around">{Array.from({ length: 16 }, (_, index) => <span key={index} className="h-1 w-2 rounded-[1px] bg-foreground/20" />)}</div>
-        <motion.div className="flex gap-2 px-6" animate={{ x: -step * 28 }} transition={{ duration: reduced ? 0 : 0.5 }}>
-          {[0, 1, 2, 0].map((frame, index) => (
-            <div key={index} className={cn("h-24 w-36 shrink-0 overflow-hidden rounded-md bg-background ring-1", index === step ? "ring-primary" : "ring-border")}>
-              <FilmFrame variant={frame} />
-            </div>
-          ))}
-        </motion.div>
-      </div>
-      <div className="flex items-center gap-2 px-6">
-        <Button size="icon-sm" variant="ghost" onClick={toggle} aria-label="Посмотреть последовательность кадров">{running ? <Pause /> : <Play />}</Button>
-        {[0, 1, 2].map((index) => (
-          <Button key={index} size="xs" variant={index === step ? "secondary" : "ghost"} onClick={() => setStep(index)} aria-label={`Выбрать кадр ${index + 1}`} aria-pressed={index === step}>0{index + 1}</Button>
+      <ToggleGroup
+        value={[String(selected)]}
+        onValueChange={(value) => { if (value.length) selectFragment(Number(value[0])); }}
+        aria-label="Выберите интервал исходного видео"
+        className="grid w-full grid-cols-3 gap-2"
+      >
+        {intervals.map((label, index) => (
+          <ToggleGroupItem
+            key={label}
+            value={String(index)}
+            aria-label={`Выбрать фрагмент ${index + 1}: ${label}`}
+            aria-controls={id}
+            className="h-auto min-w-0 flex-col gap-1.5 overflow-hidden rounded-md p-1 data-pressed:ring-2 data-pressed:ring-primary"
+          >
+            <span className="aspect-video w-full overflow-hidden rounded-sm"><FilmFrame variant={index} /></span>
+            <span className="font-mono text-[10px]">{label}</span>
+          </ToggleGroupItem>
         ))}
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">КАДРЫ → СЦЕНА</span>
+      </ToggleGroup>
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        <Scissors aria-hidden="true" className="size-3 text-primary" />
+        <span>Один фрагмент</span><ArrowDown aria-hidden="true" className="ml-auto size-3" /><span>В композицию</span>
       </div>
+      <Card id={id} size="sm" className="gap-0 py-0">
+        <CardContent className="relative flex h-40 flex-col overflow-hidden p-0 @min-[280px]/film:h-32 @min-[280px]/film:flex-row">
+          {!source && (
+            <div className="order-2 flex shrink-0 items-center justify-between gap-2 p-2 @min-[280px]/film:order-none @min-[280px]/film:w-2/5 @min-[280px]/film:flex-col @min-[280px]/film:items-start @min-[280px]/film:gap-3 @min-[280px]/film:p-3">
+              <span className="hidden font-mono text-[9px] text-muted-foreground @min-[280px]/film:inline">СЦЕНА 01</span>
+              <span className="font-heading text-xs leading-[0.95] font-semibold tracking-tight @min-[280px]/film:text-lg">НАША{" "}<br className="hidden @min-[280px]/film:block" />ПЛАНЕТА<span className="text-primary">.</span></span>
+              <span className="hidden text-[9px] text-muted-foreground @min-[280px]/film:inline">Взгляд с орбиты</span>
+            </div>
+          )}
+          <div className="relative order-1 min-h-0 min-w-0 flex-1 overflow-hidden @min-[280px]/film:order-none">
+            <div className="absolute inset-0"><FilmFrame variant={source ? 0 : selected} /></div>
+            <video
+              ref={video}
+              preload="none"
+              playsInline
+              muted
+              aria-label={source ? "Исходный клип: Земля с МКС" : `Фрагмент ${selected + 1} в композиции`}
+              className={cn("absolute inset-0 size-full object-cover", !showVideo && "invisible")}
+              onLoadedMetadata={beginPlayback}
+              onPlaying={() => {
+                if (!pending.current || document.hidden) {
+                  video.current?.pause();
+                  return;
+                }
+                setPlaying(true);
+                setShowVideo(true);
+              }}
+              onPause={() => setPlaying(false)}
+              onEnded={() => { pending.current = false; setPlaying(false); }}
+              onTimeUpdate={() => {
+                const element = video.current;
+                if (element && !element.paused && element.currentTime >= playback.current.end) {
+                  pending.current = false;
+                  element.pause();
+                  element.currentTime = Math.max(playback.current.start, playback.current.end - 1 / 24);
+                }
+              }}
+              onError={() => {
+                pending.current = false;
+                setPlaying(false);
+                setShowVideo(false);
+                setError(true);
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Button size="xs" variant="outline" onClick={() => play(false)} aria-controls={id} aria-label={playing && !source ? "Остановить выбранный фрагмент" : `Посмотреть фрагмент ${selected + 1} в композиции`}>
+          {playing && !source ? <Pause data-icon="inline-start" /> : <Play data-icon="inline-start" />}
+          Фрагмент 0{selected + 1} · 1,5 с
+        </Button>
+        <span className="text-[9px] text-muted-foreground">Видео: NASA Johnson</span>
+      </div>
+      <span role="status" className={error ? "text-xs text-destructive" : "sr-only"}>
+        {error ? "Не удалось загрузить видео. Нажмите ещё раз." : `В композиции выбран фрагмент ${selected + 1}: ${intervals[selected]}.`}
+      </span>
     </div>
   );
 }

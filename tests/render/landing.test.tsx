@@ -25,6 +25,11 @@ function scene() {
   return page.getByRole("img", { name: "Кинетическая скульптура из оранжевых кинолент", exact: true }).element();
 }
 
+function scenePoster() {
+  const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+  return scene().querySelector<HTMLImageElement>(`img[data-sculpture-theme="${theme}"]`)!;
+}
+
 function hasPaintedModel(canvas: HTMLCanvasElement) {
   const sample = document.createElement("canvas");
   sample.width = sample.height = 32;
@@ -42,7 +47,7 @@ function hasPaintedModel(canvas: HTMLCanvasElement) {
 async function expectSceneReady() {
   await expect.poll(() => scene().querySelector("canvas"), { timeout: 15000 }).not.toBeNull();
   try {
-    await expect.poll(() => getComputedStyle(scene().querySelector("img")!).opacity, { timeout: 15000 }).toBe("0");
+    await expect.poll(() => getComputedStyle(scenePoster()).opacity, { timeout: 15000 }).toBe("0");
   } catch (cause) {
     const canvas = scene().querySelector("canvas");
     throw new Error(`Сцена не показала первый кадр: ${JSON.stringify({
@@ -225,9 +230,10 @@ for (const [viewport, renderLanding] of [
     await expect.poll(() => bar.style.height).toBe("28px");
     await page.getByRole("button", { name: "Превратить таблицу в диаграмму" }).click();
     await expect.poll(() => bar.style.height).toBe(height);
-    await page.getByRole("button", { name: "Выбрать кадр 3", exact: true }).click();
-    await expect.element(page.getByRole("button", { name: "Выбрать кадр 3", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect.element(page.getByRole("button", { name: "Выбрать кадр 1", exact: true })).toHaveAttribute("aria-pressed", "false");
+    const thirdFragment = page.getByRole("button", { name: "Выбрать фрагмент 3: 3–4,5 с", exact: true });
+    await thirdFragment.click();
+    await expect.element(thirdFragment).toHaveAttribute("aria-pressed", "true");
+    await expect.element(page.getByRole("button", { name: "Выбрать фрагмент 1: 0–1,5 с", exact: true })).toHaveAttribute("aria-pressed", "false");
     const rhythm = page.getByRole("button", { name: "Показать ритм", exact: true });
     const music = rhythm.element().closest("[data-capability]")!;
     const cursor = music.querySelector<HTMLElement>(".absolute.inset-y-0.w-px")!;
@@ -235,16 +241,44 @@ for (const [viewport, renderLanding] of [
     await rhythm.click();
     await expect.poll(() => cursor.style.left).not.toBe(position);
     const enlarge = page.getByRole("button", { name: "Сделай заголовок крупнее", exact: true });
+    const editCard = enlarge.element().closest("[data-capability]")!;
     const preview = document.getElementById(enlarge.element().getAttribute("aria-controls")!)!;
     const text = preview.querySelector<HTMLElement>("p")!;
     const size = parseFloat(getComputedStyle(text).fontSize);
     await enlarge.click();
     await expect.poll(() => parseFloat(getComputedStyle(text).fontSize)).toBeGreaterThan(size);
-    await expect.element(page.getByRole("status", { name: "" })).toHaveTextContent("Заголовок в композиции увеличен.");
+    await expect.element(page.elementLocator(editCard).getByRole("status")).toHaveTextContent("Заголовок в композиции увеличен.");
     await page.getByRole("button", { name: "Вернуть как было", exact: true }).click();
     await expect.poll(() => parseFloat(getComputedStyle(text).fontSize)).toBe(size);
     expectNoHorizontalScroll();
   });
+
+  test(`${viewport}: видеоклип загружается по нажатию, выбранный интервал играет и останавливается вне экрана`, async () => {
+    await renderLanding(landing());
+    const video = document.querySelector<HTMLVideoElement>("#features video")!;
+    expect(video.getAttribute("src")).toBeNull();
+    expect(video.preload).toBe("none");
+    expect(video.autoplay).toBe(false);
+    expect(performance.getEntriesByType("resource").filter(({ name }) => /film-source-v1\.mp4/.test(name))).toEqual([]);
+
+    await page.getByRole("button", { name: "Выбрать фрагмент 3: 3–4,5 с", exact: true }).click();
+    expect(video.getAttribute("src")).toBeNull();
+    await expect.poll(() => video.getAttribute("aria-label")).toBe("Фрагмент 3 в композиции");
+    await page.getByRole("button", { name: "Посмотреть фрагмент 3 в композиции", exact: true }).click();
+    await expect.poll(() => video.currentTime).toBeGreaterThanOrEqual(3);
+    await expect.poll(() => video.paused).toBe(false);
+    await expect.poll(() => video.paused, { timeout: 5000 }).toBe(true);
+    expect(video.currentTime).toBeLessThanOrEqual(4.5);
+    expect(video.currentTime).toBeGreaterThan(4.3);
+    expect(video.error).toBeNull();
+
+    await page.getByRole("button", { name: "Посмотреть исходный клип целиком", exact: true }).click();
+    await expect.poll(() => video.paused).toBe(false);
+    expect(video.currentTime).toBeLessThan(1.5);
+    page.getByRole("heading", { level: 1 }).element().scrollIntoView({ behavior: "instant" });
+    await expect.poll(() => video.paused).toBe(true);
+    expectNoHorizontalScroll();
+  }, 15000);
 
   test(`${viewport}: настоящая озвучка загружается только по нажатию и ставится на паузу`, async () => {
     await renderLanding(landing());
@@ -457,7 +491,7 @@ for (const [viewport, renderLanding] of [
       if (viewport === "компьютер") {
         await expect.poll(() => context.mock.calls.some(([kind]) => String(kind) === "webgl2")).toBe(true);
       }
-      const poster = scene().querySelector("img")!;
+      const poster = scenePoster();
       await expect.poll(() => poster.naturalWidth).toBeGreaterThan(0);
       expect(getComputedStyle(poster).opacity).toBe("1");
       expect(scene().querySelector("canvas")).toBeNull();
@@ -496,6 +530,20 @@ test("серверная разметка содержит восемь возм
   expect(document.querySelector('img[src="/landing/kinetic-light.webp"]')).not.toBeNull();
   expect(document.querySelector("canvas")).toBeNull();
   expect(globalThis.fetch).not.toHaveBeenCalled();
+});
+
+test.each([768, 1024])("узкое окно %s px сохраняет читаемую композицию демонстраций", async (width) => {
+  await renderOnDesktop(landing());
+  await page.viewport(width, 1000);
+  const documents = document.querySelector<HTMLElement>('[data-capability="Презентации и статьи"]')!;
+  const film = document.querySelector<HTMLElement>('[data-capability="Видео по ссылкам"]')!;
+  const music = document.querySelector<HTMLElement>('[data-capability="Фоновая музыка"]')!;
+  expect(documents.getBoundingClientRect().width).toBeGreaterThan(300);
+  expect(film.getBoundingClientRect().top).toBeCloseTo(documents.getBoundingClientRect().top, 0);
+  expect(music.getBoundingClientRect().top).toBeGreaterThan(film.getBoundingClientRect().bottom);
+  const title = page.elementLocator(film).getByText("НАША ПЛАНЕТА.", { exact: true }).element() as HTMLElement;
+  expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1);
+  expectNoHorizontalScroll();
 });
 
 test.each(["light", "dark"] as const)("локальные ассеты kinetic/%s содержат скульптуру и совместимое HDR-окружение", async (theme) => {
@@ -549,7 +597,7 @@ test("3D-сцена не остаётся пустой после переход
   const original = await expectSceneReady();
   await page.viewport(390, 844);
   await expect.poll(() => scene().querySelector("canvas")).toBeNull();
-  expect(getComputedStyle(scene().querySelector("img")!).opacity).toBe("1");
+  expect(getComputedStyle(scenePoster()).opacity).toBe("1");
   await page.viewport(768, 800);
   const remounted = await expectSceneReady();
   expect(remounted).not.toBe(original);

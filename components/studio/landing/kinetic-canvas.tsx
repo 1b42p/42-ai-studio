@@ -1,11 +1,29 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { WebGLRenderer } from "three";
+import { DirectionalLight, WebGLRenderer } from "three";
 import { animateKineticSculpture, assembleKineticStage, kineticCamera } from "@/lib/landing/kinetic-sculpture.mjs";
+import { animateFinaleSculpture, assembleFinaleStage, finaleCamera } from "@/lib/landing/finale-sculpture.mjs";
 import { disposeKineticModel, kineticYield, loadKineticAssets } from "./kinetic-assets";
+import type { SculptureComposition } from "./sculpture-config";
+
+const compositions = {
+  hero: {
+    assemble: assembleKineticStage,
+    animate: animateKineticSculpture,
+    camera: { ...kineticCamera, aspect: 16 / 9 },
+    transparent: false,
+  },
+  finale: {
+    assemble: assembleFinaleStage,
+    animate: animateFinaleSculpture,
+    camera: finaleCamera,
+    transparent: true,
+  },
+} as const;
 
 interface KineticCanvasProps {
+  composition?: SculptureComposition;
   theme: "light" | "dark";
   active: boolean;
   reducedMotion: boolean;
@@ -14,6 +32,7 @@ interface KineticCanvasProps {
 }
 
 export default function KineticCanvas({
+  composition = "hero",
   theme,
   active,
   reducedMotion,
@@ -28,6 +47,7 @@ export default function KineticCanvas({
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
+    const definition = compositions[composition];
     const controller = new AbortController();
     const { signal } = controller;
     let renderer: WebGLRenderer | undefined;
@@ -40,8 +60,11 @@ export default function KineticCanvas({
     let elapsed = 0;
     let announced = false;
     const dispose = () => {
+      stage?.scene.traverse((object) => {
+        if (object instanceof DirectionalLight) object.shadow.dispose();
+      });
       if (assets) {
-        // assembleKineticStage reparents Light-Cut out of the loader's wrapper.
+        // Stage assembly reparents the sculpture out of the loader's wrapper.
         disposeKineticModel(assets.sculpture);
         assets.environment.dispose();
         assets = undefined;
@@ -82,7 +105,7 @@ export default function KineticCanvas({
       }
       previous = now;
       try {
-        animateKineticSculpture(stage.sculpture, elapsed);
+        definition.animate(stage.sculpture, elapsed);
         render();
       } catch {
         fail();
@@ -107,9 +130,9 @@ export default function KineticCanvas({
       renderer.setSize(width, height, false);
       const aspect = width / height;
       stage.camera.aspect = aspect;
-      // Match an object-cover crop of the native 16:9 poster.
+      // Match an object-cover crop of this composition's baked poster.
       stage.camera.fov = 2 * Math.atan(
-        Math.tan(kineticCamera.fov * Math.PI / 360) * Math.min(1, (16 / 9) / aspect),
+        Math.tan(definition.camera.fov * Math.PI / 360) * Math.min(1, definition.camera.aspect / aspect),
       ) * 180 / Math.PI;
       stage.camera.updateProjectionMatrix();
       start();
@@ -127,20 +150,21 @@ export default function KineticCanvas({
         await kineticYield(signal);
         renderer = new WebGLRenderer({
           canvas: element,
+          alpha: definition.transparent,
           antialias: true,
           preserveDrawingBuffer: true,
           powerPreference: "low-power",
         });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
         await kineticYield(signal);
-        const loaded = await loadKineticAssets(theme, signal);
+        const loaded = await loadKineticAssets(theme, signal, composition);
         if (stopped) {
           disposeKineticModel(loaded.model);
           loaded.environment.dispose();
           return;
         }
         assets = loaded;
-        stage = assembleKineticStage(renderer, theme, assets.sculpture, assets.environment);
+        stage = definition.assemble(renderer, theme, assets.sculpture, assets.environment);
         await kineticYield(signal);
         renderer.initTexture(assets.environment);
         await kineticYield(signal);
@@ -163,7 +187,7 @@ export default function KineticCanvas({
       element.removeEventListener("webglcontextlost", contextLost);
       document.removeEventListener("visibilitychange", start);
     };
-  }, [theme, onReady, onFailure]);
+  }, [composition, theme, onReady, onFailure]);
 
   useEffect(() => {
     wake.current?.();

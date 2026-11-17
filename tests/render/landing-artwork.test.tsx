@@ -5,7 +5,7 @@ import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cdp, page, userEvent } from "vitest/browser";
 
-import { CreationArtwork } from "@/components/studio/landing/creation-artwork";
+import { CreationArtwork, CreationFrame } from "@/components/studio/landing/creation-artwork";
 import { CreationStory } from "@/components/studio/landing/creation-story";
 
 import { landingSteps } from "./fixtures/landing";
@@ -13,6 +13,18 @@ import { expectNoHorizontalScroll, renderOnDesktop, renderOnPhone } from "./supp
 
 const protocol = () => cdp() as Pick<CDPSession, "send">;
 const storySteps = landingSteps.map(([title, description]) => ({ title, description }));
+
+test("акцент финального кадра не перекрывает заголовок", async () => {
+  await renderOnDesktop(<CreationFrame scene={2} />);
+  const frame = document.querySelector("svg")!;
+  const accent = frame.querySelector("circle")!.getBBox();
+  const titles = [...frame.querySelectorAll("text")].slice(0, 2);
+  expect(titles).toHaveLength(2);
+  for (const title of titles) {
+    const bounds = title.getBBox();
+    expect(bounds.y + bounds.height).toBeLessThan(accent.y);
+  }
+});
 
 beforeEach(async () => {
   await protocol().send("Emulation.setEmulatedMedia", {

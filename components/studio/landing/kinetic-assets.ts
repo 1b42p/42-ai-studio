@@ -12,6 +12,7 @@ import {
   RGBAFormat,
 } from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { sculptureCompositions, type SculptureComposition } from "./sculpture-config";
 
 export function disposeKineticModel(root: Object3D) {
   const geometries = new Set<BufferGeometry>();
@@ -60,9 +61,14 @@ async function loadEnvironment(theme: "light" | "dark", signal: AbortSignal) {
   return new Uint16Array(bytes, 16);
 }
 
-export async function loadKineticAssets(theme: "light" | "dark", signal: AbortSignal) {
+export async function loadKineticAssets(
+  theme: "light" | "dark",
+  signal: AbortSignal,
+  composition: SculptureComposition = "hero",
+) {
+  const definition = sculptureCompositions[composition];
   const [modelBytes, environmentPixels] = await Promise.all([
-    fetchAsset(`/landing/kinetic-${theme}.glb`, signal).then((response) => response.arrayBuffer()),
+    fetchAsset(`/landing/${definition.asset}-${theme}.glb`, signal).then((response) => response.arrayBuffer()),
     loadEnvironment(theme, signal),
   ]);
   signal.throwIfAborted();
@@ -71,10 +77,14 @@ export async function loadKineticAssets(theme: "light" | "dark", signal: AbortSi
   try {
     // GLTF parsing is not abortable. A late completion still owns resources to dispose.
     signal.throwIfAborted();
-    const sculpture = model.scene.getObjectByName("Light-Cut");
+    const sculpture = model.scene.getObjectByName(definition.root);
     // glTF transform nodes are Object3D, not necessarily Three.Group.
-    if (!(sculpture instanceof Object3D) || sculpture.children.length !== 4) {
-      throw new Error("Missing Light-Cut ribbon hierarchy.");
+    if (
+      !(sculpture instanceof Object3D) ||
+      sculpture.children.length === 0 ||
+      (composition === "hero" && sculpture.children.length !== 4)
+    ) {
+      throw new Error(`Missing ${definition.root} sculpture hierarchy.`);
     }
     environment = new DataTexture(environmentPixels, 768, 1024, RGBAFormat, HalfFloatType);
     environment.mapping = CubeUVReflectionMapping;

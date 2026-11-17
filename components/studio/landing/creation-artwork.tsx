@@ -40,8 +40,8 @@ export function CreationFrame({ scene = 0 }: { scene?: number }) {
         <>
           <rect x="366" y="-65" width="240" height="540" rx="120" transform="rotate(28 486 200)" className="fill-primary" />
           <path d="M390 0L190 400M460 0L260 400" className="stroke-foreground/20" />
-          <circle cx="424" cy="210" r="96" className="fill-foreground" />
-          <path d="M385 211H464M443 190L464 211L443 232" className="stroke-background" strokeWidth="6" />
+          <circle cx="449" cy="292" r="62" className="fill-foreground" />
+          <path d="M416 292H481M462 273L481 292L462 311" className="stroke-background" strokeWidth="5" />
           <text x="34" y="107" className="fill-foreground font-heading text-[86px] font-semibold tracking-[-5px]">И становится</text>
           <text x="34" y="192" className="fill-foreground font-heading text-[86px] font-semibold tracking-[-5px]">историей.</text>
           <text x="35" y="362" className="fill-muted-foreground text-[16px]">ВАША ИДЕЯ. В ДВИЖЕНИИ.</text>

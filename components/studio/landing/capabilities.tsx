@@ -24,13 +24,13 @@ export function LandingCapabilities(_props: { examples: readonly ExampleVideo[] 
       <Bento2Card {...landingFeatures[3]} className="md:col-span-7">
         <DataScene />
       </Bento2Card>
-      <Bento2Card {...landingFeatures[4]} className="md:col-span-4">
+      <Bento2Card {...landingFeatures[4]} className="md:col-span-6 xl:col-span-4">
         <DocumentScene />
       </Bento2Card>
-      <Bento2Card {...landingFeatures[5]} className="md:col-span-4" contentClassName="px-0" reverse>
+      <Bento2Card {...landingFeatures[5]} className="md:col-span-6 xl:col-span-4" contentClassName="px-0" reverse>
         <FilmScene />
       </Bento2Card>
-      <Bento2Card {...landingFeatures[6]} className="md:col-span-4">
+      <Bento2Card {...landingFeatures[6]} className="md:col-span-12 xl:col-span-4">
         <MusicScene />
       </Bento2Card>
       <Bento2Card {...landingFeatures[7]} className="md:col-span-12">

@@ -15,6 +15,7 @@ import { heroTitle, landingSteps } from "./content";
 import { LandingCapabilities } from "./capabilities";
 import { ExamplesSection } from "./examples-section";
 import { HeroScene } from "./hero-scene";
+import { FinaleScene } from "./finale-scene";
 
 export interface LandingPageProps {
   examples: readonly ExampleVideo[];
@@ -60,6 +61,7 @@ export function LandingPage({ examples }: LandingPageProps) {
           title="Попробуйте на своей задаче"
           description="Опишите ролик одним сообщением — первый результат уже в чате."
           action={<StudioLoginButton tone="contrast" />}
+          visual={<FinaleScene />}
         />
         <Footer3 brandName="42 AI Studio" copyright="© 42 AI Studio" />
       </PublicShell>

@@ -84,7 +84,13 @@ declare module "vitest/browser" {
 export default defineConfig({
   plugins: [tailwindcss()],
   optimizeDeps: {
-    include: ["react-dom/client", "react-dom/server", "@base-ui/react/tabs", "three/addons/loaders/GLTFLoader.js"],
+    include: [
+      "react-dom/client",
+      "react-dom/server",
+      "@base-ui/react/tabs",
+      "three/addons/loaders/GLTFLoader.js",
+      "three/addons/utils/BufferGeometryUtils.js",
+    ],
   },
   resolve: {
     alias: {
