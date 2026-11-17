@@ -101,7 +101,7 @@ for (const [label, render] of [["телефон", renderOnPhone], ["компью
     const name = "ДлинноеНазвание".repeat(40);
     const url = `https://${"host.".repeat(35)}example.com/authorize`;
     await render(<AuthorizationCard part={{ ...required, displayName: name, authorization: { url } }} />);
-    const link = page.getByRole("button", { name: "Войти", exact: true });
+    const link = page.getByRole("link", { name: "Войти", exact: true });
     await expect.element(link).toHaveAttribute("href", url);
     await expect.element(link).toHaveAttribute("target", "_blank");
     await expect.element(link).toHaveAttribute("rel", "noopener noreferrer");
@@ -119,7 +119,7 @@ for (const [label, render] of [["телефон", renderOnPhone], ["компью
     const url = "http://127.0.0.1:59211/authorize";
     await render(<AuthorizationCard allowHosts={["127.0.0.1:59211"]}
       part={{ ...required, authorization: { url } }} />);
-    await expect.element(page.getByRole("button", { name: "Войти", exact: true })).toHaveAttribute("href", url);
+    await expect.element(page.getByRole("link", { name: "Войти", exact: true })).toHaveAttribute("href", url);
     expectNoHorizontalScroll();
   });
 }

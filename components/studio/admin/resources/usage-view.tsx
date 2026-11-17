@@ -1,9 +1,9 @@
 "use client";
 
-import { XIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Item, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -42,15 +42,20 @@ export function UsageUserFilter({ user, onReset, resetHref }: {
   );
 }
 
-export function UsageView({ data, metric, onMetricChange, userHref }: {
+export function UsageView({ data, metric, displayedMetric, onMetricChange, userHref, onPageChange, loading, navigationDisabled, search }: {
   data: AdminUsageResponse;
   metric: "sandboxes" | "tokens";
+  displayedMetric: "sandboxes" | "tokens";
   onMetricChange: (metric: "sandboxes" | "tokens") => void;
   userHref: (userId: string) => string;
+  onPageChange: (page: number) => void;
+  loading: boolean;
+  navigationDisabled: boolean;
+  search: string;
 }) {
   const totals = data.totals;
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-4" aria-busy={loading}>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 [&>div:first-child]:col-span-2 sm:[&>div:first-child]:col-span-1">
         <ResourceCounter title="Время песочниц" value={formatHours(totals.sandboxSeconds)} emphasis
           description={totals.openSandboxSeconds > 0 ? <OpenTime seconds={totals.openSandboxSeconds} /> : undefined} />
@@ -60,7 +65,7 @@ export function UsageView({ data, metric, onMetricChange, userHref }: {
       <Card className="min-w-0 shadow-none">
         <CardHeader className="flex flex-wrap items-center justify-between gap-3 border-b border-border">
           <CardTitle>По дням</CardTitle>
-          <ToggleGroup aria-label="Показатель графика" value={[metric]} variant="outline"
+          <ToggleGroup aria-label="Показатель отчёта" value={[metric]} variant="outline"
             onValueChange={(values) => {
               if (values[0] === "sandboxes" || values[0] === "tokens") onMetricChange(values[0]);
             }}>
@@ -69,18 +74,39 @@ export function UsageView({ data, metric, onMetricChange, userHref }: {
           </ToggleGroup>
         </CardHeader>
         <CardContent className="min-w-0">
-          <UsageChart days={data.byDay} metric={metric} />
+          <UsageChart days={data.byDay} metric={displayedMetric} />
         </CardContent>
       </Card>
       <Card className="min-w-0 shadow-none">
-        <CardHeader className="border-b border-border"><CardTitle>По пользователям</CardTitle></CardHeader>
-        <CardContent className="min-w-0">
-          {data.byUser.length === 0 ? <ResourceEmpty>За этот период расхода нет</ResourceEmpty> : (
+        <CardHeader className="border-b border-border">
+          <CardTitle>По пользователям</CardTitle>
+          <CardDescription>
+            {displayedMetric === "tokens" ? "По убыванию суммы входных и выходных токенов" : "По убыванию времени песочниц, включая открытые интервалы"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="min-w-0" aria-busy={loading}>
+          {data.byUser.length === 0 ? <ResourceEmpty>
+            {search ? "Пользователи не найдены" : "За этот период расхода нет"}
+          </ResourceEmpty> : (
             <UsageUsers rows={data.byUser} userHref={userHref} />
           )}
-          {data.othersCount > 0 ? <p className="pt-3 text-sm text-muted-foreground">
-            Ещё пользователей: {new Intl.NumberFormat("ru-RU").format(data.othersCount)}
-          </p> : null}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-3" aria-label="Страницы пользователей">
+            <span role="status" className="text-sm text-muted-foreground">
+              Страница {data.usersPage.page} из {Math.max(1, Math.ceil(data.usersPage.total / data.usersPage.pageSize))}.
+              {" "}Пользователей: {new Intl.NumberFormat("ru-RU").format(data.usersPage.total)}
+            </span>
+            <div className="flex gap-2">
+              <Button variant="outline" disabled={navigationDisabled || data.usersPage.page <= 1}
+                onClick={() => onPageChange(data.usersPage.page - 1)}>
+                <ChevronLeftIcon data-icon="inline-start" />Назад
+              </Button>
+              <Button variant="outline"
+                disabled={navigationDisabled || data.usersPage.page * data.usersPage.pageSize >= data.usersPage.total}
+                onClick={() => onPageChange(data.usersPage.page + 1)}>
+                Далее<ChevronRightIcon data-icon="inline-end" />
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

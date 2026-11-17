@@ -9,6 +9,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useTextDraft, useUnsavedChangesWarning } from "@/components/studio/use-text-draft";
 import {
   CUSTOM_INSTRUCTIONS_LIMIT,
   customInstructionsLength,
@@ -17,17 +18,20 @@ import {
 
 import type { SettingsSectionProps } from "./section";
 import { SETTINGS_SAVE_ERROR, SettingsValidationError } from "./settings-error";
+import { useSettingsAccount } from "./account-context";
 
 export function InstructionsSection({ settings, save }: SettingsSectionProps) {
   const id = useId();
-  const [draft, setDraft] = useState<string | null>(null);
+  const { user } = useSettingsAccount();
+  const draft = useTextDraft(`studio:draft:v1:${user.id}:instructions`, settings.customInstructions);
   const [pending, setPending] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const value = draft ?? settings.customInstructions;
+  const value = draft.value;
   const length = customInstructionsLength(value);
   const tooLong = length > CUSTOM_INSTRUCTIONS_LIMIT;
   const unchanged = normalizeCustomInstructions(value) === settings.customInstructions;
+  useUnsavedChangesWarning(!unchanged && !draft.persisted);
 
   async function submit() {
     if (pending || tooLong || unchanged) return;
@@ -35,8 +39,8 @@ export function InstructionsSection({ settings, save }: SettingsSectionProps) {
     setError(null);
     setSaved(false);
     try {
-      await save({ customInstructions: normalizeCustomInstructions(value) });
-      setDraft(null);
+      const savedSettings = await save({ customInstructions: normalizeCustomInstructions(value) });
+      draft.clear(savedSettings.customInstructions);
       setSaved(true);
     } catch (cause) {
       setError(cause instanceof SettingsValidationError ? cause.message : SETTINGS_SAVE_ERROR);
@@ -58,7 +62,7 @@ export function InstructionsSection({ settings, save }: SettingsSectionProps) {
           placeholder="Опишите, как агенту работать с вами"
           className="min-h-48 min-w-0 resize-y rounded-xl bg-muted/25 p-4 leading-relaxed [field-sizing:fixed]"
           onChange={(event) => {
-            setDraft(event.target.value);
+            draft.setValue(event.target.value);
             setSaved(false);
             setError(null);
           }}

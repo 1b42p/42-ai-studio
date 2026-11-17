@@ -1,7 +1,7 @@
 import type { CDPSession } from "playwright";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cdp, commands, page, userEvent } from "vitest/browser";
-import { renderToString } from "react-dom/server";
+import { renderToReadableStream } from "react-dom/server";
 
 import { LandingPage } from "@/components/studio/landing/landing-page";
 import { ExamplesSection } from "@/components/studio/landing/examples-section";
@@ -518,8 +518,11 @@ for (const [viewport, renderLanding] of [
   }
 }
 
-test("серверная разметка содержит восемь возможностей и один корректный h1 до JavaScript", () => {
-  const document = new DOMParser().parseFromString(renderToString(landing()), "text/html");
+test("серверная разметка содержит восемь возможностей и один корректный h1 до JavaScript", async () => {
+  const stream = await renderToReadableStream(landing());
+  await stream.allReady;
+  const html = await new Response(stream).text();
+  const document = new DOMParser().parseFromString(html, "text/html");
   expect(document.querySelectorAll("h1")).toHaveLength(1);
   expect(document.querySelector("h1 p")).toBeNull();
   for (const [title, description] of landingFeatures) {
@@ -545,6 +548,28 @@ test.each([768, 1024])("узкое окно %s px сохраняет читае�
   expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1);
   expectNoHorizontalScroll();
 });
+
+test.each([768, 1280])("управление скульптурой hero доступно мышью при ширине %s px", async (width) => {
+  await protocol().send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
+  });
+  await renderOnDesktop(landing());
+  await page.viewport(width, 800);
+  const canvas = await expectSceneReady();
+  const pause = page.getByRole("button", { name: "Остановить анимацию: киноленты", exact: true });
+  pause.element().scrollIntoView({ block: "nearest", behavior: "instant" });
+  const bounds = pause.element().getBoundingClientRect();
+  expect(pause.element().contains(document.elementFromPoint(
+    bounds.x + bounds.width / 2,
+    bounds.y + bounds.height / 2,
+  ))).toBe(true);
+  await pause.click();
+  await expectStillScene(canvas);
+  const image = canvas.toDataURL();
+  await page.getByRole("button", { name: "Возобновить анимацию: киноленты", exact: true }).click();
+  await expect.poll(() => canvas.toDataURL() !== image).toBe(true);
+  expect(scene().querySelector("canvas")).toBe(canvas);
+}, 30000);
 
 test.each(["light", "dark"] as const)("локальные ассеты kinetic/%s содержат скульптуру и совместимое HDR-окружение", async (theme) => {
   const assets = await loadKineticAssets(theme, new AbortController().signal);

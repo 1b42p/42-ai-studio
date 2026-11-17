@@ -1,6 +1,7 @@
 "use client";
 
-import { motion } from "motion/react";
+import * as motion from "motion/react-m";
+import { MotionSurface } from "@/components/studio/motion-surface";
 
 import { useReducedMotionPreference } from "@/hooks/use-reduced-motion";
 
@@ -63,7 +64,7 @@ export function CreationArtwork({ stage, scene }: { stage: number; scene: number
   const transition = { duration: reduced ? 0 : 0.75, ease: [0.22, 1, 0.36, 1] as const };
 
   return (
-    <>
+    <MotionSurface>
       <svg viewBox="0 0 1200 590" className="hidden h-full w-full md:block" role="img" aria-label={["Идея и первые эскизы ролика", "Три разных кадра одной истории", "Графика, звуковая дорожка и субтитры", "Готовая анимационная композиция"][stage]}>
         <path d="M35 35H1165V555H35ZM0 295H1200M600 0V590" fill="none" className="stroke-foreground/10" strokeDasharray="4 7" />
         <motion.g initial={false} animate={{ opacity: stage === 0 ? 1 : 0, x: stage === 0 ? 0 : -70 }} transition={transition}>
@@ -133,6 +134,6 @@ export function CreationArtwork({ stage, scene }: { stage: number; scene: number
           </>
         )}
       </svg>
-    </>
+    </MotionSurface>
   );
 }

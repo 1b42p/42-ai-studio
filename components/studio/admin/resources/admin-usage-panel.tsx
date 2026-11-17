@@ -18,6 +18,13 @@ const PERIODS = [
   { value: "custom", label: "Свой период" },
 ] as const;
 
+interface SavedReport {
+  data: AdminUsageResponse;
+  metric: "sandboxes" | "tokens";
+  search: string;
+  key: string | null;
+}
+
 export interface AdminUsagePanelProps {
   initialUser?: AdminResourceUser | null;
   initialData?: AdminUsageResponse;
@@ -35,7 +42,13 @@ export function AdminUsagePanel({
   const [period, setPeriod] = useState(initialPeriod ? "custom" : "7");
   const [custom, setCustom] = useState(initialPeriod ?? { from: "", to: "" });
   const [metric, setMetric] = useState<"sandboxes" | "tokens">("sandboxes");
-  const [data, setData] = useState(initialData ?? null);
+  const [search, setSearch] = useState("");
+  const [q, setQ] = useState("");
+  const [pagination, setPagination] = useState({ key: "", page: 1 });
+  const [report, setReport] = useState<SavedReport | null>(
+    initialData ? { data: initialData, metric: "sandboxes", search: "", key: null } : null,
+  );
+  const data = report?.data;
   const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -47,6 +60,21 @@ export function AdminUsagePanel({
   const to = range?.to ?? "";
   const valid = validUsageDates(from, to);
   const userId = initialUser?.id;
+  const pageKey = JSON.stringify([from, to, zone, userId, q, metric]);
+  const page = pagination.key === pageKey ? pagination.page : 1;
+  const requestKey = JSON.stringify([pageKey, page]);
+  const stale = report !== null && (report.key !== requestKey || search.trim() !== q);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setQ(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    // Сохраняем только текущий контекст: возврат к прежнему поиску или
+    // периоду не должен восстанавливать когда-то открытую страницу.
+    setPagination((current) => current.key === pageKey ? current : { key: pageKey, page: 1 });
+  }, [pageKey]);
 
   useEffect(() => {
     if (!zone) return;
@@ -58,19 +86,23 @@ export function AdminUsagePanel({
     const controller = new AbortController();
     setLoading(true);
     setError(false);
-    void requestRef.current({ from, to, tz: zone, ...(userId ? { userId } : {}) }, controller.signal)
+    void requestRef.current({
+      from, to, tz: zone, ...(userId ? { userId } : {}),
+      ...(q ? { q } : {}), ...(metric === "tokens" ? { metric } : {}),
+      ...(page > 1 ? { page } : {}),
+    }, controller.signal)
       .then((result) => {
-        if (!controller.signal.aborted) setData(result);
+        if (!controller.signal.aborted) setReport({ data: result, metric, search: q, key: requestKey });
       }).catch(() => {
         if (!controller.signal.aborted) setError(true);
       }).finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [from, to, userId, valid, zone, retry]);
+  }, [from, to, userId, valid, zone, retry, q, metric, page, requestKey]);
 
   const href = (id?: string) => {
-    const query = new URLSearchParams({ from, to });
+    const query = new URLSearchParams({ from: data?.period.from ?? from, to: data?.period.to ?? to });
     if (id) query.set("userId", id);
     return `/admin/usage?${query}`;
   };
@@ -114,11 +146,33 @@ export function AdminUsagePanel({
                 </FieldDescription> : null}
               </FieldGroup>
             ) : null}
+            <Field>
+              <FieldLabel htmlFor="usage-user-search">Поиск в списке пользователей</FieldLabel>
+              <Input id="usage-user-search" type="search" maxLength={64} value={search}
+                placeholder="Имя, @username или Telegram ID"
+                onChange={(event) => setSearch(event.target.value)} />
+              <FieldDescription>Поиск меняет только список. Итоги и график сохраняют весь выбранный период.</FieldDescription>
+            </Field>
           </FieldGroup>
         </CardContent>
       </Card>
-      {loading ? <ResourceLoading /> : error ? <ResourceError onRetry={() => setRetry((value) => value + 1)} />
-        : data && valid ? <UsageView data={data} metric={metric} onMetricChange={setMetric} userHref={href} /> : null}
+      {error ? <ResourceError onRetry={() => setRetry((value) => value + 1)} /> : null}
+      {report && data ? (
+        <>
+          <FieldDescription role="status">
+            {loading || stale || error ? (
+              <>{loading ? "Обновляю отчёт. " : ""}Показаны предыдущие данные. </>
+            ) : null}
+            Период показанных данных: {data.period.from} — {data.period.to} ({data.period.tz}).
+            {" "}Показатель: {report.metric === "tokens" ? "токены" : "песочницы"}.
+            {report.search ? <> Поиск в показанном списке: «{report.search}».</> : null}
+          </FieldDescription>
+          <UsageView data={data} metric={metric} displayedMetric={report.metric}
+            onMetricChange={setMetric} userHref={href}
+            loading={loading} navigationDisabled={loading || stale || error || !valid} search={report.search}
+            onPageChange={(next) => setPagination({ key: pageKey, page: next })} />
+        </>
+      ) : loading ? <ResourceLoading /> : null}
     </section>
   );
 }

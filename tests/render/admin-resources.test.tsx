@@ -64,6 +64,7 @@ function usage(query: UsageQuery = { from: "2026-11-10", to: "2026-11-16", tz: T
       user, sandboxSeconds: 44_640, openSandboxSeconds: 4320, inputTokens: 1_200_000, outputTokens: 123_456,
     })),
     othersCount: 3,
+    usersPage: { page: query.page ?? 1, pageSize: 2, total: 5 },
   };
 }
 
@@ -148,7 +149,7 @@ for (const [label, render, phone] of [
     expect(text).toContain("123 456");
     expect(text).toContain("+ ещё идёт: 1,2 ч");
     expect(text).toContain("остановку самой Daytona по бездействию учитывает приблизительно");
-    expect(text).toContain("Ещё пользователей: 3");
+    expect(text).toContain("Страница 1 из 3. Пользователей: 5");
     expect(visibleElements("[data-slot=table]").length).toBe(phone ? 0 : 1);
     expect(visibleElements("[data-slot=item-group]").length).toBe(phone ? 1 : 0);
     // The whole phone item is a link; the desktop identity is a keyboard-accessible link.
@@ -195,7 +196,7 @@ for (const [label, render, phone] of [
     const request = vi.fn<(query: UsageQuery) => Promise<AdminUsageResponse>>()
       .mockRejectedValueOnce(new Error("offline"))
       .mockImplementation(async (query) => ({
-        ...usage(query), byUser: [], othersCount: 0,
+        ...usage(query), byUser: [], othersCount: 0, usersPage: { page: 1, pageSize: 100, total: 0 },
         totals: { sandboxSeconds: 0, openSandboxSeconds: 0, inputTokens: 0, outputTokens: 0 },
         byDay: usage(query).byDay.map((day) => ({ ...day, sandboxSeconds: 0, inputTokens: 0, outputTokens: 0 })),
       }));
@@ -210,6 +211,99 @@ for (const [label, render, phone] of [
       "Выберите от 1 до 366 дней; начало не должно быть позже конца.",
     );
     expect(request.mock.calls).toHaveLength(before);
+    expectNoHorizontalScroll();
+  });
+
+  test(`${label}: расход — страницы, поиск всей выборки и сброс страницы при смене показателя/периода`, async () => {
+    const request = vi.fn(async (query: UsageQuery) => ({
+      ...usage(query),
+      ...(query.q ? { byUser: [], usersPage: { page: 1, pageSize: 2, total: 0 } } : {}),
+    }));
+    await render(shell("usage", <AdminUsagePanel request={request} now={NOW} timeZone={TZ} />));
+    await expect.element(page.getByRole("button", { name: "Назад", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Далее", exact: true }).click();
+    await expect.poll(() => request.mock.calls.at(-1)?.[0].page).toBe(2);
+    await expect.element(page.getByRole("status").filter({ hasText: "Страница 2 из 3" })).toBeVisible();
+    await page.getByRole("button", { name: "Далее", exact: true }).click();
+    await expect.element(page.getByRole("status").filter({ hasText: "Страница 3 из 3" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Далее", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Назад", exact: true }).click();
+    await expect.poll(() => request.mock.calls.at(-1)?.[0].page).toBe(2);
+    await page.getByRole("button", { name: "Токены", exact: true }).click();
+    await expect.poll(() => request.mock.calls.at(-1)?.[0]).toMatchObject({ metric: "tokens" });
+    expect(request.mock.calls.at(-1)?.[0].page).toBeUndefined();
+    await expect.element(page.getByText("По убыванию суммы входных и выходных токенов")).toBeVisible();
+    await page.getByRole("button", { name: "Далее", exact: true }).click();
+    await expect.poll(() => request.mock.calls.at(-1)?.[0].page).toBe(2);
+    await page.getByLabelText("Поиск в списке пользователей").fill("Алиса");
+    await expect.element(page.getByText("Пользователи не найдены")).toBeVisible();
+    expect(request.mock.calls.at(-1)?.[0]).toEqual({
+      from: "2026-11-10", to: "2026-11-16", tz: TZ, q: "Алиса", metric: "tokens",
+    });
+    await expect.element(page.getByLabelText("Поиск в списке пользователей")).toHaveValue("Алиса");
+    await expect.element(page.getByText("Время песочниц", { exact: true }).first()).toBeVisible();
+    const beforeClear = request.mock.calls.length;
+    await page.getByLabelText("Поиск в списке пользователей").fill("");
+    await expect.element(page.getByRole("button", { name: "Далее", exact: true })).toBeEnabled();
+    await expect.element(page.getByRole("status").filter({ hasText: "Страница 1 из 3" })).toBeVisible();
+    expect(request.mock.calls.slice(beforeClear).map(([query]) => query)).toEqual([{
+      from: "2026-11-10", to: "2026-11-16", tz: TZ, metric: "tokens",
+    }]);
+    await page.getByRole("button", { name: "Далее", exact: true }).click();
+    await expect.poll(() => request.mock.calls.at(-1)?.[0].page).toBe(2);
+    await page.getByRole("button", { name: "Сегодня", exact: true }).click();
+    await expect.poll(() => request.mock.calls.at(-1)?.[0].from).toBe("2026-11-16");
+    expect(request.mock.calls.at(-1)?.[0].page).toBeUndefined();
+    expectNoHorizontalScroll();
+  });
+
+  test(`${label}: расход — ошибка сохраняет отчёт с его периодом, поиском и показателем`, async () => {
+    let fail = false;
+    const request = vi.fn(async (query: UsageQuery) => {
+      if (fail) throw new Error("offline");
+      return usage(query);
+    });
+    await render(shell("usage", <AdminUsagePanel request={request} now={NOW} timeZone={TZ} />));
+    const shownPeriod = page.getByRole("status").filter({ hasText: "Период показанных данных:" });
+    const shownText = () => shownPeriod.element().textContent?.replace(/\s+/g, " ").trim();
+    await expect.poll(shownText).toContain(
+      "Период показанных данных: 2026-11-10 — 2026-11-16 (Europe/Moscow).",
+    );
+    await page.getByLabelText("Поиск в списке пользователей").fill("Иван");
+    await expect.poll(shownText).toContain("Поиск в показанном списке: «Иван».");
+    fail = true;
+    await page.getByRole("button", { name: "Далее", exact: true }).click();
+    await expect.element(page.getByText("Не удалось загрузить данные")).toBeVisible();
+    await expect.poll(shownText).toContain("Показаны предыдущие данные.");
+    await expect.element(page.getByRole("status").filter({ hasText: "Страница 1 из 3" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Далее", exact: true })).toBeDisabled();
+    expect(visibleElements("[data-slot=table], [data-slot=item-group]").length).toBe(1);
+    fail = false;
+    await page.getByRole("button", { name: "Повторить", exact: true }).click();
+    await expect.element(page.getByRole("status").filter({ hasText: "Страница 2 из 3" })).toBeVisible();
+    await expect.element(page.getByText("Не удалось загрузить данные")).not.toBeInTheDocument();
+    fail = true;
+    await page.getByLabelText("Поиск в списке пользователей").fill("Алиса");
+    await expect.element(page.getByText("Не удалось загрузить данные")).toBeVisible();
+    await expect.element(page.getByRole("status").filter({ hasText: "Страница 2 из 3" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Назад", exact: true })).toBeDisabled();
+    await expect.element(page.getByRole("button", { name: "Далее", exact: true })).toBeDisabled();
+    await expect.element(page.getByText("Пользователи не найдены")).not.toBeInTheDocument();
+    await expect.poll(shownText).toContain("Поиск в показанном списке: «Иван».");
+    await expect.poll(shownText).not.toContain("Поиск в показанном списке: «Алиса»");
+    await page.getByRole("button", { name: "Токены", exact: true }).click();
+    await expect.poll(() => request.mock.calls.at(-1)?.[0].metric).toBe("tokens");
+    await expect.element(page.getByText("Не удалось загрузить данные")).toBeVisible();
+    await expect.element(page.getByText("По убыванию времени песочниц, включая открытые интервалы")).toBeVisible();
+    await expect.poll(shownText).toContain("Показатель: песочницы.");
+    await page.getByRole("button", { name: "Сегодня", exact: true }).click();
+    await expect.poll(() => request.mock.calls.at(-1)?.[0].from).toBe("2026-11-16");
+    await expect.element(page.getByText("Не удалось загрузить данные")).toBeVisible();
+    await expect.poll(shownText).toContain(
+      "Период показанных данных: 2026-11-10 — 2026-11-16 (Europe/Moscow).",
+    );
+    await expect.poll(shownText).toContain("Показаны предыдущие данные.");
+    await expect.poll(shownText).toContain("Поиск в показанном списке: «Иван».");
     expectNoHorizontalScroll();
   });
 }

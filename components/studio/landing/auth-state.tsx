@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Send } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/studio/button-link";
 import { cn } from "@/lib/utils";
 
 export type AuthState = "loading" | "anonymous" | "authenticated";
@@ -50,24 +50,18 @@ export function StudioLoginButton({
   const Icon = authenticated ? ArrowRight : Send;
 
   return (
-    <Button
+    <ButtonLink
       size={compact ? "default" : "xl"}
       variant={tone === "contrast" ? "secondary" : "default"}
       className={cn(
         "w-60 shrink-0",
         compact && "size-9 p-0 md:h-9 md:w-46 md:px-3",
       )}
-      nativeButton={false}
-      render={
-        <a
-          href={authenticated ? "/s" : "/api/auth/telegram/login?next=%2Fs"}
-          aria-label={title}
-          role="link"
-        />
-      }
+      href={authenticated ? "/s" : "/api/auth/telegram/login?next=%2Fs"}
+      aria-label={title}
     >
       <Icon data-icon="inline-start" aria-hidden="true" />
       <span className={cn(compact && "hidden md:inline")}>{title}</span>
-    </Button>
+    </ButtonLink>
   );
 }

@@ -3,7 +3,7 @@
 import { BrainIcon, CableIcon, PaletteIcon, Settings2Icon, SlidersHorizontalIcon, UserRoundIcon } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { FieldDescription, FieldGroup, FieldLegend, FieldSet } from "@/components/ui/field";
 
 import { SettingsAccountContext, type SettingsAccount } from "./account-context";
@@ -33,16 +33,18 @@ export function SettingsPage({ settings, save, user, onLogout }: SettingsPagePro
             {settingsSections.map(({ id, title }) => {
               const Icon = sectionIcons[id] ?? Settings2Icon;
               return (
-                <Button
+                <a
                   key={id}
-                  variant="ghost"
-                  size="sm"
-                  className="h-auto min-h-9 justify-start whitespace-normal text-left"
-                  render={<a href={`#section-${id}`} />}
+                  href={`#section-${id}`}
+                  className={buttonVariants({
+                    variant: "ghost",
+                    size: "sm",
+                    className: "h-auto min-h-9 justify-start whitespace-normal text-left",
+                  })}
                 >
                   <Icon data-icon="inline-start" />
                   {title}
-                </Button>
+                </a>
               );
             })}
           </nav>

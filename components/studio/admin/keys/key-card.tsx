@@ -17,6 +17,7 @@ export interface KeyCardProps {
   readonly item: AdminKeyView;
   readonly defaults: AdminKeyDefaults;
   readonly refreshing: boolean;
+  readonly refreshError?: boolean;
   readonly highlighted: boolean;
   readonly now: Date | null;
   readonly timeZone: string;
@@ -60,6 +61,7 @@ export function KeyCard({
   item,
   defaults,
   refreshing,
+  refreshError = false,
   highlighted,
   now,
   timeZone,
@@ -107,6 +109,22 @@ export function KeyCard({
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
+        {refreshError ? (
+          <Alert variant="destructive">
+            <AlertDescription className="flex flex-col items-start gap-2">
+              Не удалось обновить квоты. Показаны последние полученные данные.
+              <Button
+                aria-label={`Повторить обновление ${item.label}`}
+                onClick={onRefresh}
+                disabled={refreshing}
+                size="sm"
+                variant="outline"
+              >
+                Повторить
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {item.warning !== null ? (
           <Alert>
             <AlertDescription>{item.warning}</AlertDescription>

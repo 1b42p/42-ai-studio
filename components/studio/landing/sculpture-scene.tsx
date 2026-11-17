@@ -3,7 +3,9 @@
 import dynamic from "next/dynamic";
 import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useTheme } from "next-themes";
+import { PauseIcon, PlayIcon } from "lucide-react";
 import { AspectRatio } from "@/components/ui/aspect-ratio";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { sculptureCompositions, type SculptureComposition } from "./sculpture-config";
 
@@ -102,6 +104,7 @@ export function SculptureScene({
   const [seen, setSeen] = useState(false);
   const [painted, setPainted] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [paused, setPaused] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(true);
   const handleFailure = useCallback(() => setFailed(true), []);
   const canInitialize = !definition.defer || seen;
@@ -161,22 +164,36 @@ export function SculptureScene({
   const showModel = eligible && painted && canInitialize && !failed;
 
   return (
-    <AspectRatio
-      ref={root}
-      ratio={definition.width / definition.height}
-      className={cn("relative isolate w-full overflow-hidden", className)}
-      role="img"
-      aria-label={definition.label}
-    >
-      <SceneVisual
-        key={`${composition}-${showModel ? "model" : "poster"}-${dark ? "dark" : "light"}`}
-        composition={composition}
-        showModel={showModel}
-        dark={dark}
-        reducedMotion={reducedMotion}
-        visible={visible}
-        onFailure={handleFailure}
-      />
-    </AspectRatio>
+    <div className={cn("relative isolate w-full", className)}>
+      <AspectRatio
+        ref={root}
+        ratio={definition.width / definition.height}
+        className="size-full overflow-hidden"
+        role="img"
+        aria-label={definition.label}
+      >
+        <SceneVisual
+          key={`${composition}-${showModel ? "model" : "poster"}-${dark ? "dark" : "light"}`}
+          composition={composition}
+          showModel={showModel}
+          dark={dark}
+          reducedMotion={reducedMotion}
+          visible={visible && !paused}
+          onFailure={handleFailure}
+        />
+      </AspectRatio>
+      {showModel && !reducedMotion && (
+        <Button
+          size="icon"
+          variant="outline"
+          className="pointer-events-auto absolute right-4 bottom-4 rounded-full bg-background/85 text-foreground"
+          aria-label={`${paused ? "Возобновить" : "Остановить"} анимацию: ${composition === "hero" ? "киноленты" : "кинокадр"}`}
+          title={paused ? "Возобновить анимацию" : "Остановить анимацию"}
+          onClick={() => setPaused((value) => !value)}
+        >
+          {paused ? <PlayIcon /> : <PauseIcon />}
+        </Button>
+      )}
+    </div>
   );
 }

@@ -11,14 +11,13 @@ import { StudioAudioPlayer } from "@/components/studio/media/studio-audio-player
 import { useMediaRetry } from "@/components/studio/use-media-retry";
 import {
   Attachment,
-  AttachmentAction,
   AttachmentActions,
   AttachmentContent,
   AttachmentDescription,
   AttachmentMedia,
   AttachmentTitle,
 } from "@/components/ui/attachment";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/studio/button-link";
 import { Card, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatFileSize } from "@/lib/format-size";
@@ -69,15 +68,15 @@ function missingTitle(reason: MessageFileView["reason"]): string {
 
 function DownloadButton({ mediaId }: { mediaId: string }) {
   return (
-    <Button
-      nativeButton={false}
-      render={<a href={downloadUrl(mediaId)} />}
+    <ButtonLink
+      href={downloadUrl(mediaId)}
+      download
       size="sm"
       variant="outline"
     >
       <DownloadIcon data-icon="inline-start" />
       Скачать
-    </Button>
+    </ButtonLink>
   );
 }
 
@@ -129,13 +128,16 @@ function FileCard({ entry }: { entry: MessageFileView }) {
       </AttachmentContent>
       {entry.mediaId === null ? null : (
         <AttachmentActions>
-          <AttachmentAction
+          <ButtonLink
             aria-label="Скачать"
-            nativeButton={false}
-            render={<a href={downloadUrl(entry.mediaId)} />}
+            data-slot="attachment-action"
+            size="icon-xs"
+            variant="ghost"
+            href={downloadUrl(entry.mediaId)}
+            download
           >
             <DownloadIcon />
-          </AttachmentAction>
+          </ButtonLink>
         </AttachmentActions>
       )}
     </Attachment>
@@ -221,13 +223,16 @@ function AudioFile({ entry, label }: { entry: MessageFileView; label?: string })
       </AttachmentContent>
       {entry.mediaId === null ? null : (
         <AttachmentActions>
-          <AttachmentAction
+          <ButtonLink
             aria-label="Скачать"
-            nativeButton={false}
-            render={<a href={downloadUrl(entry.mediaId)} />}
+            data-slot="attachment-action"
+            size="icon-xs"
+            variant="ghost"
+            href={downloadUrl(entry.mediaId)}
+            download
           >
             <DownloadIcon />
-          </AttachmentAction>
+          </ButtonLink>
         </AttachmentActions>
       )}
     </Attachment>

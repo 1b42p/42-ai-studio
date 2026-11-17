@@ -1,8 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { motion } from "motion/react";
+import * as motion from "motion/react-m";
 import { useReducedMotionPreference } from "@/hooks/use-reduced-motion";
+import { MotionSurface } from "@/components/studio/motion-surface";
 
 interface Hero31Props {
   badge: ReactNode;
@@ -25,11 +26,12 @@ export default function Hero31({
   const titleWords = title.split(" ");
 
   return (
+    <MotionSurface>
     <section data-slot="cinema-hero" className="relative isolate w-full overflow-hidden bg-background">
       <div className="absolute inset-0 -z-10">{visual}</div>
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-linear-to-b from-background/95 via-background/95 via-55% to-background/0 md:bg-linear-to-r md:from-background md:via-background/50 md:via-50% md:to-background/0" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-20 bg-linear-to-t from-background to-background/0" />
-      <div className="mx-auto flex min-h-[740px] w-full max-w-7xl flex-col items-start px-5 pt-9 pb-12 md:min-h-[min(850px,calc(100svh-80px))] md:px-8 md:pt-14 md:pb-16">
+      <div className="pointer-events-none mx-auto flex min-h-[740px] w-full max-w-7xl flex-col items-start px-5 pt-9 pb-12 md:min-h-[min(850px,calc(100svh-80px))] md:px-8 md:pt-14 md:pb-16 [&>*]:pointer-events-auto">
         {badge}
         <h1 className="mt-7 max-w-6xl font-heading text-[clamp(2.5rem,5.15vw,5.25rem)] leading-[1.03] font-semibold tracking-[-0.055em] text-balance md:mt-9">
           {titleWords.map((word, index) => (
@@ -58,5 +60,6 @@ export default function Hero31({
         </motion.div>
       </div>
     </section>
+    </MotionSurface>
   );
 }

@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ArrowUpRight, RotateCcw } from "lucide-react";
-import { motion } from "motion/react";
+import * as motion from "motion/react-m";
+import { MotionSurface } from "@/components/studio/motion-surface";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ export function CreationStory({ steps }: { steps: readonly CreationStep[] }) {
   }
 
   return (
+    <MotionSurface>
     <Tabs value={stage} onValueChange={selectStage} className="gap-0">
       <Card variant="soft" className="gap-0 rounded-2xl py-0">
         <CardHeader className="flex flex-row items-start justify-between gap-4 px-5 pt-6 md:px-9 md:pt-8">
@@ -116,5 +118,6 @@ export function CreationStory({ steps }: { steps: readonly CreationStep[] }) {
         </TabsContent>
       ))}
     </Tabs>
+    </MotionSurface>
   );
 }

@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 import { Brand } from "@/components/studio/brand";
 import { PublicThemeToggle } from "@/components/studio/public-theme-toggle";
-import { Button } from "@/components/ui/button";
+import { SkipLink } from "@/components/studio/skip-link";
+import { ButtonLink } from "@/components/studio/button-link";
 import { cn } from "@/lib/utils";
 
 export interface PublicNavLink {
@@ -26,6 +27,7 @@ export function PublicShell({
 }: PublicShellProps) {
   return (
     <div className="flex min-h-svh flex-col">
+      <SkipLink />
       <header className={cn(
         "sticky top-0 z-30 shrink-0 bg-background/85 backdrop-blur-xl",
         fullWidth ? "border-b border-border/60 px-5 py-2 md:px-8" : "px-3 py-3 md:px-4",
@@ -40,15 +42,14 @@ export function PublicShell({
           {navLinks.length > 0 && (
             <nav aria-label="Главная" className="ml-auto hidden items-center md:flex">
               {navLinks.map((link) => (
-                <Button
+                <ButtonLink
                   key={link.href}
                   variant="ghost"
                   size="sm"
-                  nativeButton={false}
-                  render={<a href={link.href} role="link" />}
+                  href={link.href}
                 >
                   {link.title}
-                </Button>
+                </ButtonLink>
               ))}
             </nav>
           )}
@@ -59,6 +60,8 @@ export function PublicShell({
         </div>
       </header>
       <main
+        id="studio-content"
+        tabIndex={-1}
         className={cn(
           "flex min-w-0 w-full flex-1 flex-col",
           !fullWidth && "items-center justify-center px-4 py-12",

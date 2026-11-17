@@ -1,7 +1,7 @@
 "use client";
 
 import type { UserContent } from "ai";
-import { useEveAgent } from "eve/react";
+import { useStudioAgent } from "./use-studio-agent";
 import { useRef, useState } from "react";
 
 import { isBusyStatus } from "@/components/studio/chat/chat-status";
@@ -46,8 +46,9 @@ export function NewChat({ initialPage, initialQuery, initialError = false, autho
   const sessionCreation = useRef<Promise<string> | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [startError, setStartError] = useState<Error>();
+  const messageGeneration = useRef(0);
 
-  const agent = useEveAgent({
+  const agent = useStudioAgent({
     headers: (): Record<string, string> => {
       const id = appSessionId.current;
       return id === null ? {} : { "x-studio-session-id": id };
@@ -66,17 +67,21 @@ export function NewChat({ initialPage, initialQuery, initialError = false, autho
 
     setStartError(undefined);
     const creation = (async (): Promise<string> => {
-      const response = await fetch("/api/sessions", { method: "POST" });
-      if (!response.ok) {
+      let response: Response;
+      try {
+        response = await fetch("/api/sessions", { method: "POST" });
+        if (!response.ok) throw new Error("Session creation failed");
+        const body = (await response.json()) as { id?: unknown };
+        if (typeof body.id !== "string" || body.id.length === 0) throw new Error("Missing session id");
+        appSessionId.current = body.id;
+        setSessionId(body.id);
+        replaceSessionUrl(body.id);
+        return body.id;
+      } catch {
         const error = new Error("Не удалось создать сессию. Попробуйте ещё раз.");
         setStartError(error);
         throw error;
       }
-      const body = (await response.json()) as { id: string };
-      appSessionId.current = body.id;
-      setSessionId(body.id);
-      replaceSessionUrl(body.id);
-      return body.id;
     })();
 
     sessionCreation.current = creation;
@@ -88,7 +93,9 @@ export function NewChat({ initialPage, initialQuery, initialError = false, autho
   };
 
   const handleSend = async (content: string | UserContent) => {
+    const generation = messageGeneration.current;
     await ensureSession();
+    if (messageGeneration.current !== generation) throw new Error("Отправка остановлена.");
     const busy = isBusyStatus(agent.status);
     await agent.send(content, busy || Array.isArray(content) ? { turnPolicy: "steer" } : undefined);
   };
@@ -101,6 +108,10 @@ export function NewChat({ initialPage, initialQuery, initialError = false, autho
       ensureSession={ensureSession}
       errorOverride={startError}
       onSend={handleSend}
+      onCancel={async () => {
+        messageGeneration.current += 1;
+        await agent.cancel();
+      }}
       sessions={
         <SessionList
           initialError={initialError}

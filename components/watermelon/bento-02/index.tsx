@@ -6,6 +6,7 @@ import { MotionConfig, useInView } from "motion/react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { useReducedMotionPreference } from "@/hooks/use-reduced-motion";
+import { MotionSurface } from "@/components/studio/motion-surface";
 
 const Activity = createContext({ active: false, visible: false, reduced: true });
 const PageVisibility = createContext(true);
@@ -32,6 +33,7 @@ export default function Bento2({ children, className }: { children?: ReactNode; 
   }, []);
 
   return (
+    <MotionSurface>
     <MotionConfig reducedMotion="never">
       <MotionPreference.Provider value={reduced}>
         <PageVisibility.Provider value={pageVisible}>
@@ -41,6 +43,7 @@ export default function Bento2({ children, className }: { children?: ReactNode; 
         </PageVisibility.Provider>
       </MotionPreference.Provider>
     </MotionConfig>
+    </MotionSurface>
   );
 }
 

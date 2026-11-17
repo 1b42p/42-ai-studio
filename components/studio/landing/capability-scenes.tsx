@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { motion } from "motion/react";
+import * as motion from "motion/react-m";
 import { ArrowDown, ArrowRight, ArrowUpRight, FileText, Maximize2, Pause, Play, RotateCcw, Scissors } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";

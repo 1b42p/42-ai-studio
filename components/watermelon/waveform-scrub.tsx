@@ -113,6 +113,7 @@ export function WaveformScrub({
         </div>
         <span id={label} className="sr-only">Позиция воспроизведения озвучки</span>
         <Slider
+          thumbAlignment="center"
           value={[currentTime]}
           min={0}
           max={length}

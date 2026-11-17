@@ -242,7 +242,7 @@ export function AdminUsersPanel({
         </div>
       ) : null}
 
-      {!searching && status !== "error" && items.length > 0 ? (
+      {!searching && items.length > 0 ? (
         <UsersList items={items} now={now} onAction={actions.open} timeZone={timeZone} />
       ) : null}
 
@@ -292,7 +292,7 @@ export function AdminUsersPanel({
       ) : null}
 
       {status === "loading" && purpose === "more" ? <Spinner /> : null}
-      {nextCursor !== null && !(status === "loading" && purpose === "more") ? (
+      {nextCursor !== null && status !== "error" && !(status === "loading" && purpose === "more") ? (
         <Button onClick={loadMore} type="button" variant="outline">
           <ChevronDownIcon data-icon="inline-start" />
           Показать ещё

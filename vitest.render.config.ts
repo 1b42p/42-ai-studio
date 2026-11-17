@@ -87,6 +87,7 @@ export default defineConfig({
     include: [
       "react-dom/client",
       "react-dom/server",
+      "motion/react-m",
       "@base-ui/react/tabs",
       "three/addons/loaders/GLTFLoader.js",
       "three/addons/utils/BufferGeometryUtils.js",

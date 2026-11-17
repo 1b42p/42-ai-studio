@@ -55,4 +55,5 @@ export interface AdminUsageResponse {
     outputTokens: number;
   }[];
   othersCount: number;
+  usersPage: { page: number; pageSize: number; total: number };
 }

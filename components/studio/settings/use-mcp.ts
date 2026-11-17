@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { McpCheck, McpServerView, McpState } from "./mcp-context";
 
 async function api(path: string, init?: RequestInit) {
@@ -15,18 +15,39 @@ async function api(path: string, init?: RequestInit) {
 export function useMcp(initialServers: McpServerView[]): McpState {
   const [servers, setServers] = useState(initialServers);
   const [checks, setChecks] = useState<Record<string, McpCheck>>({});
-  const check = async (id: string) => {
-    try {
-      const result = await api(`/api/mcp-servers/${id}/check`, { method: "POST" });
-      setChecks((current) => ({ ...current, [id]: result }));
-    } catch (error) {
-      setChecks((current) => ({ ...current, [id]: {
-        ok: false, reason: "request", message: error instanceof Error ? error.message : "Не удалось проверить сервер.",
-      } }));
-    }
+  const [checking, setChecking] = useState<Record<string, boolean>>({});
+  const pendingChecks = useRef(new Map<string, Promise<void>>());
+  const check = (id: string): Promise<void> => {
+    const existing = pendingChecks.current.get(id);
+    if (existing) return existing;
+    setChecking((current) => ({ ...current, [id]: true }));
+    setChecks((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    const operation = (async () => {
+      try {
+        const result: McpCheck = await api(`/api/mcp-servers/${id}/check`, { method: "POST" });
+        setChecks((current) => ({ ...current, [id]: result }));
+      } catch {
+        setChecks((current) => ({ ...current, [id]: {
+          ok: false, reason: "request", message: "Не удалось проверить сервер. Проверьте соединение и попробуйте ещё раз.",
+        } }));
+      } finally {
+        pendingChecks.current.delete(id);
+        setChecking((current) => {
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
+      }
+    })();
+    pendingChecks.current.set(id, operation);
+    return operation;
   };
   return {
-    servers, checks, check,
+    servers, checks, checking, check,
     async add(input) {
       const server: McpServerView = await api("/api/mcp-servers", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input),

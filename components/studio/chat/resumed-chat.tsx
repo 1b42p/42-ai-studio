@@ -1,13 +1,13 @@
 "use client";
 
 import type { MessageStreamEvent } from "eve/client";
-import { useEveAgent } from "eve/react";
+import { useStudioAgent } from "./use-studio-agent";
 import { useEffect, useState } from "react";
 
 import { ChatFrame } from "@/components/studio/chat/chat-frame";
 import { ChatPanel } from "@/components/studio/chat/chat-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/studio/button-link";
 import { Spinner } from "@/components/ui/spinner";
 import { sleep } from "@/lib/sleep";
 
@@ -49,7 +49,7 @@ function ChatWithSession({
   initialTitle: string | null;
   authorizationAllowHosts?: readonly string[];
 }) {
-  const agent = useEveAgent({
+  const agent = useStudioAgent({
     headers: () => ({ "x-studio-session-id": appSessionId }),
     followSubagents: true,
   });
@@ -78,7 +78,7 @@ function ResumedChatSession({
   initialTitle: string | null;
   authorizationAllowHosts?: readonly string[];
 }) {
-  const agent = useEveAgent({
+  const agent = useStudioAgent({
     headers: () => ({ "x-studio-session-id": appSessionId }),
     initialEvents,
     initialSession: { sessionId: eveSessionId, streamIndex: initialEvents.length },
@@ -113,15 +113,14 @@ function LoadError({ text }: { text: string }) {
         <AlertTitle>Не удалось открыть беседу</AlertTitle>
         <AlertDescription>
           {text}{" "}
-          <Button
+          <ButtonLink
             className="h-auto p-0 align-baseline"
-            nativeButton={false}
-            render={<a href="/s" />}
+            href="/s"
             size="sm"
             variant="link"
           >
             Начать новую сессию
-          </Button>
+          </ButtonLink>
         </AlertDescription>
       </Alert>
     </div>

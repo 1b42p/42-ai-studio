@@ -141,9 +141,7 @@ test("меню действий: обычный пользователь, опе
   await page.getByRole("button", { name: "Действия для Главный оператор" }).click();
   const operatorBlock = page.getByRole("menuitem", { name: "Заблокировать" });
   await expect.element(operatorBlock).toHaveAttribute("aria-disabled", "true");
-  expect(
-    document.querySelector(`[title="${OPERATOR_HINT}"]`),
-  ).not.toBeNull();
+  await expect.element(page.getByText(OPERATOR_HINT)).toBeVisible();
   await userEvent.keyboard("{Escape}");
 
   await page.getByRole("button", { name: "Действия для Удаляемый человек" }).click();

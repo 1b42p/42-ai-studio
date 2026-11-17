@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { ArrowUpRightIcon, PlusIcon, SparklesIcon } from "lucide-react";
 
 import { Brand } from "@/components/studio/brand";
-import { Button } from "@/components/ui/button";
+import { SkipLink } from "@/components/studio/skip-link";
+import { ButtonLink } from "@/components/studio/button-link";
 import { Separator } from "@/components/ui/separator";
 import { ThemeToggle } from "@/components/studio/theme-toggle";
 import { navIcons, type NavItem } from "@/components/studio/nav";
@@ -53,6 +54,7 @@ export function AppShell({ navItems, pathname, userSlot, children }: AppShellPro
 
   return (
     <SidebarProvider className="bg-sidebar [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
+      <SkipLink />
       <Sidebar className="border-sidebar-border">
         <SidebarHeader className="gap-6 px-5 pb-6 pt-7 [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
           <SidebarMenu>
@@ -62,10 +64,10 @@ export function AppShell({ navItems, pathname, userSlot, children }: AppShellPro
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
-          <Button render={<a href="/s" />} className="w-full justify-between" size="lg">
+          <ButtonLink href="/s" className="w-full justify-between" size="lg">
             <span className="flex items-center gap-2"><PlusIcon data-icon="inline-start" />Новый ролик</span>
             <ArrowUpRightIcon data-icon="inline-end" />
-          </Button>
+          </ButtonLink>
         </SidebarHeader>
         <SidebarContent className="gap-6 px-3 [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
           {groups.map((group) => (
@@ -116,7 +118,7 @@ export function AppShell({ navItems, pathname, userSlot, children }: AppShellPro
           <SidebarTrigger />
           <Brand />
         </header>
-        <div className="flex min-w-0 flex-1 flex-col p-3 md:p-6 lg:p-8">{children}</div>
+        <div id="studio-content" tabIndex={-1} className="flex min-w-0 flex-1 flex-col p-3 md:p-6 lg:p-8">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );

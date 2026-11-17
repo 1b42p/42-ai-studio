@@ -313,3 +313,19 @@ test("настоящая потеря WebGL-контекста возвраща�
   await frames(12);
   expect(diagnostics).toEqual([]);
 }, 30000);
+
+test("видимое движение можно остановить и продолжить без перезагрузки сцены", async () => {
+  const draws = countDraws();
+  await protocol().send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
+  });
+  await renderOnDesktop(focusedFinale());
+  const canvas = await ready();
+  await page.getByRole("button", { name: "Остановить анимацию: кинокадр", exact: true }).click();
+  await expectStopped(canvas, draws);
+  await page.getByRole("button", { name: "Возобновить анимацию: кинокадр", exact: true }).click();
+  const stopped = draws(canvas);
+  await expect.poll(() => draws(canvas)).toBeGreaterThan(stopped + 2);
+  expect(finale().querySelector("canvas")).toBe(canvas);
+  expectComposition(canvas);
+}, 30000);

@@ -1,4 +1,4 @@
-import { CreationStory } from "@/components/studio/landing/creation-story";
+import { LandingCreationStory } from "@/components/studio/landing/interactive-sections";
 
 interface WorkflowStep {
   title: string;
@@ -12,7 +12,7 @@ export default function Features3({ steps }: { steps: readonly WorkflowStep[] })
         <h2 id="how-title" className="font-heading text-4xl font-semibold tracking-tighter md:text-5xl">
           Как это работает
         </h2>
-        <CreationStory steps={steps} />
+        <LandingCreationStory steps={steps} />
       </div>
     </section>
   );

@@ -25,7 +25,7 @@ import { DeleteSessionButton } from "@/components/studio/sessions/delete-session
 import { DeleteSessionDialog } from "@/components/studio/sessions/delete-session-dialog";
 import type { SessionDeletionController } from "@/components/studio/sessions/use-session-deletion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Empty,
   EmptyHeader,
@@ -322,10 +322,10 @@ export function ChatView({
               title={title}
             />
           ) : null}
-          <Button nativeButton={false} size="sm" variant="outline" render={<a href="/s" />}>
+          <a href="/s" className={buttonVariants({ size: "sm", variant: "outline" })}>
             <PlusIcon data-icon="inline-start" />
             Новая сессия
-          </Button>
+          </a>
         </ItemActions>
       </header>
       {sessionDeletion ? (
@@ -411,30 +411,6 @@ export function ChatView({
                   )),
                 )}
 
-              {errorNotice === null || errorNotice === undefined ? null : (
-                <Alert variant="destructive">
-                  <AlertCircleIcon />
-                  <AlertTitle>{errorNotice.title}</AlertTitle>
-                  <AlertDescription>
-                    {errorNotice.description}
-                    {errorNotice.href === undefined ? null : (
-                      <>
-                        {" "}
-                        <Button
-                          className="h-auto p-0 align-baseline"
-                          nativeButton={false}
-                          render={<a href={errorNotice.href} />}
-                          size="sm"
-                          variant="link"
-                        >
-                          {errorNotice.href === "/login" ? "Войти" : "Новая сессия"}
-                        </Button>
-                      </>
-                    )}
-                  </AlertDescription>
-                </Alert>
-              )}
-
             </MessageScrollerContent>
           </MessageScrollerViewport>
           <MessageScrollerButton />
@@ -450,6 +426,20 @@ export function ChatView({
         )}
       >
         <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 md:px-2">
+          {errorNotice ? (
+            <Alert variant="destructive">
+              <AlertCircleIcon />
+              <AlertTitle>{errorNotice.title}</AlertTitle>
+              <AlertDescription>
+                {errorNotice.description}
+                {errorNotice.href ? (
+                  <a href={errorNotice.href} className={buttonVariants({ variant: "link", size: "sm" })}>
+                    {errorNotice.href === "/login" ? "Войти" : "Новая сессия"}
+                  </a>
+                ) : null}
+              </AlertDescription>
+            </Alert>
+          ) : null}
           {showSessions ? (
             <div className="px-1 pb-3 md:pb-5">
               <StudioWelcome compact />
@@ -464,14 +454,16 @@ export function ChatView({
               <span className="text-sm text-muted-foreground">
                 {expired ? "История сохранена, но продолжить сессию нельзя" : "Сессия завершена"}
               </span>
-              <Button nativeButton={false} size="sm" variant="outline" render={<a href="/s" />}>
+              <a href="/s" className={buttonVariants({ size: "sm", variant: "outline" })}>
                 Новая сессия
-              </Button>
+              </a>
             </div>
           ) : (
             <ChatComposer
+              appSessionId={appSessionId}
               attachments={attachments}
               disabled={disabled || responseBlocked}
+              hasExternalError={errorNotice != null}
               placeholder={responsePlaceholder}
               onCancel={onCancel}
               onSend={async (content) => {

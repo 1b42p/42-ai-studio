@@ -2,7 +2,7 @@ import { ArrowDown } from "lucide-react";
 
 import { PublicShell, type PublicNavLink } from "@/components/studio/public-shell";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/studio/button-link";
 import { Cta1 } from "@/components/ui/cta-1";
 import Features3 from "@/components/ui/feature-3";
 import { Footer3 } from "@/components/ui/footer-3";
@@ -12,7 +12,7 @@ import type { ExampleVideo } from "@/lib/examples";
 
 import { AuthStateProvider, StudioLoginButton } from "./auth-state";
 import { heroTitle, landingSteps } from "./content";
-import { LandingCapabilities } from "./capabilities";
+import { LandingInteractiveCapabilities } from "./interactive-sections";
 import { ExamplesSection } from "./examples-section";
 import { HeroScene } from "./hero-scene";
 import { FinaleScene } from "./finale-scene";
@@ -43,10 +43,10 @@ export function LandingPage({ examples }: LandingPageProps) {
           actions={<>
             <StudioLoginButton />
             {examples.length > 0 && (
-              <Button variant="secondary" size="xl" nativeButton={false} render={<a href="#examples" role="link" />}>
+              <ButtonLink variant="secondary" size="xl" href="#examples">
                 Смотреть примеры
                 <ArrowDown data-icon="inline-end" aria-hidden="true" />
-              </Button>
+              </ButtonLink>
             )}
           </>}
         />
@@ -54,7 +54,7 @@ export function LandingPage({ examples }: LandingPageProps) {
         <Features3 steps={landingSteps} />
         <section id="features" aria-labelledby="features-title" className="mx-auto flex w-full max-w-7xl scroll-mt-24 flex-col gap-10 px-5 py-16 md:gap-14 md:px-8 md:py-24">
           <h2 id="features-title" className="font-heading text-4xl font-semibold tracking-tighter md:text-5xl">Возможности</h2>
-          <LandingCapabilities examples={examples} />
+          <LandingInteractiveCapabilities examples={examples} />
         </section>
         <Separator />
         <Cta1

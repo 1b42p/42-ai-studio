@@ -22,6 +22,7 @@ const user: PublicUser = {
 
 beforeEach(async () => {
   localStorage.clear();
+  sessionStorage.clear();
   document.documentElement.classList.remove("light", "dark");
   await commands.emulateColorScheme("light");
 });
