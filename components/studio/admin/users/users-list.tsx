@@ -1,6 +1,7 @@
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Item,
   ItemActions,
@@ -35,7 +36,7 @@ export interface UsersListProps {
 function UserIdentity({ user }: { user: AdminUserItem }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <Avatar className="size-8 shrink-0">
+      <Avatar>
         {user.photoUrl !== null ? <AvatarImage alt="" src={user.photoUrl} /> : null}
         <AvatarFallback>{initials(user.name)}</AvatarFallback>
       </Avatar>
@@ -55,8 +56,9 @@ function UserIdentity({ user }: { user: AdminUserItem }) {
 export function UsersList({ items, onAction, now, timeZone }: UsersListProps) {
   return (
     <>
-      <div className="hidden md:block">
-        <Table className="table-fixed">
+      <Card className="hidden min-w-0 md:flex">
+        <CardContent>
+        <Table className="table-fixed tabular-nums">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[30%]">Пользователь</TableHead>
@@ -76,18 +78,18 @@ export function UsersList({ items, onAction, now, timeZone }: UsersListProps) {
                 <TableCell className="min-w-0">
                   <UserIdentity user={user} />
                 </TableCell>
-                <TableCell className="truncate text-muted-foreground">
+                <TableCell className="truncate">
                   {user.telegramId}
                 </TableCell>
                 <TableCell>{user.sessionCount}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell>
                   {user.lastLoginAt === null ? (
                     "—"
                   ) : (
                     <FormattedDate now={now} timeZone={timeZone} value={user.createdAt} />
                   )}
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell>
                   <FormattedDate now={now} timeZone={timeZone} value={user.lastLoginAt} />
                 </TableCell>
                 <TableCell className="whitespace-normal">
@@ -100,13 +102,14 @@ export function UsersList({ items, onAction, now, timeZone }: UsersListProps) {
             ))}
           </TableBody>
         </Table>
-      </div>
+        </CardContent>
+      </Card>
 
       <ItemGroup className="md:hidden">
         {items.map((user) => (
-          <Item key={user.id} role="listitem" variant="outline">
+          <Item key={user.id} role="listitem" variant="outline" className="items-start">
             <ItemMedia>
-              <Avatar className="size-9">
+              <Avatar>
                 {user.photoUrl !== null ? <AvatarImage alt="" src={user.photoUrl} /> : null}
                 <AvatarFallback>{initials(user.name)}</AvatarFallback>
               </Avatar>

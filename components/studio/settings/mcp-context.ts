@@ -17,6 +17,7 @@ export type McpCheck = { ok: true; toolCount: number; tools: string[] } | { ok: 
 export interface McpState {
   servers: McpServerView[];
   checks: Record<string, McpCheck | undefined>;
+  checking?: Readonly<Record<string, boolean>>;
   add: (input: object) => Promise<void>;
   toggle: (id: string, enabled: boolean) => Promise<void>;
   remove: (id: string) => Promise<void>;

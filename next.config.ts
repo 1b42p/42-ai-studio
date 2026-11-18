@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [{ key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" }],
       },
+      {
+        source: "/examples/:path*",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
     ];
   },
   logging: {

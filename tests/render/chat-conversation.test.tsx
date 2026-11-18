@@ -132,7 +132,7 @@ test("завершённая сессия скрывает поле ввода �
     .element(page.getByRole("textbox", { name: "Сообщение агенту" }))
     .not.toBeInTheDocument();
   await expect
-    .element(page.getByRole("button", { name: "Новая сессия" }).first())
+    .element(page.getByRole("link", { name: "Новая сессия" }).first())
     .toBeVisible();
 });
 
@@ -182,7 +182,7 @@ test("во время хода отправка вызывает обработ�
 test("в шапке беседы есть «Новая сессия» со ссылкой на /s", async () => {
   await renderOnDesktop(view(simpleConversation));
 
-  await expect.element(page.getByRole("button", { name: "Новая сессия" })).toHaveAttribute(
+  await expect.element(page.getByRole("link", { name: "Новая сессия" })).toHaveAttribute(
     "href",
     "/s",
   );

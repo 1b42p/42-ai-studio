@@ -38,9 +38,9 @@ afterEach(async () => {
   localStorage.clear();
 });
 
-for (const [viewport, renderList, width, height] of [
-  ["phone", renderOnPhone, 96, 54],
-  ["desktop", renderOnDesktop, 160, 90],
+for (const [viewport, renderList] of [
+  ["phone", renderOnPhone],
+  ["desktop", renderOnDesktop],
 ] as const) {
   test.each(["light", "dark"] as const)(`${viewport}/%s: кадры вписаны целиком, место зарезервировано, длинное название не расширяет список`, async (theme) => {
     await commands.emulateColorScheme(theme);
@@ -53,8 +53,16 @@ for (const [viewport, renderList, width, height] of [
     const tiles = [...listNode.querySelectorAll<HTMLElement>("[data-slot=item-media]")];
     expect(tiles).toHaveLength(5);
     for (const tile of tiles) {
-      expect(tile.getBoundingClientRect().width).toBe(width);
-      expect(tile.getBoundingClientRect().height).toBe(height);
+      const bounds = tile.getBoundingClientRect();
+      // В медиатеке кадр занимает верх карточки целиком; отдельный
+      // SessionPreview ниже по-прежнему проверяется в компактном размере.
+      const card = tile.closest("a")!;
+      const style = getComputedStyle(card);
+      const contentWidth = card.getBoundingClientRect().width -
+        parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth) -
+        parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      expect(bounds.width).toBeCloseTo(contentWidth, 1);
+      expect(bounds.height).toBeCloseTo(bounds.width * 9 / 16, 1);
     }
 
     const images = [...listNode.querySelectorAll<HTMLImageElement>("img")];
@@ -66,8 +74,9 @@ for (const [viewport, renderList, width, height] of [
     await expect.poll(() => images[1]!.naturalHeight).toBe(320);
     for (const image of images.slice(0, 2)) {
       expect(getComputedStyle(image).objectFit).toBe("contain");
-      expect(image.getBoundingClientRect().width).toBe(width);
-      expect(image.getBoundingClientRect().height).toBe(height);
+      const tile = image.closest<HTMLElement>("[data-slot=item-media]")!;
+      expect(image.getBoundingClientRect().width).toBe(tile.getBoundingClientRect().width);
+      expect(image.getBoundingClientRect().height).toBe(tile.getBoundingClientRect().height);
     }
     expect(listNode.getBoundingClientRect().height).toBe(before);
     expect(tiles[2]!.querySelector("svg")).not.toBeNull();
@@ -83,7 +92,7 @@ for (const [viewport, renderList, width, height] of [
       `/api/media/${previewMedia.missing}`,
       `/api/media/${previewMedia.missing}?retry=1`,
     ]);
-    await page.screenshot({ path: `../../.vitest/attachments/issue18-${viewport}-${theme}.png` });
+    await page.screenshot({ path: `../../.vitest/attachments/session-previews-${viewport}-${theme}.png` });
   });
 
   test(`${viewport}: удаление сессии с превью убирает только её строку`, async () => {

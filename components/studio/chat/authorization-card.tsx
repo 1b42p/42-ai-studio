@@ -3,7 +3,7 @@
 import type { EveMessagePart } from "eve/react";
 import { ArrowUpRightIcon, KeyRoundIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { ButtonLink } from "@/components/studio/button-link";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { safeAuthorizationUrl } from "./authorization-url";
@@ -64,9 +64,9 @@ export function AuthorizationCard({ part, allowHosts }: {
       </ItemContent>
       {url ? (
         <ItemActions>
-          <Button nativeButton={false} render={<a href={url.href} target="_blank" rel="noopener noreferrer" />}>
+          <ButtonLink href={url.href} target="_blank" rel="noopener noreferrer">
             Войти <ArrowUpRightIcon data-icon="inline-end" />
-          </Button>
+          </ButtonLink>
         </ItemActions>
       ) : null}
       <ItemFooter>

@@ -19,8 +19,14 @@ function view(scenario: WebToolScenario) {
   );
 }
 
+function toolTrace() {
+  const trace = document.querySelector<HTMLElement>('[data-slot="trace"]');
+  expect(trace).not.toBeNull();
+  return page.elementLocator(trace!);
+}
+
 function assertNoRawTool() {
-  expect(document.body.innerText).not.toMatch(/web_search|read_page|\{|requestId|Входной запрос/);
+  expect(document.body.innerText).not.toMatch(/web_search|read_page|\{|requestId|Входной запрос|input\.example\.com/);
   expectNoHorizontalScroll();
   const viewport = document.querySelector('[data-slot="message-scroller-viewport"]');
   expect(viewport).not.toBeNull();
@@ -34,7 +40,7 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
       await render(view({ tool, label }));
       await expect.element(page.getByText(label, { exact: true })).toBeVisible();
       expect(document.querySelector('[data-status="running"]')).not.toBeNull();
-      await expect.element(page.getByRole("link")).not.toBeInTheDocument();
+      await expect.element(toolTrace().getByRole("link")).not.toBeInTheDocument();
       assertNoRawTool();
     });
   }
@@ -43,24 +49,24 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
     await render(view({ tool: "web_search", output: { query: searchQuery, results: searchResults, requestId: "internal-id" } }));
     const trigger = page.getByRole("button", { name: /Источники: 10/ });
     await expect.element(trigger).toHaveAttribute("aria-expanded", "false");
-    await expect.element(page.getByRole("link")).not.toBeInTheDocument();
+    await expect.element(toolTrace().getByRole("link")).not.toBeInTheDocument();
     await trigger.click();
     await expect.element(trigger).toHaveAttribute("aria-expanded", "true");
     await expect.element(page.getByText(searchQuery, { exact: true })).toBeVisible();
     for (const result of searchResults) {
-      const link = page.getByRole("link", { name: `${result.title} (откроется в новой вкладке) ${result.host}`, exact: true });
+      const link = toolTrace().getByRole("link", { name: `${result.title} (откроется в новой вкладке) ${result.host}`, exact: true });
       await expect.element(link).toHaveAttribute("href", result.url);
       await expect.element(link).toHaveAttribute("target", "_blank");
       await expect.element(link).toHaveAttribute("rel", "noopener noreferrer");
     }
-    expect(document.querySelectorAll('a[target="_blank"]')).toHaveLength(10);
+    expect(toolTrace().getByRole("link").elements()).toHaveLength(10);
     expect(document.body.innerText).not.toContain(searchResults[0].snippet);
     assertNoRawTool();
   });
 
   test(`чтение: длинное название, конечная ссылка и число знаков — ${viewport}`, async () => {
     await render(view({ tool: "read_page", output: pageResult }));
-    const link = page.getByRole("link", { name: /ЗаголовокПрочитаннойСтраницы/ });
+    const link = toolTrace().getByRole("link", { name: /ЗаголовокПрочитаннойСтраницы/ });
     await expect.element(link).toHaveAttribute("href", pageResult.finalUrl);
     await expect.element(link).toHaveAttribute("target", "_blank");
     await expect.element(link).toHaveAttribute("rel", "noopener noreferrer");
@@ -73,14 +79,14 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
   test(`чтение: часть страницы, без заголовка показан длинный хост — ${viewport}`, async () => {
     await render(view({ tool: "read_page", output: { ...pageResult, title: null, content: "Фрагмент".repeat(125), nextOffset: 1000 } }));
     const host = new URL(pageResult.finalUrl).hostname;
-    await expect.element(page.getByRole("link", { name: new RegExp(host.replaceAll(".", "\\.")) })).toBeVisible();
+    await expect.element(toolTrace().getByRole("link", { name: new RegExp(host.replaceAll(".", "\\.")) })).toBeVisible();
     await expect.element(page.getByText(/1\s000 знаков, прочитана часть страницы/, { exact: true })).toBeVisible();
     assertNoRawTool();
   });
 
   test(`чтение: старый результат с исходным адресом и хостом — ${viewport}`, async () => {
     await render(view({ tool: "read_page", output: { url: "http://example.com/old", host: "example.com", title: "", content: "Текст", nextOffset: null } }));
-    await expect.element(page.getByRole("link", { name: /example\.com/ })).toHaveAttribute("href", "http://example.com/old");
+    await expect.element(toolTrace().getByRole("link", { name: /example\.com/ })).toHaveAttribute("href", "http://example.com/old");
     await expect.element(page.getByText("5 знаков", { exact: true })).toBeVisible();
     assertNoRawTool();
   });
@@ -121,11 +127,11 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
     await page.getByRole("button", { name: /Источники: 9/ }).click();
     for (let index = 0; index < 7; index += 1) {
       await expect.element(page.getByText(`Источник ${index + 1}`, { exact: true })).toBeVisible();
-      await expect.element(page.getByRole("link", { name: new RegExp(`Источник ${index + 1}`) })).not.toBeInTheDocument();
+      await expect.element(toolTrace().getByRole("link", { name: new RegExp(`Источник ${index + 1}`) })).not.toBeInTheDocument();
     }
-    await expect.element(page.getByRole("link", { name: /Источник 8/ })).toHaveAttribute("href", "http://example.com/ok");
-    await expect.element(page.getByRole("link", { name: /Источник 9/ })).toHaveAttribute("href", "https://example.com/secure");
-    expect(document.querySelectorAll('a[target="_blank"]')).toHaveLength(2);
+    await expect.element(toolTrace().getByRole("link", { name: /Источник 8/ })).toHaveAttribute("href", "http://example.com/ok");
+    await expect.element(toolTrace().getByRole("link", { name: /Источник 9/ })).toHaveAttribute("href", "https://example.com/secure");
+    expect(toolTrace().getByRole("link").elements()).toHaveLength(2);
     assertNoRawTool();
   });
 
@@ -133,7 +139,7 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
     test(`чтение: конечный адрес «${url}» не становится ссылкой — ${viewport}`, async () => {
       await render(view({ tool: "read_page", output: { ...pageResult, finalUrl: url, title: "Прочитанная страница" } }));
       await expect.element(page.getByText("Прочитанная страница", { exact: true })).toBeVisible();
-      await expect.element(page.getByRole("link")).not.toBeInTheDocument();
+      await expect.element(toolTrace().getByRole("link")).not.toBeInTheDocument();
       expect(document.body.innerText).not.toContain("откроется в новой вкладке");
       assertNoRawTool();
     });

@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const themes = [
   { value: "light", title: "Светлая", Icon: SunIcon },
@@ -14,6 +15,7 @@ const themes = [
 
 export function ThemeSection() {
   const { theme, setTheme } = useTheme();
+  const mobile = useIsMobile();
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -21,7 +23,8 @@ export function ThemeSection() {
     <ToggleGroup
       aria-label="Тема оформления"
       variant="outline"
-      className="w-full flex-wrap sm:w-fit"
+      className="grid w-full grid-cols-1 md:grid-cols-3"
+      orientation={mobile ? "vertical" : "horizontal"}
       value={mounted && theme ? [theme] : []}
       disabled={!mounted}
       onValueChange={(values) => {
@@ -30,7 +33,7 @@ export function ThemeSection() {
       }}
     >
       {themes.map(({ value, title, Icon }) => (
-        <ToggleGroupItem key={value} value={value} className="flex-1 sm:flex-none">
+        <ToggleGroupItem key={value} value={value}>
           <Icon data-icon="inline-start" />
           {title}
         </ToggleGroupItem>

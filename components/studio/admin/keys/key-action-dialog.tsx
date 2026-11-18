@@ -68,7 +68,7 @@ export function KeyActionDialog({
       }}
       open={open}
     >
-      <AlertDialogContent className="max-w-[calc(100%-2rem)]">
+      <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="break-all">{text.title}</AlertDialogTitle>
           <AlertDialogDescription>{text.body}</AlertDialogDescription>

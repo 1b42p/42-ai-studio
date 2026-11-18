@@ -44,6 +44,8 @@ import {
 import { DeleteUserDialog } from "./delete-user-dialog";
 import { useUserActions } from "./use-user-actions";
 import { UsersList } from "./users-list";
+import { AdminHeading } from "../admin-heading";
+import { ResourceCounter } from "../resources/shared";
 
 const SEARCH_DELAY_MS = 300;
 const EMPTY_TOTALS: AdminUsersTotals = { users: 0, operators: 0, blocked: 0 };
@@ -188,13 +190,17 @@ export function AdminUsersPanel({
   const deleteOpen = action !== null && action.kind === "delete";
 
   return (
-    <section aria-label="Пользователи" className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-medium">Пользователи</h2>
-        <p className="text-sm text-muted-foreground">
+    <section aria-label="Пользователи" className="flex min-w-0 flex-col gap-5">
+      <AdminHeading title="Пользователи" description={
+        <>
           Всего {totals.users} · Операторов {totals.operators} · Заблокировано{" "}
           {totals.blocked}
-        </p>
+        </>
+      } />
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+        <ResourceCounter title="Всего пользователей" value={totals.users} emphasis />
+        <ResourceCounter title="Операторов" value={totals.operators} />
+        <ResourceCounter title="Заблокировано" value={totals.blocked} />
       </div>
 
       {filterUserId === null ? null : (
@@ -207,15 +213,16 @@ export function AdminUsersPanel({
         </div>
       )}
 
-      <InputGroup>
-        <InputGroupAddon>
-          <SearchIcon />
-        </InputGroupAddon>
+      <InputGroup className="max-w-xl">
         <InputGroupInput
           aria-label="Поиск по @username и Telegram ID"
+          placeholder="Поиск по @username и Telegram ID"
           onChange={(event) => setQueryInput(event.target.value)}
           value={queryInput}
         />
+        <InputGroupAddon>
+          <SearchIcon />
+        </InputGroupAddon>
         {queryInput === "" ? null : (
           <InputGroupAddon align="inline-end">
             <InputGroupButton aria-label="Очистить поиск" onClick={clearSearch} size="icon-xs">
@@ -235,7 +242,7 @@ export function AdminUsersPanel({
         </div>
       ) : null}
 
-      {!searching && status !== "error" && items.length > 0 ? (
+      {!searching && items.length > 0 ? (
         <UsersList items={items} now={now} onAction={actions.open} timeZone={timeZone} />
       ) : null}
 
@@ -285,7 +292,7 @@ export function AdminUsersPanel({
       ) : null}
 
       {status === "loading" && purpose === "more" ? <Spinner /> : null}
-      {nextCursor !== null && !(status === "loading" && purpose === "more") ? (
+      {nextCursor !== null && status !== "error" && !(status === "loading" && purpose === "more") ? (
         <Button onClick={loadMore} type="button" variant="outline">
           <ChevronDownIcon data-icon="inline-start" />
           Показать ещё

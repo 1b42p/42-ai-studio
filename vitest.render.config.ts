@@ -84,7 +84,14 @@ declare module "vitest/browser" {
 export default defineConfig({
   plugins: [tailwindcss()],
   optimizeDeps: {
-    include: ["react-dom/client", "react-dom/server", "@base-ui/react/tabs"],
+    include: [
+      "react-dom/client",
+      "react-dom/server",
+      "motion/react-m",
+      "@base-ui/react/tabs",
+      "three/addons/loaders/GLTFLoader.js",
+      "three/addons/utils/BufferGeometryUtils.js",
+    ],
   },
   resolve: {
     alias: {
@@ -93,6 +100,8 @@ export default defineConfig({
   },
   test: {
     include: ["tests/render/**/*.test.tsx"],
+    // CPU-throttled interactions must not compete with other rendering files.
+    fileParallelism: false,
     setupFiles: ["tests/render/setup.ts"],
     browser: {
       enabled: true,

@@ -9,6 +9,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import type { AdminSection } from "./sections";
 
 export interface AdminShellProps {
@@ -40,12 +42,18 @@ export function AdminShell({ sections, pathname, onNavigate, children }: AdminSh
   }));
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-4 md:gap-6 md:p-6">
-      <h1 className="text-xl font-semibold">Админка</h1>
+    <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-4 md:gap-8 md:p-8">
+      <Item>
+        <ItemContent>
+          <ItemDescription>42 AI STUDIO</ItemDescription>
+          <ItemTitle role="heading" aria-level={1}>Админка</ItemTitle>
+        </ItemContent>
+        <Badge variant="outline">Оператор</Badge>
+      </Item>
 
       <div className="hidden md:block">
         <Tabs value={current?.href}>
-          <TabsList variant="line">
+          <TabsList>
             {sections.map((section) => (
               <TabsTrigger
                 key={section.href}

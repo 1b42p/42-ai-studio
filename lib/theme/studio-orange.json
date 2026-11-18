@@ -1,0 +1,28 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
+  "name": "studio-orange",
+  "type": "registry:theme",
+  "cssVars": {
+    "theme": {
+      "color-primary-text": "var(--primary-text)"
+    },
+    "light": {
+      "primary": "#ff7900",
+      "primary-foreground": "#241200",
+      "primary-text": "#a33f00",
+      "ring": "#4a1c00",
+      "sidebar-primary": "#ff7900",
+      "sidebar-primary-foreground": "#241200",
+      "sidebar-ring": "#4a1c00"
+    },
+    "dark": {
+      "primary": "#ff8a1f",
+      "primary-foreground": "#241200",
+      "primary-text": "#ff8a1f",
+      "ring": "#ffc285",
+      "sidebar-primary": "#ff8a1f",
+      "sidebar-primary-foreground": "#241200",
+      "sidebar-ring": "#ffc285"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import type { UserContent } from "ai";
-import type { ConversationState, UseEveAgentHelpers } from "eve/react";
+import type { useStudioAgent } from "./use-studio-agent";
 
 import { isBusyStatus } from "@/components/studio/chat/chat-status";
 import { ChatView, type ChatViewProps } from "@/components/studio/chat/chat-view";
@@ -14,7 +14,7 @@ import {
   useSessionDeletion,
 } from "@/components/studio/sessions/use-session-deletion";
 
-export type ChatAgent = UseEveAgentHelpers<ConversationState>;
+export type ChatAgent = ReturnType<typeof useStudioAgent>;
 
 export interface ChatPanelProps
   extends Omit<ChatViewProps,
@@ -25,6 +25,8 @@ export interface ChatPanelProps
   errorOverride?: Error;
   /** Перекрывает отправку: например, перед первым сообщением создать сессию. */
   onSend?: (content: string | UserContent) => void | Promise<void>;
+  /** Also cancels first-message preparation before an eve turn exists. */
+  onCancel?: () => void | Promise<void>;
   /** Создаёт сессию приложения перед первой загрузкой на странице `/s`. */
   ensureSession?: () => Promise<string>;
   /** Сессия приложения. Без неё название в шапке не опрашивается. */
@@ -36,13 +38,14 @@ export interface ChatPanelProps
 }
 
 /**
- * Тонкая обёртка над `useEveAgent`: хук живёт здесь, а беседа получает
- * готовое состояние свойствами и отрисовывается в тестах без сети.
+ * Обёртка над контроллером eve: send/respond подтверждают доставку, пока
+ * нативный store продолжает читать ход. Представление получает готовое состояние.
  */
 export function ChatPanel({
   agent,
   errorOverride,
   onSend,
+  onCancel,
   ensureSession,
   appSessionId = null,
   initialTitle = null,
@@ -80,7 +83,8 @@ export function ChatPanel({
         error: errorOverride ?? agent.error,
       }}
       onCancel={async () => {
-        await agent.cancel();
+        if (onCancel) await onCancel();
+        else await agent.cancel();
       }}
       onRespond={async (responses) => {
         await agent.respond(responses);

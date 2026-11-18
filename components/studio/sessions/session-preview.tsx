@@ -46,13 +46,15 @@ function PreviewImage({ mediaId }: { mediaId: string }) {
 
 export function SessionPreview({
   preview,
+  className,
 }: {
   preview: { readonly mediaId: string } | null;
+  className?: string;
 }) {
   return (
     <ItemMedia
       aria-hidden="true"
-      className="relative aspect-video w-24 overflow-hidden rounded-md bg-muted text-muted-foreground md:w-40"
+      className={cn("relative aspect-video w-24 overflow-hidden md:w-40", className)}
       variant="icon"
     >
       {preview === null ? (

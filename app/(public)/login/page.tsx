@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { LoginCard, type LoginError } from "@/components/studio/login-card";
+import { PublicShell } from "@/components/studio/public-shell";
 import { getCurrentUser } from "@/lib/auth/guard";
 import { safeNextPath } from "@/lib/auth/next-path";
 import { oidcSettings } from "@/lib/auth/settings";
@@ -28,11 +29,13 @@ export default async function LoginPage({
   const error: LoginError = user?.isBlocked === true ? "blocked" : errorFrom(params.error);
 
   return (
-    <LoginCard
-      next={next}
-      telegramEnabled={oidcSettings(config) !== null}
-      devLoginEnabled={config.devLoginEnabled}
-      error={error}
-    />
+    <PublicShell>
+      <LoginCard
+        next={next}
+        telegramEnabled={oidcSettings(config) !== null}
+        devLoginEnabled={config.devLoginEnabled}
+        error={error}
+      />
+    </PublicShell>
   );
 }

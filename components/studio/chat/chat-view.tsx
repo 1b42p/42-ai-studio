@@ -6,7 +6,7 @@ import {
   type ConversationState,
 } from "eve/react";
 import type { UserContent } from "ai";
-import { AlertCircleIcon, PaperclipIcon, SquareIcon, VideoIcon } from "lucide-react";
+import { AlertCircleIcon, ClapperboardIcon, PaperclipIcon, PlusIcon, SquareIcon } from "lucide-react";
 import { useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 
 import { ChatComposer } from "@/components/studio/chat/chat-composer";
@@ -20,14 +20,14 @@ import { InputPrompt } from "@/components/studio/chat/input-prompt";
 import { inlineQuestionIds } from "@/components/studio/chat/input-routing";
 import { MessageRow } from "@/components/studio/chat/message-row";
 import { SandboxStatusBanner } from "@/components/studio/chat/sandbox-status-banner";
+import { StudioWelcome } from "@/components/studio/chat/studio-welcome";
 import { DeleteSessionButton } from "@/components/studio/sessions/delete-session-button";
 import { DeleteSessionDialog } from "@/components/studio/sessions/delete-session-dialog";
 import type { SessionDeletionController } from "@/components/studio/sessions/use-session-deletion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import {
   Empty,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -43,6 +43,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
+import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { cn } from "@/lib/utils";
 import type { SandboxStatus } from "@/lib/sandbox/status";
 
@@ -264,7 +265,8 @@ export function ChatView({
   return (
     <div
       className={cn(
-        "relative flex h-full min-h-0 flex-col transition-[padding] duration-200",
+        "relative flex h-full min-h-0 min-w-0 flex-col bg-background transition-[padding] duration-200 motion-reduce:transition-none",
+        showSessions && "overflow-y-auto overscroll-y-contain",
         copyPanelOpen && "md:pr-[480px]",
       )}
       onDragEnter={(event) => {
@@ -303,8 +305,16 @@ export function ChatView({
           </Empty>
         </div>
       ) : null}
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3 md:px-6">
-        <h1 className="min-w-0 truncate text-sm font-medium">{title}</h1>
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-card/60 px-4 py-3 md:px-8 md:py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <EmptyMedia variant="icon" className="hidden sm:flex">
+            <ClapperboardIcon />
+          </EmptyMedia>
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="text-[10px] font-medium tracking-[0.16em] text-muted-foreground uppercase">Рабочая студия</span>
+            <h1 className="min-w-0 truncate text-sm font-semibold">{title}</h1>
+          </div>
+        </div>
         <ItemActions className="shrink-0">
           {appSessionId && sessionDeletion ? (
             <DeleteSessionButton
@@ -313,9 +323,10 @@ export function ChatView({
               title={title}
             />
           ) : null}
-          <Button nativeButton={false} size="sm" variant="outline" render={<a href="/s" />}>
+          <a href="/s" className={buttonVariants({ size: "sm", variant: "outline" })}>
+            <PlusIcon data-icon="inline-start" />
             Новая сессия
-          </Button>
+          </a>
         </ItemActions>
       </header>
       {sessionDeletion ? (
@@ -329,11 +340,13 @@ export function ChatView({
         />
       ) : null}
 
-      {/* `order` поднимает поле над списком, не размонтируя его. */}
+      {/* На стартовом экране прокручивается вся студия, а не узкая библиотека
+          под закреплённым вступлением. В беседе скроллом владеет MessageScroller.
+          `order` сохраняет единственный экземпляр поля при первом сообщении. */}
       <div
         className={cn(
-          "flex min-h-0 flex-1 flex-col",
-          showSessions && "order-3 overflow-y-auto",
+          "flex min-h-0 flex-col",
+          showSessions ? "order-3 shrink-0" : "flex-1",
         )}
       >
         {showSessions ? (
@@ -342,19 +355,9 @@ export function ChatView({
           <MessageScrollerProvider autoScroll>
         <MessageScroller className="min-h-0 flex-1">
           <MessageScrollerViewport>
-            <MessageScrollerContent className="mx-auto w-full max-w-3xl gap-4 px-4 py-6 md:px-6">
+            <MessageScrollerContent className="mx-auto w-full max-w-4xl px-4 py-6 md:px-10 md:py-10">
               {messages.length === 0 && !thinking ? (
-                <Empty className="border-0">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <VideoIcon />
-                    </EmptyMedia>
-                    <EmptyTitle>{emptyTitle}</EmptyTitle>
-                    {emptyDescription === undefined ? null : (
-                      <EmptyDescription>{emptyDescription}</EmptyDescription>
-                    )}
-                  </EmptyHeader>
-                </Empty>
+                <StudioWelcome title={emptyTitle} description={emptyDescription} />
               ) : null}
 
               {messages.map((message, index) => {
@@ -391,14 +394,15 @@ export function ChatView({
               })}
 
               {thinking ? (
-                <div
+                <Trace
                   aria-live="polite"
-                  className="flex items-center gap-2 text-sm text-muted-foreground"
                   role="status"
                 >
-                  <Spinner />
-                  <span className="shimmer">Агент думает…</span>
-                </div>
+                  <TraceLine status="running">
+                    <TraceIcon><Spinner /></TraceIcon>
+                    <TraceTitle>Агент думает…</TraceTitle>
+                  </TraceLine>
+                </Trace>
               ) : null}
 
               {[...byTurn.entries()]
@@ -408,30 +412,6 @@ export function ChatView({
                     <NoticeRow key={`${turnId}-${index}`} notice={notice} />
                   )),
                 )}
-
-              {errorNotice === null || errorNotice === undefined ? null : (
-                <Alert variant="destructive">
-                  <AlertCircleIcon />
-                  <AlertTitle>{errorNotice.title}</AlertTitle>
-                  <AlertDescription>
-                    {errorNotice.description}
-                    {errorNotice.href === undefined ? null : (
-                      <>
-                        {" "}
-                        <Button
-                          className="h-auto p-0 align-baseline"
-                          nativeButton={false}
-                          render={<a href={errorNotice.href} />}
-                          size="sm"
-                          variant="link"
-                        >
-                          {errorNotice.href === "/login" ? "Войти" : "Новая сессия"}
-                        </Button>
-                      </>
-                    )}
-                  </AlertDescription>
-                </Alert>
-              )}
 
             </MessageScrollerContent>
           </MessageScrollerViewport>
@@ -443,11 +423,30 @@ export function ChatView({
 
       <div
         className={cn(
-          "shrink-0 bg-background px-4 py-3 md:px-6",
-          showSessions ? "order-2 border-b" : "border-t",
+          "shrink-0 bg-background px-3 pb-3 pt-2 md:px-8 md:pb-5",
+          showSessions ? "order-2 border-b border-border/70 pt-6 md:pt-10" : "",
         )}
       >
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 md:px-2">
+          {errorNotice ? (
+            <Alert variant="destructive">
+              <AlertCircleIcon />
+              <AlertTitle>{errorNotice.title}</AlertTitle>
+              <AlertDescription>
+                {errorNotice.description}
+                {errorNotice.href ? (
+                  <a href={errorNotice.href} className={buttonVariants({ variant: "link", size: "sm" })}>
+                    {errorNotice.href === "/login" ? "Войти" : "Новая сессия"}
+                  </a>
+                ) : null}
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {showSessions ? (
+            <div className="px-1 pb-3 md:pb-5">
+              <StudioWelcome compact />
+            </div>
+          ) : null}
           {pinnedInputs.map((input) => (
             <InputPrompt disabled={disabled} input={input} key={input.request.requestId} onRespond={onRespond} />
           ))}
@@ -457,14 +456,16 @@ export function ChatView({
               <span className="text-sm text-muted-foreground">
                 {expired ? "История сохранена, но продолжить сессию нельзя" : "Сессия завершена"}
               </span>
-              <Button nativeButton={false} size="sm" variant="outline" render={<a href="/s" />}>
+              <a href="/s" className={buttonVariants({ size: "sm", variant: "outline" })}>
                 Новая сессия
-              </Button>
+              </a>
             </div>
           ) : (
             <ChatComposer
+              appSessionId={appSessionId}
               attachments={attachments}
               disabled={disabled || responseBlocked}
+              hasExternalError={errorNotice != null}
               placeholder={responsePlaceholder}
               onCancel={onCancel}
               onSend={async (content) => {

@@ -1,13 +1,9 @@
 import { cn } from "@/lib/utils";
 
-/**
- * Название сервиса. Логотипа пока нет, поэтому иконки-заглушки нет:
- * бренд остаётся текстовым, пока не появится настоящий знак.
- */
 export function Brand({ className }: { className?: string }) {
   return (
-    <span className={cn("block min-w-0 truncate font-heading text-sm font-medium", className)}>
-      42 AI Studio
+    <span className={cn("inline-flex min-w-0 items-baseline gap-1.5 whitespace-nowrap font-heading text-base font-semibold tracking-tight", className)}>
+      <span className="text-foreground">42</span> AI Studio
     </span>
   );
 }
