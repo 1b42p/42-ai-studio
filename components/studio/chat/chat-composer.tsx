@@ -252,8 +252,8 @@ export function ChatComposer({
           >
             <PaperclipIcon />
           </InputGroupButton>
-          <InputGroupText className="gap-1.5 text-xs">
-            <WandSparklesIcon className="text-foreground" />
+          <InputGroupText>
+            <WandSparklesIcon />
             <span className="hidden sm:inline">Агент-видеограф</span>
           </InputGroupText>
           {busy || sending ? (

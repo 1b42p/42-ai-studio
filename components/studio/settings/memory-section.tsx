@@ -30,7 +30,7 @@ export function MemorySection({ settings, save }: SettingsSectionProps) {
 
   return (
     <FieldGroup>
-      <Field orientation="horizontal" className="rounded-xl border bg-muted/30 p-4" data-disabled={pending}>
+      <Field orientation="horizontal" data-disabled={pending}>
         <FieldContent className="min-w-0">
           <FieldLabel id={`${id}-label`} htmlFor={id}>Запоминать мои предпочтения</FieldLabel>
           <FieldDescription id={`${id}-description`}>

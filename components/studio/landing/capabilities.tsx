@@ -15,7 +15,7 @@ export function LandingCapabilities(_props: { examples: readonly ExampleVideo[] 
   return (
     <Bento2 className="w-full">
       <Activity>
-        <Bento2Card {...landingFeatures[2]} className="md:col-span-8" contentClassName="px-0">
+        <Bento2Card {...landingFeatures[2]} className="md:col-span-8">
           <KineticScene />
         </Bento2Card>
       </Activity>
@@ -40,7 +40,7 @@ export function LandingCapabilities(_props: { examples: readonly ExampleVideo[] 
         </Bento2Card>
       </Activity>
       <Activity>
-        <Bento2Card {...landingFeatures[5]} className="md:col-span-6 xl:col-span-4" contentClassName="px-0" reverse>
+        <Bento2Card {...landingFeatures[5]} className="md:col-span-6 xl:col-span-4" reverse>
           <FilmScene />
         </Bento2Card>
       </Activity>

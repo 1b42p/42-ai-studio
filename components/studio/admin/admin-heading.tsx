@@ -10,16 +10,15 @@ export function AdminHeading({ title, description, actions }: {
   actions?: ReactNode;
 }) {
   return (
-    <CardHeader className="gap-3 rounded-none px-0 has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
+    <CardHeader className="has-data-[slot=card-action]:grid-cols-1 sm:has-data-[slot=card-action]:grid-cols-[1fr_auto]">
       <CardTitle
         role="heading"
         aria-level={2}
-        className="text-2xl font-semibold tracking-tight md:text-3xl"
       >
         {title}
       </CardTitle>
       {description ? (
-        <CardDescription className="max-w-3xl text-pretty">
+        <CardDescription className="max-w-3xl">
           {description}
         </CardDescription>
       ) : null}

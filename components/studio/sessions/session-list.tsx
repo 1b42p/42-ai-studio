@@ -26,14 +26,8 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
-import {
-  Item,
-  ItemActions,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemTitle,
-} from "@/components/ui/item";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ItemGroup } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { formatSessionDate } from "@/lib/sessions/format-date";
@@ -100,7 +94,7 @@ function SessionWhen({
     setText(formatSessionDate(new Date(value), now ?? new Date(), zone));
   }, [now, timeZone, value]);
 
-  return <ItemDescription>{text}</ItemDescription>;
+  return <CardDescription>{text}</CardDescription>;
 }
 
 export interface SessionListProps {
@@ -213,12 +207,12 @@ export function SessionList({
     <section aria-label="Сессии" className="mx-auto flex w-full min-w-0 max-w-6xl flex-col gap-6 px-1 py-8 md:px-6 md:py-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-2">
-          <Badge variant="outline" className="w-fit gap-1.5"><FilmIcon />Ваша медиатека</Badge>
+          <Badge variant="outline" className="w-fit"><FilmIcon />Ваша медиатека</Badge>
           <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Сессии</h2>
           <p className="text-sm text-muted-foreground">Идеи, исходники и готовые ролики — в одном месте.</p>
         </div>
       {showSearch ? (
-        <InputGroup className="w-full bg-card sm:w-72">
+        <InputGroup className="w-full sm:w-72">
           <InputGroupAddon>
             <SearchIcon />
           </InputGroupAddon>
@@ -251,21 +245,20 @@ export function SessionList({
       {!searching && items.length > 0 ? (
         <ItemGroup className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {items.map((item) => (
-            <Item className="group/session relative min-w-0 flex-col flex-nowrap items-stretch gap-0 overflow-hidden rounded-2xl bg-card p-0 ring-1 ring-border transition-shadow hover:shadow-lg hover:ring-primary/35" key={item.id} role="listitem">
-              <Item
-                className="min-w-0 max-w-full flex-1 flex-col flex-nowrap items-stretch gap-0 rounded-none p-0"
-                render={<a href={`/s/${item.id}`} />}
-              >
-                <SessionPreview preview={item.preview} className="w-full rounded-none bg-muted/60 text-foreground md:w-full [&_svg]:size-9" />
-                <ItemContent className="w-full min-w-0 gap-2 px-5 py-5 pr-14">
-                  <ItemTitle className="line-clamp-none block w-full min-w-0 truncate text-base">
+            <Card className="min-w-0" key={item.id} role="listitem">
+              <a className="flex min-w-0 flex-1 flex-col gap-4" href={`/s/${item.id}`}>
+                <CardContent>
+                  <SessionPreview preview={item.preview} className="w-full md:w-full" />
+                </CardContent>
+                <CardHeader className="min-w-0">
+                  <CardTitle className="truncate">
                     {item.title ?? "Без названия"}
-                  </ItemTitle>
+                  </CardTitle>
                   <SessionWhen now={now} timeZone={timeZone} value={item.updatedAt} />
                   <span className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-foreground">Продолжить<ArrowUpRightIcon className="size-3.5" /></span>
-                </ItemContent>
-              </Item>
-              <ItemActions className="absolute right-3 bottom-5">
+                </CardHeader>
+              </a>
+              <CardFooter className="justify-end">
                 <DeleteSessionButton
                   title={item.title ?? "Без названия"}
                   onClick={() => {
@@ -273,8 +266,8 @@ export function SessionList({
                     deletion.open({ id: item.id, title: item.title ?? "Без названия" });
                   }}
                 />
-              </ItemActions>
-            </Item>
+              </CardFooter>
+            </Card>
           ))}
         </ItemGroup>
       ) : null}

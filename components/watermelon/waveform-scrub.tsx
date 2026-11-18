@@ -84,13 +84,12 @@ export function WaveformScrub({
   }
 
   return (
-    <Card ref={root} variant="default" className="w-full rounded-2xl">
+    <Card ref={root} className="w-full">
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center gap-3">
           <Button
             size="icon-lg"
             variant="default"
-            className="rounded-full"
             onClick={toggle}
             aria-label={playing ? "Приостановить озвучку" : finished ? "Послушать ещё раз" : "Послушать озвучку"}
           >
@@ -120,7 +119,6 @@ export function WaveformScrub({
           step={0.1}
           onValueChange={seek}
           aria-labelledby={label}
-          className="py-2"
         />
         {error && <p role="alert" className="text-sm text-destructive">Не удалось включить звук. Нажмите, чтобы повторить.</p>}
         <audio

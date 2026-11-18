@@ -186,7 +186,7 @@ export function DocumentScene() {
         animate={{ rotate: active ? -15 : -9, x: active ? -8 : 0 }}
         transition={{ duration: reduced || !visible ? 0 : 0.4 }}
       >
-        <Card variant="default" className="h-44 rounded-xl">
+        <Card className="h-44">
           <CardContent className="flex flex-col gap-3">
             <Badge variant="outline" className="w-fit">PDF</Badge>
             <span className="font-heading text-lg leading-tight font-medium">От большой<br />истории</span>
@@ -201,7 +201,7 @@ export function DocumentScene() {
         animate={{ rotate: active ? 10 : 6, x: active ? 9 : 0 }}
         transition={{ duration: reduced || !visible ? 0 : 0.4 }}
       >
-        <Card variant="default" className="h-44 rounded-xl">
+        <Card className="h-44">
           <CardContent>
             <Badge variant="outline">PPTX</Badge>
             <div aria-hidden="true" className="relative mt-5 h-16 overflow-hidden rounded-lg bg-muted">
@@ -212,7 +212,7 @@ export function DocumentScene() {
         </Card>
       </motion.div>
       <motion.div className="absolute bottom-0 right-0 w-[69%]" animate={{ y: active ? -8 : 0 }} transition={{ duration: reduced || !visible ? 0 : 0.4 }}>
-        <Card variant="default" size="sm" className="rounded-xl shadow-lg">
+        <Card size="sm">
           <CardContent className="flex items-center gap-3">
             <FileText aria-hidden="true" className="size-7 shrink-0 text-primary" />
             <span className="font-heading text-lg leading-tight font-medium">к главному<br />за минуту</span>
@@ -348,11 +348,19 @@ export function FilmScene() {
         </Button>
         <span className="text-[10px] text-muted-foreground">Съёмка с МКС</span>
       </div>
+      <div className="grid grid-cols-3 gap-2" aria-hidden="true">
+        {intervals.map((label, index) => (
+          <div key={label} className="aspect-video overflow-hidden">
+            <FilmFrame variant={index} />
+          </div>
+        ))}
+      </div>
       <ToggleGroup
         value={[String(selected)]}
         onValueChange={(value) => { if (value.length) selectFragment(Number(value[0])); }}
         aria-label="Выберите интервал исходного видео"
-        className="grid w-full grid-cols-3 gap-2"
+        size="sm"
+        variant="outline"
       >
         {intervals.map((label, index) => (
           <ToggleGroupItem
@@ -360,10 +368,8 @@ export function FilmScene() {
             value={String(index)}
             aria-label={`Выбрать фрагмент ${index + 1}: ${label}`}
             aria-controls={id}
-            className="h-auto min-w-0 flex-col gap-1.5 overflow-hidden rounded-md p-1 data-pressed:ring-2 data-pressed:ring-primary"
           >
-            <span className="aspect-video w-full overflow-hidden rounded-sm"><FilmFrame variant={index} /></span>
-            <span className="font-mono text-[10px]">{label}</span>
+            {label}
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
@@ -371,50 +377,52 @@ export function FilmScene() {
         <Scissors aria-hidden="true" className="size-3 text-primary" />
         <span>Один фрагмент</span><ArrowDown aria-hidden="true" className="ml-auto size-3" /><span>В композицию</span>
       </div>
-      <Card id={id} size="sm" className="gap-0 py-0">
-        <CardContent className="relative flex h-40 flex-col overflow-hidden p-0 @min-[280px]/film:h-32 @min-[280px]/film:flex-row">
-          {!source && (
-            <div className="order-2 flex shrink-0 items-center justify-between gap-2 p-2 @min-[280px]/film:order-none @min-[280px]/film:w-2/5 @min-[280px]/film:flex-col @min-[280px]/film:items-start @min-[280px]/film:gap-3 @min-[280px]/film:p-3">
-              <span className="hidden font-mono text-[9px] text-muted-foreground @min-[280px]/film:inline">СЦЕНА 01</span>
-              <span className="font-heading text-xs leading-[0.95] font-semibold tracking-tight @min-[280px]/film:text-lg">НАША{" "}<br className="hidden @min-[280px]/film:block" />ПЛАНЕТА<span className="text-primary">.</span></span>
-              <span className="hidden text-[9px] text-muted-foreground @min-[280px]/film:inline">Взгляд с орбиты</span>
-            </div>
-          )}
-          <div className="relative order-1 min-h-0 min-w-0 flex-1 overflow-hidden @min-[280px]/film:order-none">
-            <div className="absolute inset-0"><FilmFrame variant={source ? 0 : selected} /></div>
-            <video
-              ref={video}
-              preload="none"
-              playsInline
-              muted
-              aria-label={source ? "Исходный клип: Земля с МКС" : `Фрагмент ${selected + 1} в композиции`}
-              className={cn("absolute inset-0 size-full object-cover", !showVideo && "invisible")}
-              onLoadedMetadata={beginPlayback}
-              onPlaying={() => {
-                if (!pending.current || document.hidden) {
-                  video.current?.pause();
-                  return;
-                }
-                setPlaying(true);
-                setShowVideo(true);
-              }}
-              onPause={() => setPlaying(false)}
-              onEnded={() => { pending.current = false; setPlaying(false); }}
-              onTimeUpdate={() => {
-                const element = video.current;
-                if (element && !element.paused && element.currentTime >= playback.current.end) {
+      <Card id={id} size="sm">
+        <CardContent>
+          <div className="relative flex h-40 flex-col overflow-hidden @min-[280px]/film:h-32 @min-[280px]/film:flex-row">
+            {!source && (
+              <div className="order-2 flex shrink-0 items-center justify-between gap-2 p-2 @min-[280px]/film:order-none @min-[280px]/film:w-2/5 @min-[280px]/film:flex-col @min-[280px]/film:items-start @min-[280px]/film:gap-3 @min-[280px]/film:p-3">
+                <span className="hidden font-mono text-[9px] text-muted-foreground @min-[280px]/film:inline">СЦЕНА 01</span>
+                <span className="font-heading text-xs leading-[0.95] font-semibold tracking-tight @min-[280px]/film:text-lg">НАША{" "}<br className="hidden @min-[280px]/film:block" />ПЛАНЕТА<span className="text-primary">.</span></span>
+                <span className="hidden text-[9px] text-muted-foreground @min-[280px]/film:inline">Взгляд с орбиты</span>
+              </div>
+            )}
+            <div className="relative order-1 min-h-0 min-w-0 flex-1 overflow-hidden @min-[280px]/film:order-none">
+              <div className="absolute inset-0"><FilmFrame variant={source ? 0 : selected} /></div>
+              <video
+                ref={video}
+                preload="none"
+                playsInline
+                muted
+                aria-label={source ? "Исходный клип: Земля с МКС" : `Фрагмент ${selected + 1} в композиции`}
+                className={cn("absolute inset-0 size-full object-cover", !showVideo && "invisible")}
+                onLoadedMetadata={beginPlayback}
+                onPlaying={() => {
+                  if (!pending.current || document.hidden) {
+                    video.current?.pause();
+                    return;
+                  }
+                  setPlaying(true);
+                  setShowVideo(true);
+                }}
+                onPause={() => setPlaying(false)}
+                onEnded={() => { pending.current = false; setPlaying(false); }}
+                onTimeUpdate={() => {
+                  const element = video.current;
+                  if (element && !element.paused && element.currentTime >= playback.current.end) {
+                    pending.current = false;
+                    element.pause();
+                    element.currentTime = Math.max(playback.current.start, playback.current.end - 1 / 24);
+                  }
+                }}
+                onError={() => {
                   pending.current = false;
-                  element.pause();
-                  element.currentTime = Math.max(playback.current.start, playback.current.end - 1 / 24);
-                }
-              }}
-              onError={() => {
-                pending.current = false;
-                setPlaying(false);
-                setShowVideo(false);
-                setError(true);
-              }}
-            />
+                  setPlaying(false);
+                  setShowVideo(false);
+                  setError(true);
+                }}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -477,7 +485,7 @@ export function EditScene() {
           {large ? "Вернуть как было" : "Сделай заголовок крупнее"}
         </Button>
       </div>
-      <Card id={id} variant="default" className="relative isolate h-[230px] overflow-hidden rounded-2xl sm:h-[260px]" style={{ containerType: "inline-size" }}>
+      <Card id={id} className="relative isolate h-[230px] overflow-hidden sm:h-[260px]" style={{ containerType: "inline-size" }}>
         <CardContent className="relative flex h-full flex-col justify-between">
           <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-14 size-60 rounded-full border-[38px] border-primary/20" />
           <div className="relative flex items-center justify-between">

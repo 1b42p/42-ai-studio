@@ -34,8 +34,8 @@ export function ExampleCard({
   const seconds = Math.round(example.durationSec);
 
   return (
-    <Card variant="plain" className="min-w-0 gap-4 py-0 [--card-spacing:0]">
-      <CardContent className="p-0">
+    <Card className="min-w-0">
+      <CardContent>
         <div
           className="mx-auto w-full overflow-hidden rounded-2xl bg-muted ring-1 ring-border/70"
           style={vertical ? { maxWidth: `calc(70svh * ${example.width} / ${example.height})` } : undefined}
@@ -58,20 +58,20 @@ export function ExampleCard({
           </AspectRatio>
         </div>
       </CardContent>
-      <CardHeader className="gap-3">
-        <CardTitle className="text-xl font-semibold tracking-tight"><h3>{example.title}</h3></CardTitle>
+      <CardHeader>
+        <CardTitle><h3>{example.title}</h3></CardTitle>
         <div className="flex flex-wrap gap-1.5">
           {example.features.map((label) => <FeatureBadge key={label} label={label} />)}
         </div>
       </CardHeader>
       <CardContent className="flex flex-col items-start gap-1">
-        <CardDescription id={requestId} className={cn("leading-relaxed break-words", !expanded && "line-clamp-3 md:line-clamp-none")}>
+        <CardDescription id={requestId} className={cn("break-words", !expanded && "line-clamp-3 md:line-clamp-none")}>
           Запрос: «{example.request}»
         </CardDescription>
         <Button
           variant="link"
           size="sm"
-          className="h-auto px-0 py-2 md:hidden"
+          className="md:hidden"
           aria-expanded={expanded}
           aria-controls={requestId}
           onClick={() => setExpanded((value) => !value)}

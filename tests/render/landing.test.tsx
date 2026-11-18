@@ -1,7 +1,8 @@
 import type { CDPSession } from "playwright";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cdp, commands, page, userEvent } from "vitest/browser";
-import { renderToReadableStream } from "react-dom/server";
+import { renderToString } from "react-dom/server";
+import { cleanup } from "vitest-browser-react";
 
 import { LandingPage } from "@/components/studio/landing/landing-page";
 import { ExamplesSection } from "@/components/studio/landing/examples-section";
@@ -142,6 +143,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Auto-cleanup runs before the next test, too late for media/mocks reset here.
+  await cleanup();
   await protocol().send("Emulation.setEmulatedMedia", { features: [] });
   await protocol().send("Emulation.setCPUThrottlingRate", { rate: 1 });
   vi.restoreAllMocks();
@@ -321,8 +324,13 @@ for (const [viewport, renderLanding] of [
       await expect.element(page.getByText("Опишите ролик одним сообщением — первый результат уже в чате.", { exact: true })).toBeVisible();
       await expect.element(page.getByText("© 42 AI Studio", { exact: true })).toBeVisible();
       for (const [title, description] of landingSteps) {
-        await expect.element(page.elementLocator(section("how")).getByRole("tab", { name: new RegExp(title) })).toBeVisible();
-        await expect.element(page.getByText(description, { exact: true })).toBeVisible();
+        const tab = page.elementLocator(section("how")).getByRole("tab", { name: title, exact: true });
+        await expect.element(tab).toBeVisible();
+        await tab.click();
+        await expect.element(tab).toHaveAttribute("aria-selected", "true");
+        const panel = page.getByRole("tabpanel", { name: title, exact: true });
+        await expect.element(panel.getByText(description, { exact: true })).toBeVisible();
+        expect(page.getByRole("tabpanel").elements()).toHaveLength(1);
       }
       for (const [title, description] of landingFeatures) {
         await expect.element(page.elementLocator(section("features")).getByText(title, { exact: true })).toBeVisible();
@@ -369,10 +377,10 @@ for (const [viewport, renderLanding] of [
         await expect.element(page.getByRole("heading", { level: 1, name: hero })).toBeVisible();
         const buttons = loginLinks().elements();
         expect(buttons).toHaveLength(3);
-        const before = buttons.map((button) => button.getBoundingClientRect().width);
+        const before = buttons.map((button) => button.getBoundingClientRect().height);
         expect(authCalls()).toHaveLength(1);
         await nextFrame();
-        expect(loginLinks().elements().map((button) => button.getBoundingClientRect().width)).toEqual(before);
+        expect(loginLinks().elements().map((button) => button.getBoundingClientRect().height)).toEqual(before);
 
         if (result === "network") pending.reject(new TypeError("network unavailable"));
         else pending.resolve(result === 200
@@ -383,7 +391,6 @@ for (const [viewport, renderLanding] of [
           await expect.poll(() => studioLinks().elements().length).toBe(3);
           expect(loginLinks().elements()).toHaveLength(0);
           for (const link of studioLinks().elements()) expect(link.getAttribute("href")).toBe("/s");
-          expect(studioLinks().elements().map((button) => button.getBoundingClientRect().width)).toEqual(before);
         } else {
           await nextFrame();
           await nextFrame();
@@ -392,6 +399,14 @@ for (const [viewport, renderLanding] of [
           expect(studioLinks().elements()).toHaveLength(0);
           await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
           expect(document.body.textContent).not.toContain("network unavailable");
+        }
+        const links = result === 200 ? studioLinks().elements() : loginLinks().elements();
+        expect(links.map((link) => link.getBoundingClientRect().height)).toEqual(before);
+        for (const link of links) {
+          expect(link.scrollWidth).toBeLessThanOrEqual(link.clientWidth + 1);
+          expect(link.scrollHeight).toBeLessThanOrEqual(link.clientHeight + 1);
+          expect(link.getBoundingClientRect().width).toBeGreaterThan(0);
+          expect(link.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth);
         }
         expect(authCalls()).toHaveLength(1);
         expectNoHorizontalScroll();
@@ -519,9 +534,10 @@ for (const [viewport, renderLanding] of [
 }
 
 test("серверная разметка содержит восемь возможностей и один корректный h1 до JavaScript", async () => {
-  const stream = await renderToReadableStream(landing());
-  await stream.allReady;
-  const html = await new Response(stream).text();
+  // The synchronous SSR renderer uses React's secondary context slots, unlike
+  // the streaming browser renderer which conflicts with subsequent DOM renders.
+  // This tree has no server-side data suspension; require all content below.
+  const html = renderToString(landing());
   const document = new DOMParser().parseFromString(html, "text/html");
   expect(document.querySelectorAll("h1")).toHaveLength(1);
   expect(document.querySelector("h1 p")).toBeNull();

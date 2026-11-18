@@ -117,8 +117,8 @@ test("строка ведёт в сессию, обрезает длинное �
   await expect.element(page.getByText("12 октября", { exact: true })).toBeVisible();
   await expect.element(page.getByText("12 октября 2025 г.")).toBeVisible();
 
-  const title = document.querySelector("[data-slot=item-title]");
-  const titles = [...document.querySelectorAll("[data-slot=item-title]")];
+  const title = document.querySelector("[data-slot=card-title]");
+  const titles = [...document.querySelectorAll("[data-slot=card-title]")];
   const longNode = titles.find((node) => node.textContent === longTitle);
   expect(longNode).toBeDefined();
   expect(longNode?.textContent).toBe(longTitle);
@@ -135,7 +135,7 @@ test("строка ведёт в сессию, обрезает длинное �
     }),
   );
   await expect.element(page.getByText("сегодня, 14:05")).toBeVisible();
-  const desktopLong = [...document.querySelectorAll("[data-slot=item-title]")].find(
+  const desktopLong = [...document.querySelectorAll("[data-slot=card-title]")].find(
     (node) => node.textContent === longTitle,
   ) as HTMLElement;
   expect(desktopLong.getClientRects().length).toBe(1);

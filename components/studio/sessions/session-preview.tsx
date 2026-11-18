@@ -54,7 +54,7 @@ export function SessionPreview({
   return (
     <ItemMedia
       aria-hidden="true"
-      className={cn("relative aspect-video w-24 overflow-hidden rounded-md bg-muted text-muted-foreground md:w-40", className)}
+      className={cn("relative aspect-video w-24 overflow-hidden md:w-40", className)}
       variant="icon"
     >
       {preview === null ? (

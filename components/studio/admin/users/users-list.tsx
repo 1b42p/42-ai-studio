@@ -36,9 +36,9 @@ export interface UsersListProps {
 function UserIdentity({ user }: { user: AdminUserItem }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <Avatar className="size-9 shrink-0 rounded-xl">
+      <Avatar>
         {user.photoUrl !== null ? <AvatarImage alt="" src={user.photoUrl} /> : null}
-        <AvatarFallback className="rounded-xl">{initials(user.name)}</AvatarFallback>
+        <AvatarFallback>{initials(user.name)}</AvatarFallback>
       </Avatar>
       <div className="flex min-w-0 flex-col">
         <span className="truncate font-medium" title={user.name}>
@@ -56,10 +56,10 @@ function UserIdentity({ user }: { user: AdminUserItem }) {
 export function UsersList({ items, onAction, now, timeZone }: UsersListProps) {
   return (
     <>
-      <Card className="hidden min-w-0 gap-0 overflow-hidden py-0 shadow-none md:flex">
-        <CardContent className="p-0">
+      <Card className="hidden min-w-0 md:flex">
+        <CardContent>
         <Table className="table-fixed tabular-nums">
-          <TableHeader className="bg-muted/60">
+          <TableHeader>
             <TableRow>
               <TableHead className="w-[30%]">Пользователь</TableHead>
               <TableHead className="w-[13%]">Telegram ID</TableHead>
@@ -74,22 +74,22 @@ export function UsersList({ items, onAction, now, timeZone }: UsersListProps) {
           </TableHeader>
           <TableBody>
             {items.map((user) => (
-              <TableRow key={user.id} className="transition-colors hover:bg-muted/40">
-                <TableCell className="min-w-0 py-4 pl-4">
+              <TableRow key={user.id}>
+                <TableCell className="min-w-0">
                   <UserIdentity user={user} />
                 </TableCell>
-                <TableCell className="truncate text-muted-foreground">
+                <TableCell className="truncate">
                   {user.telegramId}
                 </TableCell>
                 <TableCell>{user.sessionCount}</TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell>
                   {user.lastLoginAt === null ? (
                     "—"
                   ) : (
                     <FormattedDate now={now} timeZone={timeZone} value={user.createdAt} />
                   )}
                 </TableCell>
-                <TableCell className="text-muted-foreground">
+                <TableCell>
                   <FormattedDate now={now} timeZone={timeZone} value={user.lastLoginAt} />
                 </TableCell>
                 <TableCell className="whitespace-normal">
@@ -105,11 +105,11 @@ export function UsersList({ items, onAction, now, timeZone }: UsersListProps) {
         </CardContent>
       </Card>
 
-      <ItemGroup className="gap-3 md:hidden">
+      <ItemGroup className="md:hidden">
         {items.map((user) => (
-          <Item key={user.id} role="listitem" variant="outline" className="items-start rounded-xl bg-card p-4">
+          <Item key={user.id} role="listitem" variant="outline" className="items-start">
             <ItemMedia>
-              <Avatar className="size-9">
+              <Avatar>
                 {user.photoUrl !== null ? <AvatarImage alt="" src={user.photoUrl} /> : null}
                 <AvatarFallback>{initials(user.name)}</AvatarFallback>
               </Avatar>

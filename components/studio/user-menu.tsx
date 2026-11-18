@@ -41,12 +41,12 @@ export function UserMenu({ user, onLogout, items = [] }: UserMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<SidebarMenuButton size="lg" className="h-auto min-w-0 rounded-xl bg-background/70 px-2.5 py-3 ring-1 ring-border" />}
+        render={<SidebarMenuButton size="lg" className="min-w-0" />}
         aria-label={`Аккаунт ${user.name}`}
       >
         <Avatar size="sm">
           {user.photoUrl !== null ? <AvatarImage src={user.photoUrl} alt="" /> : null}
-          <AvatarFallback className="bg-primary/12 text-foreground">{initialsOf(user.name)}</AvatarFallback>
+          <AvatarFallback>{initialsOf(user.name)}</AvatarFallback>
         </Avatar>
         <span className="flex min-w-0 flex-1 flex-col items-start text-left leading-tight">
           <span className="w-full truncate text-sm font-medium">{user.name}</span>

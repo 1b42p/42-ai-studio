@@ -62,23 +62,23 @@ export function UsageView({ data, metric, displayedMetric, onMetricChange, userH
         <ResourceCounter title="Входные токены" value={formatTokens(totals.inputTokens)} />
         <ResourceCounter title="Выходные токены" value={formatTokens(totals.outputTokens)} />
       </div>
-      <Card className="min-w-0 shadow-none">
-        <CardHeader className="flex flex-wrap items-center justify-between gap-3 border-b border-border">
+      <Card className="min-w-0">
+        <CardHeader className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle>По дням</CardTitle>
           <ToggleGroup aria-label="Показатель отчёта" value={[metric]} variant="outline"
             onValueChange={(values) => {
               if (values[0] === "sandboxes" || values[0] === "tokens") onMetricChange(values[0]);
             }}>
-            <ToggleGroupItem value="sandboxes" className="text-foreground">Песочницы</ToggleGroupItem>
-            <ToggleGroupItem value="tokens" className="text-foreground">Токены</ToggleGroupItem>
+            <ToggleGroupItem value="sandboxes">Песочницы</ToggleGroupItem>
+            <ToggleGroupItem value="tokens">Токены</ToggleGroupItem>
           </ToggleGroup>
         </CardHeader>
         <CardContent className="min-w-0">
           <UsageChart days={data.byDay} metric={displayedMetric} />
         </CardContent>
       </Card>
-      <Card className="min-w-0 shadow-none">
-        <CardHeader className="border-b border-border">
+      <Card className="min-w-0">
+        <CardHeader>
           <CardTitle>По пользователям</CardTitle>
           <CardDescription>
             {displayedMetric === "tokens" ? "По убыванию суммы входных и выходных токенов" : "По убыванию времени песочниц, включая открытые интервалы"}
@@ -117,8 +117,8 @@ function UsageUsers({ rows, userHref }: { rows: UsageRow[]; userHref: (userId: s
   return (
     <>
       <div className="hidden md:block">
-        <Table aria-label="Расход по пользователям" className="table-fixed tabular-nums [&_td]:py-4">
-          <TableHeader className="bg-muted/50"><TableRow>
+        <Table aria-label="Расход по пользователям" className="table-fixed tabular-nums">
+          <TableHeader><TableRow>
             <TableHead className="w-[34%]">Пользователь</TableHead>
             <TableHead className="w-[26%]">Время песочниц</TableHead>
             <TableHead className="w-[20%]">Входные токены</TableHead>
@@ -144,7 +144,7 @@ function UsageUsers({ rows, userHref }: { rows: UsageRow[]; userHref: (userId: s
         </Table>
       </div>
       <ItemGroup aria-label="Расход по пользователям" className="md:hidden">{rows.map((row) => (
-        <Item key={row.user.id} variant="muted" className="rounded-xl p-4" render={<a href={userHref(row.user.id)} />}>
+        <Item key={row.user.id} variant="muted" render={<a href={userHref(row.user.id)} />}>
           <ItemContent className="min-w-0">
             <ItemTitle className="block w-full truncate" title={row.user.name}>{row.user.name}</ItemTitle>
             <ItemDescription className="truncate">{row.user.username ? `@${row.user.username}` : "Нет @username"}</ItemDescription>

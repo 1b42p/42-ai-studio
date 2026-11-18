@@ -11,6 +11,7 @@ import {
   AttachmentDescription,
   AttachmentMedia,
   AttachmentTitle,
+  AttachmentTrigger,
 } from "@/components/ui/attachment";
 import {
   Dialog,
@@ -138,9 +139,10 @@ function FrameAttachment({ frame }: { frame: FrameView }) {
   return (
     <Dialog>
       <Attachment className="w-80 has-data-[slot=attachment-content]:w-80" orientation="vertical">
-        <DialogTrigger aria-label={`Открыть кадр: ${frame.name}`} className="w-full min-w-0 cursor-pointer rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+        <AttachmentMedia variant="image" className="aspect-auto w-full">
           <FrameImage frame={frame} key={retry.src} onError={onError} src={retry.src!} />
-        </DialogTrigger>
+          <DialogTrigger render={<AttachmentTrigger aria-label={`Открыть кадр: ${frame.name}`} />} />
+        </AttachmentMedia>
         {content}
       </Attachment>
       <DialogContent className="right-0 left-0 mx-auto max-h-[calc(100dvh-2rem)] w-fit max-w-[calc(100vw-2rem)] min-w-0 translate-x-0 overflow-hidden sm:max-w-[calc(100vw-2rem)]">

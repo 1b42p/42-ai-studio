@@ -92,12 +92,12 @@ export function McpSectionView({ state }: { state: McpState }) {
       </Button>
       {error && !open && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {state.servers.length === 0 ? (
-        <Empty className="rounded-xl border border-dashed bg-muted/25"><EmptyHeader><EmptyMedia variant="icon" className="bg-primary/10 text-foreground"><UnplugIcon /></EmptyMedia><EmptyDescription>Серверов пока нет</EmptyDescription></EmptyHeader></Empty>
-      ) : <ItemGroup className="gap-3">{state.servers.map((server) => {
+        <Empty><EmptyHeader><EmptyMedia variant="icon"><UnplugIcon /></EmptyMedia><EmptyDescription>Серверов пока нет</EmptyDescription></EmptyHeader></Empty>
+      ) : <ItemGroup>{state.servers.map((server) => {
         const checking = state.checking?.[server.id] || rowPending[server.id] === "check";
         const rowBusy = checking || rowPending[server.id] !== undefined;
         return (
-        <Item className="min-w-0 items-start rounded-xl border-border bg-muted/20 p-4" role="listitem" key={server.id}>
+        <Item variant="outline" className="min-w-0 items-start" role="listitem" key={server.id}>
             <ItemContent className="min-w-0">
               <ItemTitle className="max-w-full truncate">{server.name}</ItemTitle>
               <ItemDescription className="truncate">{server.url}</ItemDescription>

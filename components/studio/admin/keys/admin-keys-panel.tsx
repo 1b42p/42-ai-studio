@@ -376,11 +376,11 @@ export function AdminKeysPanel({
           />
         ))}
       </div>
-      <Collapsible className="rounded-xl border border-border bg-muted/30 p-3" onOpenChange={(open) => void loadDeleted(open)} open={deletedOpen}>
-        <CollapsibleTrigger className="text-sm font-medium" render={<Button variant="ghost" />}>
+      <Collapsible onOpenChange={(open) => void loadDeleted(open)} open={deletedOpen}>
+        <CollapsibleTrigger render={<Button variant="ghost" />}>
           Удалённые ключи ({deleted?.length ?? "…"})
         </CollapsibleTrigger>
-        <CollapsibleContent className="flex flex-col gap-2 pt-2">
+        <CollapsibleContent className="flex flex-col gap-2">
           {deletedError !== null ? <p className="text-sm text-destructive">{deletedError}</p> : null}
           {deleted?.map((item) => (
             <div className="flex min-w-0 flex-col gap-1" key={item.id}>

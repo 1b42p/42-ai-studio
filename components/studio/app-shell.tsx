@@ -53,13 +53,13 @@ export function AppShell({ navItems, pathname, userSlot, children }: AppShellPro
   ].filter((group) => group.items.length > 0);
 
   return (
-    <SidebarProvider className="bg-sidebar [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
+    <SidebarProvider>
       <SkipLink />
-      <Sidebar className="border-sidebar-border">
-        <SidebarHeader className="gap-6 px-5 pb-6 pt-7 [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
+      <Sidebar>
+        <SidebarHeader>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg" className="h-auto px-0 hover:bg-transparent" render={<a href="/" />}>
+              <SidebarMenuButton size="lg" render={<a href="/" />}>
                 <Brand />
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -69,10 +69,10 @@ export function AppShell({ navItems, pathname, userSlot, children }: AppShellPro
             <ArrowUpRightIcon data-icon="inline-end" />
           </ButtonLink>
         </SidebarHeader>
-        <SidebarContent className="gap-6 px-3 [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
+        <SidebarContent>
           {groups.map((group) => (
             <SidebarGroup key={group.label}>
-              <SidebarGroupLabel className="mb-2 text-[10px] uppercase tracking-[0.16em]">
+              <SidebarGroupLabel>
                 {group.label}
               </SidebarGroupLabel>
               <SidebarGroupContent>
@@ -85,7 +85,7 @@ export function AppShell({ navItems, pathname, userSlot, children }: AppShellPro
                           render={<a href={item.href} />}
                           isActive={isActive(pathname, item.href)}
                           aria-current={isActive(pathname, item.href) ? "page" : undefined}
-                          className="h-12 gap-3 rounded-xl px-3 data-active:bg-primary/12 data-active:text-foreground data-active:font-semibold"
+                          size="lg"
                         >
                           <Icon />
                           <span>{item.title}</span>
@@ -97,14 +97,14 @@ export function AppShell({ navItems, pathname, userSlot, children }: AppShellPro
               </SidebarGroupContent>
             </SidebarGroup>
           ))}
-          <SidebarGroup className="mt-auto pb-6">
-            <SidebarGroupLabel className="gap-2 text-foreground"><SparklesIcon className="size-3.5" />Ваша видеостудия</SidebarGroupLabel>
-            <SidebarGroupContent className="px-2 pt-2 text-xs leading-relaxed text-muted-foreground">
+          <SidebarGroup className="mt-auto">
+            <SidebarGroupLabel className="gap-2"><SparklesIcon />Ваша видеостудия</SidebarGroupLabel>
+            <SidebarGroupContent>
               От первой идеи до последнего кадра. Продолжайте с того места, где остановились.
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter className="gap-3 px-5 pb-5 [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
+        <SidebarFooter>
           <Separator />
           {userSlot}
           <div className="flex items-center justify-between px-1">

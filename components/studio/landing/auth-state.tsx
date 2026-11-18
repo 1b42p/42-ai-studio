@@ -4,7 +4,6 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { ArrowRight, Send } from "lucide-react";
 
 import { ButtonLink } from "@/components/studio/button-link";
-import { cn } from "@/lib/utils";
 
 export type AuthState = "loading" | "anonymous" | "authenticated";
 
@@ -48,20 +47,33 @@ export function StudioLoginButton({
   const authenticated = useAuthState() === "authenticated";
   const title = authenticated ? "Открыть студию" : "Войти через Telegram";
   const Icon = authenticated ? ArrowRight : Send;
+  const href = authenticated ? "/s" : "/api/auth/telegram/login?next=%2Fs";
+  const variant = tone === "contrast" ? "secondary" : "default";
+
+  if (compact) {
+    return (
+      <>
+        <ButtonLink size="icon" variant={variant} className="shrink-0 md:hidden" href={href} aria-label={title}>
+          <Icon aria-hidden="true" />
+        </ButtonLink>
+        <ButtonLink variant={variant} className="hidden shrink-0 md:inline-flex" href={href}>
+          <Icon data-icon="inline-start" aria-hidden="true" />
+          {title}
+        </ButtonLink>
+      </>
+    );
+  }
 
   return (
     <ButtonLink
-      size={compact ? "default" : "xl"}
-      variant={tone === "contrast" ? "secondary" : "default"}
-      className={cn(
-        "w-60 shrink-0",
-        compact && "size-9 p-0 md:h-9 md:w-46 md:px-3",
-      )}
-      href={authenticated ? "/s" : "/api/auth/telegram/login?next=%2Fs"}
+      size="lg"
+      variant={variant}
+      className="shrink-0"
+      href={href}
       aria-label={title}
     >
       <Icon data-icon="inline-start" aria-hidden="true" />
-      <span className={cn(compact && "hidden md:inline")}>{title}</span>
+      {title}
     </ButtonLink>
   );
 }

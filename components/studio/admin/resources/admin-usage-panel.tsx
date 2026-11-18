@@ -111,7 +111,7 @@ export function AdminUsagePanel({
     <section aria-label="Расход" className="flex min-w-0 flex-col gap-4">
       <AdminHeading title="Расход" description="Время песочниц считается, пока песочница запущена; остановку самой Daytona по бездействию учитывает приблизительно. Токены — по данным провайдера модели." />
       {initialUser ? <UsageUserFilter user={initialUser} onReset={onResetFilter} resetHref={href()} /> : null}
-      <Card className="shadow-none">
+      <Card>
         <CardContent>
           <FieldGroup>
             <Field>
@@ -124,7 +124,7 @@ export function AdminUsagePanel({
                   setPeriod(next);
                 }}>
                 {PERIODS.map((item) => (
-                  <ToggleGroupItem key={item.value} value={item.value} className="text-foreground">{item.label}</ToggleGroupItem>
+                  <ToggleGroupItem key={item.value} value={item.value}>{item.label}</ToggleGroupItem>
                 ))}
               </ToggleGroup>
               <FieldDescription>Часовой пояс: {zone ?? "определяется…"}</FieldDescription>

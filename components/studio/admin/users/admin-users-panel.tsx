@@ -197,7 +197,7 @@ export function AdminUsersPanel({
           {totals.blocked}
         </>
       } />
-      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
         <ResourceCounter title="Всего пользователей" value={totals.users} emphasis />
         <ResourceCounter title="Операторов" value={totals.operators} />
         <ResourceCounter title="Заблокировано" value={totals.blocked} />
@@ -213,7 +213,7 @@ export function AdminUsersPanel({
         </div>
       )}
 
-      <InputGroup className="h-12 max-w-xl bg-card">
+      <InputGroup className="max-w-xl">
         <InputGroupInput
           aria-label="Поиск по @username и Telegram ID"
           placeholder="Поиск по @username и Telegram ID"

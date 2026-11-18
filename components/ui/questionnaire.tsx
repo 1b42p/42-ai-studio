@@ -163,7 +163,7 @@ function QuestionnaireAnswer({ className, ...props }: React.ComponentProps<typeo
       variant="outline"
       size="sm"
       type="button"
-      className={cn("h-auto min-h-11 w-full flex-col items-start whitespace-normal text-start wrap-anywhere", className)}
+      className={cn("h-auto min-h-7 w-full flex-col items-start whitespace-normal text-start wrap-anywhere", className)}
       {...props}
     />
   )

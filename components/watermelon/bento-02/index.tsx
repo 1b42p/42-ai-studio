@@ -52,14 +52,12 @@ export function Bento2Card({
   description,
   children,
   className,
-  contentClassName,
   reverse = false,
 }: {
   title: string;
   description: string;
   children: ReactNode;
   className?: string;
-  contentClassName?: string;
   reverse?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -75,8 +73,7 @@ export function Bento2Card({
       <Card
         ref={ref}
         data-capability={title}
-        variant="soft"
-        className={cn("relative min-w-0 gap-0 rounded-3xl [--card-spacing:--spacing(6)] lg:[--card-spacing:--spacing(7)]", className)}
+        className={cn("relative min-w-0", className)}
         onPointerEnter={() => setHovered(true)}
         onPointerLeave={() => setHovered(false)}
         onFocusCapture={() => setFocused(true)}
@@ -84,10 +81,10 @@ export function Bento2Card({
           if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false);
         }}
       >
-        <CardContent className={cn("relative min-w-0 flex-1", reverse && "order-2", contentClassName)}>
+        <CardContent className={cn("relative min-w-0 flex-1", reverse && "order-2")}>
           {children}
         </CardContent>
-        <CardHeader className={cn("relative gap-2 pt-5", reverse && "order-1 pt-0 pb-5")}>
+        <CardHeader className={cn("relative", reverse && "order-1")}>
           <CardTitle><h3>{title}</h3></CardTitle>
           <CardDescription>{description}</CardDescription>
         </CardHeader>

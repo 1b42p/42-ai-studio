@@ -5,10 +5,9 @@ import { useId, useState } from "react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import { useTextDraft, useUnsavedChangesWarning } from "@/components/studio/use-text-draft";
 import {
   CUSTOM_INSTRUCTIONS_LIMIT,
@@ -30,6 +29,7 @@ export function InstructionsSection({ settings, save }: SettingsSectionProps) {
   const value = draft.value;
   const length = customInstructionsLength(value);
   const tooLong = length > CUSTOM_INSTRUCTIONS_LIMIT;
+  const CountDescription = tooLong ? FieldError : FieldDescription;
   const unchanged = normalizeCustomInstructions(value) === settings.customInstructions;
   useUnsavedChangesWarning(!unchanged && !draft.persisted);
 
@@ -60,20 +60,19 @@ export function InstructionsSection({ settings, save }: SettingsSectionProps) {
           aria-invalid={tooLong}
           aria-describedby={`${id}-count`}
           placeholder="Опишите, как агенту работать с вами"
-          className="min-h-48 min-w-0 resize-y rounded-xl bg-muted/25 p-4 leading-relaxed [field-sizing:fixed]"
+          className="min-h-48 min-w-0 resize-y [field-sizing:fixed]"
           onChange={(event) => {
             draft.setValue(event.target.value);
             setSaved(false);
             setError(null);
           }}
         />
-        <FieldDescription
+        <CountDescription
           id={`${id}-count`}
-          className={cn(tooLong && "text-destructive")}
           aria-live="polite"
         >
           {length} из {CUSTOM_INSTRUCTIONS_LIMIT}
-        </FieldDescription>
+        </CountDescription>
       </Field>
       {error !== null ? (
         <Alert variant="destructive">

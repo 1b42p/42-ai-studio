@@ -43,24 +43,23 @@ export function AdminShell({ sections, pathname, onNavigate, children }: AdminSh
 
   return (
     <div className="mx-auto flex w-full min-w-0 max-w-7xl flex-col gap-6 p-4 md:gap-8 md:p-8">
-      <Item className="rounded-none border-0 border-b border-border px-0 pb-5 pt-0">
+      <Item>
         <ItemContent>
-          <ItemDescription className="text-xs font-medium tracking-widest">42 AI STUDIO</ItemDescription>
-          <ItemTitle role="heading" aria-level={1} className="text-lg font-semibold tracking-tight">Админка</ItemTitle>
+          <ItemDescription>42 AI STUDIO</ItemDescription>
+          <ItemTitle role="heading" aria-level={1}>Админка</ItemTitle>
         </ItemContent>
         <Badge variant="outline">Оператор</Badge>
       </Item>
 
       <div className="hidden md:block">
         <Tabs value={current?.href}>
-          <TabsList className="gap-1 rounded-xl bg-muted/70 p-1 group-data-horizontal/tabs:h-12">
+          <TabsList>
             {sections.map((section) => (
               <TabsTrigger
                 key={section.href}
                 nativeButton={false}
                 render={<a href={section.href} />}
                 value={section.href}
-                className="h-10 rounded-lg px-5 data-active:bg-primary! data-active:text-primary-foreground!"
               >
                 {section.title}
               </TabsTrigger>

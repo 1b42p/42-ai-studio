@@ -103,15 +103,19 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
       await render(view({ output: network.output }));
       const row = page.getByRole("button", { name: new RegExp(`^Кадр.*${width}×${height}`) });
       await expect.element(row).toHaveAttribute("aria-expanded", "true");
-      await expect.element(page.getByLabelText("Загрузка кадра")).toBeVisible();
-      expect(document.querySelector('[data-slot="attachment"] [data-slot="attachment-media"]')).toHaveAttribute("aria-busy", "true");
+      // AttachmentTrigger — отдельный overlay; busy принадлежит области картинки,
+      // а не внешнему AttachmentMedia, содержащему и картинку, и trigger.
+      const media = document.querySelector('[data-slot="attachment"] img')?.closest('[data-slot="attachment-media"]');
+      expect(media).not.toBeNull();
+      expect(media).toHaveAttribute("aria-busy", "true");
+      await expect.element(page.elementLocator(media!).getByLabelText("Загрузка кадра")).toBeVisible();
       await expect.poll(() => network.requests.length).toBe(1);
       expect(new URL(network.requests[0]).pathname).toBe(`/api/media/${network.imageId}`);
       await network.release();
       const thumbnail = page.getByRole("img", { name: frameName });
       await expect.element(thumbnail).toBeVisible();
       await expect.element(page.getByLabelText("Загрузка кадра")).not.toBeInTheDocument();
-      expect(document.querySelector('[data-slot="attachment"] [data-slot="attachment-media"]')).toHaveAttribute("aria-busy", "false");
+      expect(media).toHaveAttribute("aria-busy", "false");
       const image = thumbnail.element() as HTMLImageElement;
       await expect.poll(() => image.naturalWidth).toBe(width);
       const bounds = image.getBoundingClientRect();

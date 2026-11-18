@@ -27,12 +27,6 @@ export interface KeyCardProps {
   readonly onDelete: () => void;
 }
 
-function barClass(level: "ok" | "warning" | "destructive"): string | undefined {
-  if (level === "destructive") return "bg-destructive";
-  if (level === "warning") return "bg-warning";
-  return undefined;
-}
-
 function UsageBar({
   label,
   used,
@@ -47,11 +41,15 @@ function UsageBar({
     <Progress
       aria-label={label}
       data-level={level}
-      indicatorClassName={barClass(level)}
       max={quota}
       value={used}
     >
       <ProgressLabel>{label}</ProgressLabel>
+      {level !== "ok" ? (
+        <Badge variant={level === "destructive" ? "destructive" : "secondary"}>
+          {level === "destructive" ? "Квота почти исчерпана" : "Квота заканчивается"}
+        </Badge>
+      ) : null}
     </Progress>
   );
 }
@@ -79,13 +77,13 @@ export function KeyCard({
 
   return (
     <Card
-      className="min-w-0 gap-5 shadow-none data-highlighted:ring-2 data-highlighted:ring-primary"
+      className="min-w-0"
       data-highlighted={highlighted ? "" : undefined}
       data-key-id={item.id}
     >
-      <CardHeader className="gap-3 border-b border-border">
+      <CardHeader>
         <div className="flex min-w-0 items-start justify-between gap-2">
-          <CardTitle className="min-w-0 truncate text-xl font-semibold tracking-tight">{item.label}</CardTitle>
+          <CardTitle className="min-w-0 truncate">{item.label}</CardTitle>
           <Button
             aria-label={`Обновить ${item.label}`}
             disabled={refreshing}
@@ -97,6 +95,7 @@ export function KeyCard({
           </Button>
         </div>
         <div className="flex flex-wrap gap-1">
+          {highlighted ? <Badge variant="outline">Добавлен</Badge> : null}
           <Badge variant={item.enabled ? "default" : "secondary"}>
             {item.enabled ? "Включён" : "Отключён"}
           </Badge>
@@ -131,7 +130,7 @@ export function KeyCard({
           </Alert>
         ) : null}
         {numbers && usage?.cpu && usage.memoryGb && usage.diskGb ? (
-          <div className="flex flex-col gap-4 rounded-xl bg-muted/50 p-4 tabular-nums">
+          <div className="flex flex-col gap-4 tabular-nums">
             <UsageBar label={amountLabel("vCPU", usage.cpu.used, usage.cpu.quota, "")} quota={usage.cpu.quota} used={usage.cpu.used} />
             <UsageBar
               label={amountLabel("Память", usage.memoryGb.used, usage.memoryGb.quota, "ГиБ")}
@@ -160,7 +159,7 @@ export function KeyCard({
           </Alert>
         ) : null}
         {item.fits !== null ? (
-          <Alert className="border-primary/15 bg-primary/5">
+          <Alert>
             <AlertDescription>{fitsLabel(item.fits, defaults)}</AlertDescription>
           </Alert>
         ) : null}
@@ -198,7 +197,7 @@ export function KeyCard({
             Включить
           </Button>
         )}
-        <Button aria-label={`Удалить ${item.label}`} onClick={onDelete} variant="ghost" className="text-destructive">
+        <Button aria-label={`Удалить ${item.label}`} onClick={onDelete} variant="destructive">
           <Trash2Icon data-icon="inline-start" />
           Удалить
         </Button>

@@ -186,7 +186,7 @@ export function SculptureScene({
         <Button
           size="icon"
           variant="outline"
-          className="pointer-events-auto absolute right-4 bottom-4 rounded-full bg-background/85 text-foreground"
+          className="pointer-events-auto absolute right-4 bottom-4"
           aria-label={`${paused ? "Возобновить" : "Остановить"} анимацию: ${composition === "hero" ? "киноленты" : "кинокадр"}`}
           title={paused ? "Возобновить анимацию" : "Остановить анимацию"}
           onClick={() => setPaused((value) => !value)}

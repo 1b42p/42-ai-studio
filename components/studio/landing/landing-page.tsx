@@ -35,7 +35,7 @@ export function LandingPage({ examples }: LandingPageProps) {
     <AuthStateProvider>
       <PublicShell fullWidth navLinks={landingNavLinks(examples.length > 0)} actions={<StudioLoginButton compact />}>
         <Hero31
-          badge={<Badge variant="outline" className="rounded-md border-primary/25 bg-background/65 px-3 py-1.5 backdrop-blur-sm">Видео из одной просьбы</Badge>}
+          badge={<Badge variant="outline">Видео из одной просьбы</Badge>}
           title={heroTitle}
           subtitle="Агент-видеограф сам напишет анимацию, озвучит текст, добавит субтитры, проверит кадры и пришлёт файл прямо в чат."
           note="Отдельный аккаунт не нужен: вход через Telegram"
@@ -43,7 +43,7 @@ export function LandingPage({ examples }: LandingPageProps) {
           actions={<>
             <StudioLoginButton />
             {examples.length > 0 && (
-              <ButtonLink variant="secondary" size="xl" href="#examples">
+              <ButtonLink variant="secondary" size="lg" href="#examples">
                 Смотреть примеры
                 <ArrowDown data-icon="inline-end" aria-hidden="true" />
               </ButtonLink>

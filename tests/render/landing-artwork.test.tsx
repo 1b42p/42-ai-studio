@@ -4,6 +4,7 @@ import { hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { cdp, page, userEvent } from "vitest/browser";
+import { cleanup } from "vitest-browser-react";
 
 import { CreationArtwork, CreationFrame } from "@/components/studio/landing/creation-artwork";
 import { CreationStory } from "@/components/studio/landing/creation-story";
@@ -13,6 +14,31 @@ import { expectNoHorizontalScroll, renderOnDesktop, renderOnPhone } from "./supp
 
 const protocol = () => cdp() as Pick<CDPSession, "send">;
 const storySteps = landingSteps.map(([title, description]) => ({ title, description }));
+
+/** Measure actual theme colors, including alpha, rather than former CSS classes. */
+function contrastOnCard(element: Element) {
+  const card = element.closest('[data-slot="card"]')!;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const context = canvas.getContext("2d")!;
+  context.fillStyle = getComputedStyle(card).backgroundColor;
+  context.fillRect(0, 0, 1, 1);
+  const background = context.getImageData(0, 0, 1, 1).data;
+  expect(background[3]).toBe(255);
+  context.fillStyle = getComputedStyle(element).color;
+  context.fillRect(0, 0, 1, 1);
+  const foreground = context.getImageData(0, 0, 1, 1).data;
+  const luminance = (pixels: Uint8ClampedArray) => {
+    const [red, green, blue] = [...pixels].slice(0, 3).map((channel) => {
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+    });
+    return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+  };
+  const back = luminance(background);
+  const front = luminance(foreground);
+  return (Math.max(back, front) + 0.05) / (Math.min(back, front) + 0.05);
+}
 
 test("акцент финального кадра не перекрывает заголовок", async () => {
   await renderOnDesktop(<CreationFrame scene={2} />);
@@ -33,6 +59,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await cleanup();
   await protocol().send("Emulation.setEmulatedMedia", { features: [] });
   vi.restoreAllMocks();
   localStorage.clear();
@@ -49,11 +76,13 @@ for (const [viewport, renderStory] of [
       await expect.poll(() => document.documentElement.classList.contains(theme)).toBe(true);
       const steps = page.getByRole("tablist", { name: "Этапы создания видео" }).getByRole("tab");
       const active = steps.nth(0).element();
-      const number = active.querySelector<HTMLElement>(".tabular-nums")!;
-      const title = active.querySelector<HTMLElement>(".text-base")!;
-      const badge = document.querySelector<HTMLElement>('[data-slot="badge"]')!;
-      expect(getComputedStyle(number).color).toBe(getComputedStyle(title).color);
-      expect(getComputedStyle(badge).color).toBe(getComputedStyle(title).color);
+      const panel = page.getByRole("tabpanel", { name: storySteps[0].title, exact: true });
+      for (const slot of ["card-title", "card-description", "badge"]) {
+        const label = panel.element().querySelector(`[data-slot="${slot}"]`)!;
+        expect(label, slot).not.toBeNull();
+        await expect.element(page.elementLocator(label)).toBeVisible();
+        expect(contrastOnCard(label), `${slot}: контраст обычного текста`).toBeGreaterThanOrEqual(4.5);
+      }
       await expect.element(steps.nth(0)).toHaveAttribute("aria-selected", "true");
       (active as HTMLElement).focus();
       await userEvent.keyboard("{ArrowRight}");

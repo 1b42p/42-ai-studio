@@ -23,7 +23,7 @@ export function ThemeSection() {
     <ToggleGroup
       aria-label="Тема оформления"
       variant="outline"
-      className="grid w-full grid-cols-1 gap-2 border-0 md:grid-cols-3"
+      className="grid w-full grid-cols-1 md:grid-cols-3"
       orientation={mobile ? "vertical" : "horizontal"}
       value={mounted && theme ? [theme] : []}
       disabled={!mounted}
@@ -33,7 +33,7 @@ export function ThemeSection() {
       }}
     >
       {themes.map(({ value, title, Icon }) => (
-        <ToggleGroupItem key={value} value={value} className="h-16 justify-start gap-3 rounded-xl border border-border px-4 data-pressed:border-primary/50 data-pressed:bg-primary/8 data-pressed:text-foreground">
+        <ToggleGroupItem key={value} value={value}>
           <Icon data-icon="inline-start" />
           {title}
         </ToggleGroupItem>

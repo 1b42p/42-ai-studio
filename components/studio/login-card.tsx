@@ -33,16 +33,15 @@ export function LoginCard({
   const nothingConfigured = !telegramEnabled && !devLoginEnabled;
 
   return (
-    <Card className="w-full max-w-3xl gap-0 overflow-hidden rounded-3xl py-0 md:grid md:grid-cols-2 [&_:focus-visible]:ring-foreground [&_:focus-visible]:outline-foreground">
-      <CardHeader className="relative flex flex-col justify-between gap-8 overflow-hidden rounded-none border-b bg-primary/8 p-7 md:min-h-96 md:border-r md:border-b-0 md:p-10">
-        <Badge variant="outline" className="w-fit gap-2"><ClapperboardIcon />42 AI Studio</Badge>
-        <span aria-hidden="true" className="pointer-events-none absolute -right-5 top-4 select-none text-[13rem] font-semibold leading-none tracking-tighter text-primary/8 md:top-20">42</span>
+    <Card className="w-full max-w-3xl md:grid md:grid-cols-2">
+      <CardHeader className="flex flex-col justify-between">
+        <Badge variant="outline" className="w-fit"><ClapperboardIcon />42 AI Studio</Badge>
         <div className="relative flex flex-col gap-3">
-          <CardTitle className="text-4xl font-semibold tracking-tight">Вход</CardTitle>
-          <CardDescription className="max-w-60 text-base leading-relaxed">Войдите через Telegram, отдельный аккаунт не нужен</CardDescription>
+          <CardTitle>Вход</CardTitle>
+          <CardDescription className="max-w-60">Войдите через Telegram, отдельный аккаунт не нужен</CardDescription>
         </div>
       </CardHeader>
-      <CardContent className="flex min-w-0 flex-col justify-center gap-5 p-7 md:p-10">
+      <CardContent className="flex min-w-0 flex-col justify-center gap-5">
         {error === "blocked" ? (
           <Alert variant="destructive">
             <TriangleAlertIcon />

@@ -114,7 +114,6 @@ function LoadError({ text }: { text: string }) {
         <AlertDescription>
           {text}{" "}
           <ButtonLink
-            className="h-auto p-0 align-baseline"
             href="/s"
             size="sm"
             variant="link"

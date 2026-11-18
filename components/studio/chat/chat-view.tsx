@@ -43,6 +43,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
+import { Trace, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/trace";
 import { cn } from "@/lib/utils";
 import type { SandboxStatus } from "@/lib/sandbox/status";
 
@@ -393,14 +394,15 @@ export function ChatView({
               })}
 
               {thinking ? (
-                <div
+                <Trace
                   aria-live="polite"
-                  className="flex items-center gap-3 rounded-xl bg-primary/5 px-4 py-3 text-sm text-muted-foreground"
                   role="status"
                 >
-                  <Spinner className="text-foreground" />
-                  <span className="shimmer">Агент думает…</span>
-                </div>
+                  <TraceLine status="running">
+                    <TraceIcon><Spinner /></TraceIcon>
+                    <TraceTitle>Агент думает…</TraceTitle>
+                  </TraceLine>
+                </Trace>
               ) : null}
 
               {[...byTurn.entries()]

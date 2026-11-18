@@ -34,7 +34,7 @@ export function PublicShell({
       )}>
         <div className={cn(
           "mx-auto flex min-h-14 w-full max-w-7xl items-center justify-between gap-2",
-          !fullWidth && "rounded-2xl border border-border/70 bg-card/90 px-3 shadow-sm lg:px-6",
+          !fullWidth && "px-3 lg:px-6",
         )}>
           <a href="/" aria-label="42 AI Studio — главная" className="shrink-0">
             <Brand />

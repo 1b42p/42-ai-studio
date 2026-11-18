@@ -8,9 +8,9 @@ import {
 
 export function PublicErrorLoading() {
   return (
-    <Empty role="status" className="min-h-svh rounded-none">
+    <Empty role="status" className="min-h-svh">
       <EmptyHeader>
-        <EmptyTitle className="text-2xl">
+        <EmptyTitle>
           <h1>Не удалось открыть страницу</h1>
         </EmptyTitle>
         <EmptyDescription>
