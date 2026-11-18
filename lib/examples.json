@@ -21,17 +21,17 @@
     "title": "Акция кофейни",
     "request": "Сделай вертикальный рекламный ролик на 20 секунд для кофейни на углу: акция «Второй кофе в подарок по будням до 11:00», крупный текст, русская озвучка мужским голосом, субтитры.",
     "format": "9:16",
-    "durationSec": 20.736,
+    "durationSec": 20,
     "features": [
       "Вертикальный формат",
       "Озвучка",
       "Субтитры"
     ],
-    "video": "/examples/promo-vertical-v1.mp4",
-    "poster": "/examples/promo-vertical-v1.jpg",
+    "video": "/examples/promo-vertical-v2.mp4",
+    "poster": "/examples/promo-vertical-v2.jpg",
     "width": 720,
     "height": 1280,
-    "bytes": 424322
+    "bytes": 3303665
   },
   {
     "id": "data-chart",

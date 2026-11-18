@@ -1,7 +1,9 @@
 # Пересоздание примеров
 
-Ролики создаются агентом 42 AI Studio через обычные пользовательские сессии,
-с настоящей моделью и песочницей Daytona. Композиции не собираются вручную.
+Исходные ролики созданы агентом 42 AI Studio через обычные пользовательские
+сессии, с настоящей моделью и песочницей Daytona. Исключение — текущая
+реклама кофейни `promo-vertical-v2`: по прямой просьбе владельца её
+пересобрал исполнитель, без запуска агента продукта.
 Для запуска нужны настроенные Postgres, S3, модель и активный ключ Daytona
 в базе; `APP_TEST_MODE` выключен, `EDGE_TTS_*` не переопределены.
 
@@ -47,10 +49,20 @@
 предусмотренную повторную проверку упрощённой версии. Исходные числа,
 легенда, русская озвучка и длительность сохранены.
 
+## Ревизия рекламы кофейни
+
+`promo-vertical-v2` заменяет исходную слайдовую версию самостоятельной
+3D-постановкой: две чашки кофе, предметный свет, пар, крупные планы
+и смена ракурсов. Условия акции, вертикальный формат, мужская русская
+озвучка и субтитры сохранены. Исходники, озвучка, шрифты с лицензиями
+и воспроизводимая команда сборки — в [coffee-v2/](coffee-v2/README.md).
+Этот ролик не является результатом новой генерации агента продукта.
+
 ## Подготовка публичных файлов
 
 Скачанные исходники сохраните как `explainer-source-v2.mp4`,
-`promo-vertical-source.mp4` и `data-chart-source.mp4`.
+`data-chart-source.mp4`. Рекламу кофейни собирайте по инструкции выше;
+готовый `coffee.mp4` используйте как `promo-vertical-source-v2.mp4`.
 
 ```sh
 ffmpeg -i explainer-source-v2.mp4 -r 30 -vf scale=1280:-2 \
@@ -58,10 +70,8 @@ ffmpeg -i explainer-source-v2.mp4 -r 30 -vf scale=1280:-2 \
   -crf 24 -preset slow -c:a aac -b:a 128k \
   -movflags +faststart public/examples/explainer-v2.mp4
 
-ffmpeg -i promo-vertical-source.mp4 -r 30 -vf scale=720:-2 \
-  -c:v libx264 -profile:v high -pix_fmt yuv420p \
-  -crf 24 -preset slow -c:a aac -b:a 128k \
-  -movflags +faststart public/examples/promo-vertical-v1.mp4
+ffmpeg -i promo-vertical-source-v2.mp4 -c copy \
+  -movflags +faststart public/examples/promo-vertical-v2.mp4
 
 ffmpeg -i data-chart-source.mp4 -r 30 -vf scale=1280:-2 \
   -c:v libx264 -profile:v high -pix_fmt yuv420p \
@@ -77,8 +87,8 @@ ffmpeg -i data-chart-source.mp4 -r 30 -vf scale=1280:-2 \
 ```sh
 ffmpeg -ss 3 -i public/examples/explainer-v2.mp4 \
   -frames:v 1 -q:v 3 public/examples/explainer-v2.jpg
-ffmpeg -ss 9 -i public/examples/promo-vertical-v1.mp4 \
-  -frames:v 1 -q:v 3 public/examples/promo-vertical-v1.jpg
+ffmpeg -ss 18.5 -i public/examples/promo-vertical-v2.mp4 \
+  -frames:v 1 -q:v 3 public/examples/promo-vertical-v2.jpg
 ffmpeg -ss 10 -i public/examples/data-chart-v1.mp4 \
   -frames:v 1 -q:v 3 public/examples/data-chart-v1.jpg
 ```
