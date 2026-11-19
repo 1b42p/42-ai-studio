@@ -1,12 +1,13 @@
 import { defineEval } from "eve/evals";
 import { equals } from "eve/evals/expect";
+import { parseSandboxLinks } from "../../lib/media/sandbox-path";
 import { isDraft, isFinal, questionFrameContracts, questionSession, questionVideoContracts, renderCommands, REQUEST, TIMEOUT } from "./fixtures";
 import { reviewedRevisionBeforeVideo } from "./frame-observations";
 import { questionProjectPath, questionProps } from "./media-fixture";
-import { verifiedVideoLinkBeforeQuestion } from "./observations";
+import { verifiedFinalPreview, verifiedVideoLinkBeforeQuestion } from "./observations";
 
 export default Array.from({ length: 3 }, () => defineEval({
-  timeoutMs: TIMEOUT, tags: ["questions"], description: "Правка заголовка вызывает новый черновик и новый вопрос.",
+  timeoutMs: TIMEOUT, tags: ["questions"], description: "Правка даёт новый черновик, один ответ запускает экспорт исправленной версии.",
   async test(t) {
     const session = await questionSession(t);
     const videos = questionVideoContracts(120);
@@ -41,6 +42,17 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.check(next.requestId !== request.requestId, equals(true));
     t.check(verifiedVideoLinkBeforeQuestion(corrected.events, revisedVideo, next.requestId), equals(true));
     t.check(reviewedRevisionBeforeVideo(corrected.events, revisedVideo, revisedFrames), equals(true));
-    t.parked();
+
+    const approve = next.options?.find(option => option.label === "Рендерить финал");
+    if (!approve) throw new Error("В вопросе нет кнопки финального экспорта");
+    const final = await session.respond([{ requestId: next.requestId, optionId: approve.id }]);
+    final.succeeded();
+    t.check(final.events.some(event => event.type === "input.requested"), equals(false));
+    const revisedFinal = videos.find(video => video.version === 2 && !video.draft)!;
+    t.check(renderCommands(final).filter(isFinal).map(command => revisedFinal.render.test(command)), equals([true]));
+    t.check(verifiedFinalPreview(final.events, revisedFinal), equals(true));
+    t.check(parseSandboxLinks(final.message ?? "", { includeUnusedDefinitions: false }).some(link =>
+      link.kind === "file" && link.path === revisedFinal.path), equals(true));
+    t.succeeded();
   },
 }));
