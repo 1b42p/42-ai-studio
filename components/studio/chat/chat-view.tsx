@@ -4,6 +4,7 @@ import { ClientError, type InputResponse, type MessageStreamEvent } from "eve/cl
 import {
   openConversationInputs,
   type ConversationState,
+  type EveMessage,
 } from "eve/react";
 import type { UserContent } from "ai";
 import { AlertCircleIcon, PaperclipIcon, SquareIcon, VideoIcon } from "lucide-react";
@@ -52,6 +53,20 @@ export interface ChatViewAgent {
   readonly events: readonly MessageStreamEvent[];
   readonly status: ChatStatus;
   readonly error?: Error;
+}
+
+function visibleMessages(messages: readonly EveMessage[], events: readonly MessageStreamEvent[]) {
+  const seen = new Set<string>();
+  const replayed = new Set<string>();
+  for (const event of events) {
+    if (event.type !== "message.received" || !event.meta.id) continue;
+    const key = `${event.data.turnId}:${event.data.sequence}`;
+    if (seen.has(key)) replayed.add(`${event.meta.id}:user`);
+    else seen.add(key);
+  }
+  // A recovered step can publish the same input at a new stream position.
+  // Keep that position in eve's cursor; hide only its duplicate bubble.
+  return replayed.size === 0 ? messages : messages.filter(message => !replayed.has(message.id));
 }
 
 export interface ChatViewProps {
@@ -213,7 +228,7 @@ export function ChatView({
 }: ChatViewProps) {
   const { data, events, status } = agent;
   const files = useMemo(() => buildFileLookup(messageFiles), [messageFiles]);
-  const messages = data.messages;
+  const messages = useMemo(() => visibleMessages(data.messages, events), [data.messages, events]);
   const openInputs = openConversationInputs(data);
   const inlineIds = inlineQuestionIds(data);
   const pinnedInputs = openInputs.filter((input) => !inlineIds.has(input.request.requestId));

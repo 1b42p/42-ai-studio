@@ -1,6 +1,6 @@
 import { defineAgent, defineDynamic } from "eve";
 
-import { loadConfig } from "@/lib/config";
+import { isSelfHostedProductionBuild, loadConfig } from "@/lib/config";
 
 import { selectAgentModel } from "./lib/agent-model";
 
@@ -12,9 +12,13 @@ import { selectAgentModel } from "./lib/agent-model";
  * запущен с другим окружением.
  */
 export default defineAgent({
+  ...(isSelfHostedProductionBuild() ? {
+    experimental: { workflow: { world: "#studio-workflow-world" } },
+  } : {}),
   build: {
     externalDependencies: [
       "@daytona/sdk",
+      "@workflow/world-local",
       "jsdom",
       "@mozilla/readability",
       "turndown",

@@ -662,6 +662,14 @@ export function readNextDistDir(): string {
   return value === undefined || value === "" ? ".next" : value;
 }
 
+export function isSelfHostedProductionBuild(): boolean {
+  return process.env.NODE_ENV === "production" && !process.env.VERCEL;
+}
+
+export function readWorkflowQueueNamespace(): string | undefined {
+  return process.env.WORKFLOW_QUEUE_NAMESPACE;
+}
+
 /**
  * Предел одного файла для канала eve. Канал исполняется и при `eve build`,
  * когда `.env` может не быть, поэтому читается только эта переменная: пустая

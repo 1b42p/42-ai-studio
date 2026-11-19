@@ -71,6 +71,20 @@ test("простая беседа показывает вопрос и отве�
   expectNoHorizontalScroll();
 });
 
+test("повтор события при восстановлении хода не дублирует сообщение пользователя", async () => {
+  const user = simpleConversation.find((event) => event.type === "message.received")!;
+  const replay = { ...user, meta: { ...user.meta, id: "evt-replayed-user" } };
+  const next = {
+    ...user,
+    meta: { ...user.meta, id: "evt-new-user" },
+    data: { ...user.data, turnId: "turn_next" },
+  };
+  await renderOnDesktop(view([...simpleConversation, replay, next]));
+
+  await expect.element(page.getByText("Эхо: привет")).toBeVisible();
+  await expect.element(page.getByText("привет", { exact: true })).toHaveLength(2);
+});
+
 test("размышление свёрнуто в строку и раскрывается по клику", async () => {
   await renderOnDesktop(view(reasoningConversation()));
 
