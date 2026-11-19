@@ -1,9 +1,8 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { reenqueueActiveRuns } from "@workflow/world";
 import { createWorld, type LocalWorld } from "@workflow/world-local";
-
-import { readWorkflowQueueNamespace } from "../config";
 
 const deliveryHeader = "x-studio-workflow-delivery";
 
@@ -45,30 +44,19 @@ export function createStudioLocalWorld(
     };
   };
   world.start = async () => {
-    const namespace = readWorkflowQueueNamespace();
-    if (!namespace) throw new Error("Workflow queue namespace was not initialized by eve");
     await assertRunScopedStorage(dataDir);
     await start?.();
-    const prefix = `__${namespace}_wkf_workflow_` as const;
-    let cursor: string | undefined;
-    do {
-      const page = await world.runs.list({
-        pagination: { cursor }, resolveData: "none", status: ["pending", "running"],
-      });
-      for (const run of page.data) {
+    await reenqueueActiveRuns(world.runs, async (name, message, options) => {
+      if (typeof message === "object" && message !== null && "runId" in message &&
+        typeof message.runId === "string") {
         try {
-          await world.releaseOrphanedSteps(run.runId);
+          await world.releaseOrphanedSteps(message.runId);
         } catch {
-          console.warn("[workflow] orphaned step release failed:", run.runId);
-        }
-        try {
-          await world.queue(`${prefix}${run.workflowName}`, { runId: run.runId });
-        } catch {
-          console.warn("[workflow] run re-enqueue failed:", run.runId);
+          console.warn("[workflow] orphaned step release failed:", message.runId);
         }
       }
-      cursor = page.hasMore ? page.cursor ?? undefined : undefined;
-    } while (cursor !== undefined);
+      return world.queue(name, message, options);
+    }, "studio-workflow", undefined, { queueLost: true });
   };
   return world;
 }

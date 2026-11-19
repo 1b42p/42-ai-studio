@@ -26,7 +26,15 @@ export default Array.from({ length: 3 }, () => defineEval({
     t.check(request.action?.kind === "tool-call" && request.action.toolName === "ask_question" && /Рендерить финал/.test(request.prompt), equals(true));
     t.check(request.options?.map(option => option.label), equals(["Рендерить финал", "Хочу поправить"]));
     t.check(verifiedVideoLinkBeforeQuestion(first.events, originalVideo, request.requestId), equals(true));
-    const corrected = await session.respond([{ requestId: request.requestId, text: "Поправь заголовок на «Утро начинается с кофе»" }]);
+    const wantRevision = request.options?.find(option => option.label === "Хочу поправить");
+    if (!wantRevision) throw new Error("В вопросе нет кнопки правки");
+    const revisionChoice = await session.respond([{ requestId: request.requestId, optionId: wantRevision.id }]);
+    t.check(renderCommands(revisionChoice).some(isFinal), equals(false));
+    const revision = "Поправь заголовок на «Утро начинается с кофе»";
+    const correctionPrompt = session.pendingInputRequests[0];
+    const corrected = correctionPrompt
+      ? await session.respond([{ requestId: correctionPrompt.requestId, text: revision }])
+      : await session.send(revision);
     corrected.parked();
     corrected.notCalledTool("set_session_preview");
     // A response includes calls completed in that stream slice and spanning
@@ -49,6 +57,12 @@ export default Array.from({ length: 3 }, () => defineEval({
     final.succeeded();
     t.check(final.events.some(event => event.type === "input.requested"), equals(false));
     const revisedFinal = videos.find(video => video.version === 2 && !video.draft)!;
+    const beforeRender = final.events.findIndex(event => event.type === "actions.requested" &&
+      event.data.actions.some(action => "toolName" in action && action.toolName === "bash" &&
+        typeof action.input?.command === "string" && revisedFinal.render.test(action.input.command)));
+    t.check(beforeRender >= 0 && final.events.slice(0, beforeRender).every(event =>
+      event.type !== "message.completed" ||
+        !/(?:подтверд(?:и|ите|ить)|рендерить финал\?|начинать (?:финальный )?рендер\?)/i.test(event.data.message)), equals(true));
     t.check(renderCommands(final).filter(isFinal).map(command => revisedFinal.render.test(command)), equals([true]));
     t.check(verifiedFinalPreview(final.events, revisedFinal), equals(true));
     t.check(parseSandboxLinks(final.message ?? "", { includeUnusedDefinitions: false }).some(link =>

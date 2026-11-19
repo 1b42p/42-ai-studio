@@ -55,12 +55,13 @@ export interface ChatViewAgent {
   readonly error?: Error;
 }
 
-function visibleMessages(messages: readonly EveMessage[], events: readonly MessageStreamEvent[]) {
+function hideReplayedUserMessages(messages: readonly EveMessage[], events: readonly MessageStreamEvent[]) {
   const seen = new Set<string>();
   const replayed = new Set<string>();
   for (const event of events) {
     if (event.type !== "message.received" || !event.meta.id) continue;
     const key = `${event.data.turnId}:${event.data.sequence}`;
+    // The eve 0.83 conversation reducer uses this ID for each message.received bubble.
     if (seen.has(key)) replayed.add(`${event.meta.id}:user`);
     else seen.add(key);
   }
@@ -228,7 +229,7 @@ export function ChatView({
 }: ChatViewProps) {
   const { data, events, status } = agent;
   const files = useMemo(() => buildFileLookup(messageFiles), [messageFiles]);
-  const messages = useMemo(() => visibleMessages(data.messages, events), [data.messages, events]);
+  const messages = useMemo(() => hideReplayedUserMessages(data.messages, events), [data.messages, events]);
   const openInputs = openConversationInputs(data);
   const inlineIds = inlineQuestionIds(data);
   const pinnedInputs = openInputs.filter((input) => !inlineIds.has(input.request.requestId));
