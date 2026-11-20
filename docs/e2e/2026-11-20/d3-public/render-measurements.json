@@ -1,0 +1,22 @@
+{
+  "project": "coffee-home-v2",
+  "projectArchiveSha256": "5429811ef61db3f834c7459f2caa47e573b29182e81a369ec9e3569d2c912d23",
+  "separateFreshSandboxes": true,
+  "resources": { "cpu": 2, "memoryBytes": 4294967296 },
+  "approvalEstimateSeconds": 300,
+  "secondsFromPublicApprovalToTurnCompleted": 260,
+  "draft": {
+    "width": 960,
+    "height": 540,
+    "videoDurationSeconds": 128.133333,
+    "renderSeconds": 126.835,
+    "memoryPeakBytes": 1239154688
+  },
+  "final": {
+    "width": 1920,
+    "height": 1080,
+    "videoDurationSeconds": 128.133333,
+    "renderSeconds": 215.469,
+    "memoryPeakBytes": 2181427200
+  }
+}
