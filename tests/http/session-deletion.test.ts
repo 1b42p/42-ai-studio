@@ -18,7 +18,7 @@ import {
 } from "../../lib/db/schema";
 import { DELETED_KEY_MARKER, deleteKey } from "../../agent/lib/daytona-key-pool";
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
-import { fetchApp, startApp } from "./support/app";
+import { appOutput, fetchApp, startApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, eveClientAs, readStreamUntil, sendAndWait } from "./support/chat";
 import { createDaytonaKey, createUser, db, resetDatabase } from "./support/db";
@@ -178,6 +178,9 @@ describe("удаление всех данных сессии", () => {
     const [sandbox] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, target.id));
 
     expect((await remove(target.id, target.user)).status).toBe(204);
+    expect(appOutput()).toMatch(new RegExp(
+      `\\[session:delete\\] eve reset \\{\\s*appSessionId: '${target.id}',\\s*status: 'reset'\\s*\\}`,
+    ));
     expect(await row(target.id)).toBeUndefined();
     expect(await s3().listKeys(target.prefix)).toEqual([]);
     expect((await fakeSandbox.counters()).deleted).toBe(1);

@@ -147,6 +147,7 @@ export async function deleteSessionData(
       if (reset.status !== "reset" && reset.status !== "no_active_session") {
         throw new Error("Unexpected eve reset result");
       }
+      console.info("[session:delete] eve reset", { appSessionId, status: reset.status });
     });
 
     await timed("daytona", async () => {
