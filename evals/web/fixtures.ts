@@ -28,7 +28,7 @@ export function readStub(id: string, url: string, title: string, content: string
   };
 }
 
-const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices", "download_video", "set_session_preview"] as const;
+const OTHER_TOOLS = ["bash", "read_file", "edit_file", "agent", "speak", "list_voices", "download_video", "set_session_preview", "export_draft"] as const;
 
 export const isolatePreview: ToolStub = {
   id: "isolate-preview", tool: "set_session_preview",
@@ -45,8 +45,13 @@ export const isolateDownload: ToolStub = {
   },
 };
 
+export const isolateDraftExport: ToolStub = {
+  id: "isolate-draft-export", tool: "export_draft", outcome: { response: { status: "unavailable" } },
+};
+
 const isolationStubs: readonly ToolStub[] = [
   { id: "isolate-question", tool: "ask_question", outcome: { response: { status: "unavailable" } } },
+  isolateDraftExport,
   {
     id: "isolate-bash", tool: "bash",
     outcome: { response: { status: "completed", exitCode: 0, stdout: "", stderr: "", truncated: false } },

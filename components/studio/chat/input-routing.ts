@@ -1,8 +1,12 @@
 import type { ConversationState, EveDynamicToolPart } from "eve/react";
 
+export function isDraftExportCall(part: EveDynamicToolPart): boolean {
+  return (part.toolMetadata?.eve?.name ?? part.toolName) === "export_draft";
+}
+
 export function isQuestionCall(part: EveDynamicToolPart): boolean {
   if (part.toolMetadata?.eve?.kind === "load-skill") return false;
-  return (part.toolMetadata?.eve?.name ?? part.toolName) === "ask_question";
+  return (part.toolMetadata?.eve?.name ?? part.toolName) === "ask_question" || isDraftExportCall(part);
 }
 
 export function questionsFor(data: ConversationState, callId: string) {

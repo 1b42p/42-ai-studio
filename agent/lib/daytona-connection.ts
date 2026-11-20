@@ -16,6 +16,8 @@ type Callbacks = {
   onActivity(): Promise<void>;
 };
 
+const retryableFileSize = 2 * 1024 * 1024;
+
 // Never propagate an SDK exception: it may contain authorization headers.
 function failure() {
   return new StudioSandboxError("daytona_unavailable");
@@ -32,6 +34,33 @@ function checkAbort(signal?: AbortSignal) {
 function quote(value: string) {
   if (value.includes("\0")) throw new Error("Недопустимый нулевой байт в команде.");
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+async function readSmallFile(sandbox: Sandbox, path: string, size: number, signal?: AbortSignal) {
+  const contents = Buffer.allocUnsafe(size);
+  for (let attempt = 0; ; attempt++) {
+    checkAbort(signal);
+    const timeout = AbortSignal.timeout(20_000);
+    const attemptSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    try {
+      const source = await sandbox.fs.downloadFileStream(path, { signal: attemptSignal });
+      let offset = 0;
+      for await (const value of source) {
+        checkAbort(attemptSignal);
+        const chunk = Buffer.isBuffer(value) ? value : Buffer.from(value);
+        if (chunk.byteLength > size - offset) throw failure();
+        chunk.copy(contents, offset);
+        offset += chunk.byteLength;
+      }
+      checkAbort(attemptSignal);
+      if (offset !== size) throw failure();
+      return contents;
+    } catch (error) {
+      checkAbort(signal);
+      if (error instanceof DaytonaNotFoundError || attempt === 2) throw error;
+      await delay(250 * 2 ** attempt, undefined, { signal });
+    }
+  }
 }
 
 function outputStream() {
@@ -209,6 +238,12 @@ export function connectDaytona(sandbox: Sandbox, callbacks: Callbacks): SandboxC
         const info = await abortable(() => sandbox.fs.getFileDetails(path), abortSignal);
         if (info.isDir) {
           throw Object.assign(new Error("EISDIR: path is a directory"), { code: "EISDIR" });
+        }
+        // Checkpoints and frame attachments must not reach consumers half-read.
+        // Retry before yielding any bytes; large files still stream without buffering.
+        if (Number.isSafeInteger(info.size) && info.size >= 0 && info.size <= retryableFileSize) {
+          const contents = await readSmallFile(sandbox, path, info.size, abortSignal);
+          return Readable.toWeb(Readable.from([contents], { objectMode: false })) as ReadableStream<Uint8Array>;
         }
         const source = await sandbox.fs.downloadFileStream(path, { signal: abortSignal });
         // The consumer may not request its first chunk immediately.

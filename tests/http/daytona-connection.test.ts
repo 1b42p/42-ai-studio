@@ -21,7 +21,7 @@ function fixture() {
     deleteSession: vi.fn(),
   };
   const fs = {
-    getFileDetails: vi.fn(async () => ({ isDir: false })),
+    getFileDetails: vi.fn(async (): Promise<{ isDir: boolean; size?: number }> => ({ isDir: false })),
     downloadFileStream: vi.fn(async (_path: string, _options: unknown) => Readable.from([Buffer.from("file")])),
     createFolder: vi.fn(async () => {}),
     uploadFiles: vi.fn(async (_files: unknown) => {}),
@@ -167,6 +167,29 @@ describe("connectDaytona", () => {
     expect(error).toHaveProperty("message", expect.stringContaining("daytona_unavailable:"));
     expect(error).not.toHaveProperty("headers");
     expect(error).not.toHaveProperty("cause");
+  });
+
+  test("a small file is retried after the response breaks mid-file, without leaking partial bytes", async () => {
+    const { sdk, connection } = fixture();
+    sdk.fs.getFileDetails.mockResolvedValue({ isDir: false, size: 4 });
+    sdk.fs.downloadFileStream.mockResolvedValueOnce(Readable.from((async function* () {
+      yield Buffer.from("XX");
+      throw Object.assign(new Error("upstream disconnected"), { code: "ECONNRESET" });
+    })()));
+    const result = await connection.readFile({ path: "/workspace/out/frame.jpeg" });
+    if (!(result instanceof ReadableStream)) throw new Error("Expected a readable stream");
+    expect(await text(result)).toBe("file");
+    expect(sdk.fs.downloadFileStream).toHaveBeenCalledTimes(2);
+  });
+
+  test("a clean EOF before the stated small file size also triggers a retry", async () => {
+    const { sdk, connection } = fixture();
+    sdk.fs.getFileDetails.mockResolvedValue({ isDir: false, size: 4 });
+    sdk.fs.downloadFileStream.mockResolvedValueOnce(Readable.from([Buffer.from("fi")]));
+    const result = await connection.readFile({ path: "/workspace/out/frame.jpeg" });
+    if (!(result instanceof ReadableStream)) throw new Error("Expected a readable stream");
+    expect(await text(result)).toBe("file");
+    expect(sdk.fs.downloadFileStream).toHaveBeenCalledTimes(2);
   });
 
   test("activity callback errors are sanitized before reaching eve", async () => {

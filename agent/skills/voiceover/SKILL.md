@@ -51,15 +51,28 @@ description: Ролик с озвучкой, субтитры по словам 
    другим». Если часть сцен уже озвучена, **переозвучь все сцены одним голосом
    Piper**. Файлы `speak` сохрани неиспользуемыми; Piper пиши под другими
    именами (`scene-<NN>-piper`), замени пути всех сцен и обнови `NOTES.md`.
-2. Прочитай [Piper](references/piper.md). Установи
-   `pip install "piper-tts[alignment]==1.8.0"`, скачай подходящий языку голос
-   (русский — `ru_RU-denis-medium`). Числа, даты, проценты и сокращения запиши
-   словами, чтобы фонемы соответствовали словам субтитров.
+2. В одном `bash` найди каталог навыка и прочитай инструкции:
+
+   ```sh
+   for dir in "$HOME/.agents/skills/voiceover" /workspace/skills/voiceover; do
+     if test -r "$dir/references/piper.md" && test -r "$dir/scripts/piper_speak.py"; then
+       printf '%s\n' "$dir"
+       cat "$dir/references/piper.md"
+       exit 0
+     fi
+   done
+   exit 1
+   ```
+
+   Сохрани напечатанный каталог для запуска скрипта; домашний путь не угадывай.
+   Установи `pip install "piper-tts[alignment]==1.8.0"` и скачай один голос нужного
+   языка. Для русского женского голоса используй `ru_RU-irina-medium`, мужского —
+   `ru_RU-denis-medium`. Числа, даты, проценты и сокращения запиши словами.
 3. Для каждой сцены используй её UTF-8 файл текста; если его ещё нет, создай
    через `edit_file`. Запусти:
 
    ```sh
-   python3 "$HOME/.agents/skills/voiceover/scripts/piper_speak.py" --text-file <проект>/voice/scene-01.txt --voice ru_RU-denis-medium --out <проект>/public/voice/scene-01-piper
+    python3 "<каталог навыка>/scripts/piper_speak.py" --text-file <проект>/voice/scene-01.txt --voice <голос> --out <проект>/public/voice/scene-01-piper
    ```
 
    Скрипт пишет WAV и `.words.json` того же формата, печатает одну JSON-строку

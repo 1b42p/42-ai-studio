@@ -98,6 +98,21 @@ function backendForKey(key: Pick<DaytonaKey, "id" | "apiKeyEncrypted" | "deleted
   return daytonaBackend(key.id, decryptSecret(key.apiKeyEncrypted, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE));
 }
 
+async function readMachine(backend: DaytonaBackend, id: string, guard?: () => Promise<void>) {
+  const backoffs = [250, 750];
+  for (let retry = 0; ; retry += 1) {
+    try {
+      return await backend.get(id);
+    } catch (error) {
+      const status = errorStatus(error);
+      if (retry >= backoffs.length || (status !== 502 && status !== 503 && status !== 504)) throw error;
+      await guard?.();
+      await setTimeout(backoffs[retry]);
+      await guard?.();
+    }
+  }
+}
+
 async function liveMachine(
   backend: DaytonaBackend,
   id: string,
@@ -106,7 +121,7 @@ async function liveMachine(
   observe?: (machine: DaytonaMachine) => Promise<void>,
 ): Promise<DaytonaMachine> {
   let machine: DaytonaMachine;
-  try { machine = await backend.get(id); }
+  try { machine = await readMachine(backend, id, guard); }
   catch (error) {
     if (isMissingSandbox(error)) throw new SandboxSessionGoneError("Песочница утрачена.");
     throw error;
@@ -117,7 +132,7 @@ async function liveMachine(
   while (machine.state === "stopping" || machine.state === "archiving") {
     if (Date.now() >= deadline) throw new StudioSandboxError("sandbox_start_failed");
     await setTimeout(500);
-    try { machine = await backend.get(id); }
+    try { machine = await readMachine(backend, id, guard); }
     catch (error) {
       if (isMissingSandbox(error)) throw new SandboxSessionGoneError("Песочница утрачена.");
       throw error;

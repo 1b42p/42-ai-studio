@@ -6,6 +6,7 @@ import { page, userEvent } from "vitest/browser";
 
 import { ChatPanel, type ChatAgent } from "@/components/studio/chat/chat-panel";
 import { ChatView, type ChatViewProps } from "@/components/studio/chat/chat-view";
+import { draftExportFileGroup } from "@/lib/media/draft-export";
 
 import {
   cancelledConversation,
@@ -121,6 +122,39 @@ test("открытый вопрос отвечает вариантом и св�
   await page.getByRole("textbox", { name: "Свой ответ" }).fill("Свой вариант");
   await page.getByRole("button", { name: "Ответить" }).click();
   expect(onRespond).toHaveBeenCalledWith([{ requestId: "req_1", text: "Свой вариант" }]);
+});
+
+test("согласование черновика недоступно до появления плеера в ленте", async () => {
+  const events = questionConversation().map(event => event.type !== "input.requested" ? event : {
+    ...event,
+    data: {
+      ...event.data,
+      requests: event.data.requests.map(request => ({
+        ...request,
+        action: { ...request.action, toolName: "export_draft",
+          input: { project: "coffee", draft: "out/coffee-draft-v2.mp4" } },
+        options: [{ id: "approve", label: "Рендерить финал" }],
+        prompt: "Рендерить финал в полном качестве?",
+      })),
+    },
+  });
+  const approval = page.getByRole("button", { name: "Рендерить финал" });
+  const desktop = await renderOnDesktop(view(events, { messageFiles: { entries: [] } }));
+  await expect.element(approval).toBeDisabled();
+  expect(document.querySelector("video")).toBeNull();
+  await desktop.unmount();
+
+  const onRespond = vi.fn();
+  await renderOnPhone(view(events, { onRespond, messageFiles: { entries: [{
+    messageId: draftExportFileGroup("call_q"),
+    path: "/workspace/coffee/out/coffee-draft-v2.mp4", state: "ready", reason: null,
+    mediaId: "00000000-0000-4000-8000-000000000042", contentType: "video/mp4",
+    name: "coffee-draft-v2.mp4", sizeBytes: 1024,
+  }] } }));
+  expect(document.querySelector("video")).toBeVisible();
+  await approval.click();
+  expect(onRespond).toHaveBeenCalledWith([{ requestId: "req_1", optionId: "approve" }]);
+  expectNoHorizontalScroll();
 });
 
 test("ошибка MODEL_CALL_FAILED объяснена по-русски", async () => {

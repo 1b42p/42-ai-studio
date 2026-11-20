@@ -60,8 +60,11 @@ export function useMessageFiles({
 
   const busy = isBusyStatus(status);
   const lastTurnId = messages.at(-1)?.metadata?.turnId;
-  const completedCount = useMemo(
-    () => events.filter((event) => event.type === "message.completed").length,
+  const fileEventCount = useMemo(
+    () => events.filter((event) => event.type === "message.completed" ||
+      (event.type === "input.requested" && event.data.requests.some(request => request.action.toolName === "export_draft")) ||
+      (event.type === "action.result" && event.data.result.kind === "tool-result" &&
+        event.data.result.toolName === "export_draft")).length,
     [events],
   );
 
@@ -109,7 +112,7 @@ export function useMessageFiles({
 
   // Повтор после завершения блока сообщения, пока копирование идёт.
   useEffect(() => {
-    if (!enabled || filesUrl === null || completedCount === 0) return;
+    if (!enabled || filesUrl === null || fileEventCount === 0) return;
 
     const controller = new AbortController();
     const startedAt = Date.now();
@@ -133,7 +136,7 @@ export function useMessageFiles({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [enabled, filesUrl, completedCount, loadFiles]);
+  }, [enabled, filesUrl, fileEventCount, loadFiles]);
 
   // Во время хода строки может ещё не быть: это скелет, а не «не найдено».
   useEffect(() => {

@@ -661,6 +661,26 @@ test("401 при восстановлении по имени переводит
   }
 }, 60_000);
 
+test("временный отказ чтения Daytona не заменяет сохранённую песочницу", async () => {
+  await createDaytonaKey({ apiKey: KEY_A });
+  await fakeSandbox.setQuota(KEY_A, ONE_SLOT);
+  const user = await createUser();
+  const eveSessionId = randomUUID();
+  const [session] = await db().insert(appSessions).values({ userId: user.id, eveSessionId }).returning();
+  const lifecycle = createDaytonaLifecycle();
+  const ctx = sessionContext(eveSessionId);
+  const started = await lifecycle.start(ctx, undefined, ARTIFACT);
+  try {
+    await fakeSandbox.failNextGet("unavailable");
+    const resumed = await lifecycle.resume(ctx, ARTIFACT, started.state);
+    await resumed.close?.();
+    expect(await sandboxRow(session!.id)).toMatchObject({ daytonaSandboxId: started.state.sandboxId, state: "started" });
+    expect((await fakeSandbox.counters()).created).toBe(1);
+  } finally {
+    await started.connection.close?.();
+  }
+}, 60_000);
+
 test("сбой очистки после создания оставляет восстановимый резерв", async () => {
   const a = await createDaytonaKey({ apiKey: KEY_A });
   await fakeSandbox.setQuota(KEY_A, ONE_SLOT);

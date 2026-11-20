@@ -1,5 +1,5 @@
 import type { EveEvalContext, ToolStub } from "eve/evals";
-import { blockedRead, emptySearch, isolateDownload, isolatePreview } from "../web/fixtures";
+import { blockedRead, emptySearch, isolateDownload, isolateDraftExport, isolatePreview } from "../web/fixtures";
 import { resumableSession } from "../support/resumable-session";
 import { isDisabledEvalMemoryResolverManifest } from "../support/disabled-eval-memory-manifest";
 
@@ -10,6 +10,7 @@ const PROJECT = "/workspace/morning-exercise";
 function videoStubs(): readonly ToolStub[] {
   return [
     { id: "isolate-question", tool: "ask_question", outcome: { response: { status: "unavailable" } } },
+    isolateDraftExport,
     // Persistent-инструмент требует безусловной подмены, иначе может стартовать копия.
     { id: "isolate-agent", tool: "agent", outcome: { throw: { message: "Этот короткий ролик собери основным агентом; делегирование в оценке отключено." } } },
     {

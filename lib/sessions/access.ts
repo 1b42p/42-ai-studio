@@ -167,12 +167,13 @@ export async function assertEveSessionAccess(
 
   if (action === "stream") {
     const starting = await findStartingAppSession(user.id);
-    if (starting !== null) {
-      const bound = await waitForRootBinding(eveSessionId);
-      if (bound !== null) {
-        assertOwner(bound.userId, user);
-        return;
-      }
+    // Привязка могла появиться после первого поиска корня и убрать строку из ожидающих.
+    const bound = starting === null
+      ? await findAppSessionByEveId(eveSessionId)
+      : await waitForRootBinding(eveSessionId);
+    if (bound !== null) {
+      assertOwner(bound.userId, user);
+      return;
     }
 
     if (await hasRecentSessionActivity(user.id, RECENT_ACTIVITY_WINDOW_MS)) {

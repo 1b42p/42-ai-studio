@@ -7,14 +7,16 @@ import type {
   EveMessagePart,
 } from "eve/react";
 import { BrainIcon } from "lucide-react";
+import { Fragment } from "react";
 
 import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
 import { AuthorizationCard, type AuthorizationPart } from "./authorization-card";
 import { InputPrompt, type RespondToInput } from "@/components/studio/chat/input-prompt";
-import { isQuestionCall, questionsFor } from "@/components/studio/chat/input-routing";
+import { isDraftExportCall, isQuestionCall, questionsFor } from "@/components/studio/chat/input-routing";
 import type { FileLookup } from "@/components/studio/chat/message-files";
 import { MessageAttachments } from "@/components/studio/chat/message-attachments";
 import { ToolCard } from "@/components/studio/chat/tool-card";
+import { SandboxFile } from "@/components/studio/media/sandbox-file";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Message, MessageContent } from "@/components/ui/message";
 import {
@@ -27,6 +29,7 @@ import {
   TraceTitle,
 } from "@/components/ui/trace";
 import { messageIdOf } from "@/lib/media/message-id";
+import { draftExportFileGroup, draftExportFilePattern, draftExportFinalPath, draftExportProjectPattern } from "@/lib/media/draft-export";
 
 type AssistantGroup =
   | { readonly kind: "authorization"; readonly id: string; readonly part: AuthorizationPart }
@@ -164,7 +167,34 @@ function AssistantContent({
         if (group.kind === "question") {
           // Copies are answered through the parent's pinned prompt.
           if (!onRespond) return null;
-          return questionsFor(data, group.part.toolCallId).map((input) => (
+          const inputs = questionsFor(data, group.part.toolCallId);
+          if (isDraftExportCall(group.part)) {
+            const { project, draft } = (group.part.input ?? {}) as { project?: unknown; draft?: unknown };
+            const valid = typeof project === "string" && draftExportProjectPattern.test(project) &&
+              typeof draft === "string" && draftExportFilePattern.test(draft);
+            const resolver = files.resolve(draftExportFileGroup(group.part.toolCallId));
+            const draftPath = valid ? `/workspace/${project}/${draft}` : null;
+            const finalPath = valid ? `/workspace/${project}/${draftExportFinalPath(draft)}` : null;
+            const draftReady = draftPath !== null && resolver.kind === "lookup" &&
+              resolver.status(draftPath).kind === "entry";
+            const finalReady = finalPath !== null && resolver.kind === "lookup" &&
+              resolver.status(finalPath).kind === "entry";
+            return (
+              <Fragment key={group.id}>
+                {draftReady ? <SandboxFile path={draftPath} label="Черновик" resolver={resolver} /> : null}
+                {inputs.map((input) => (
+                  <InputPrompt key={input.request.requestId} input={input}
+                    disabled={inputDisabled || !draftReady} onRespond={onRespond} />
+                ))}
+                {finalReady ? <SandboxFile path={finalPath} label="Готовый ролик" resolver={resolver} /> : (
+                  <Trace>
+                    <ToolCard part={group.part} data={data} appSessionId={appSessionId} />
+                  </Trace>
+                )}
+              </Fragment>
+            );
+          }
+          return inputs.map((input) => (
             <InputPrompt key={input.request.requestId} input={input}
               disabled={inputDisabled} onRespond={onRespond} />
           ));
