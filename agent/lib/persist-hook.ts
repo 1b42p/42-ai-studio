@@ -39,7 +39,7 @@ export interface PersistDependencies {
     userId: string;
     eveSessionId: string;
   }) => Promise<boolean>;
-  readonly requestSync: (appSessionId: string) => Promise<unknown>;
+  readonly requestSync: (appSessionId: string, eventId: string | null) => Promise<unknown>;
   readonly syncAndConfirm: (appSessionId: string, eventId: string | null) => Promise<boolean>;
   /** Строка `bash_jobs` по событию копии агента. */
   readonly recordJob: (appSessionId: string, event: HookEvent) => Promise<void>;
@@ -52,7 +52,7 @@ export const defaultPersistDependencies: PersistDependencies = {
   },
   bindSession: ({ appSessionId, userId, eveSessionId }) =>
     bindAppSession(appSessionId, userId, eveSessionId),
-  requestSync: (appSessionId) => requestSessionSync(appSessionId),
+  requestSync: (appSessionId, eventId) => requestSessionSync(appSessionId, eventId),
   syncAndConfirm: (appSessionId, eventId) => syncAndConfirm(appSessionId, eventId),
   recordJob: (appSessionId, event) => recordBashJob(appSessionId, event),
 };
@@ -162,7 +162,7 @@ export function createPersistEventHandler(
       if (appSession === null) return;
 
       if (INCREMENTAL_EVENTS.has(event.type)) {
-        void deps.requestSync(appSession.id).catch(logSyncFailure);
+        void deps.requestSync(appSession.id, event.meta?.id ?? null).catch(logSyncFailure);
         return;
       }
 
@@ -178,7 +178,7 @@ export function createPersistEventHandler(
         return;
       }
 
-      void deps.requestSync(appSession.id).catch(logSyncFailure);
+      void deps.requestSync(appSession.id, event.meta?.id ?? null).catch(logSyncFailure);
     } catch (error) {
       // Ошибка записи не должна ронять ход: следующая синхронизация нагонит.
       console.error("[sessions] не удалось сохранить событие", {

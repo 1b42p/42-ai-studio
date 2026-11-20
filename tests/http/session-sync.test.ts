@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { MessageStreamEvent } from "eve/client";
 
 import { appSessions, sessionEvents } from "../../lib/db/schema";
-import { syncAppSession } from "../../lib/sessions/events";
+import { requestSessionSync, syncAppSession, type SessionEventReader } from "../../lib/sessions/events";
 import { createSessionAs } from "./support/chat";
 import { createUser, db, resetDatabase } from "./support/db";
 import { telegramStub } from "./support/telegram";
@@ -46,6 +46,33 @@ async function storedRows(appSessionId: string) {
 }
 
 describe("syncAppSession", () => {
+  test("следующее сохранение продолжает с курсора и пропускает уже записанное событие", async () => {
+    const { appSessionId } = await prepareSession();
+    const events = makeEvents(6, "prefix");
+    const reads: { startIndex: number; targets: string[] }[] = [];
+    const reader: SessionEventReader = async function* (_id, startIndex, targets) {
+      const pending = new Set(targets);
+      reads.push({ startIndex, targets: [...pending] });
+      for (const event of events.slice(startIndex)) {
+        yield event;
+        if (event.meta?.id !== undefined) pending.delete(event.meta.id);
+        if (pending.size === 0) return;
+      }
+    };
+
+    await requestSessionSync(appSessionId, "prefix_evt_2", reader);
+    await Promise.all([
+      requestSessionSync(appSessionId, "prefix_evt_1", reader),
+      requestSessionSync(appSessionId, "prefix_evt_4", reader),
+    ]);
+
+    expect(reads).toEqual([
+      { startIndex: 0, targets: ["prefix_evt_2"] },
+      { startIndex: 3, targets: ["prefix_evt_4"] },
+    ]);
+    expect((await storedRows(appSessionId)).map(({ seq }) => seq)).toEqual([0, 1, 2, 3, 4]);
+  });
+
   test("10 параллельных вызовов не дают повторов и дыр, затем добирает новые события", async () => {
     const { appSessionId } = await prepareSession();
     const events = makeEvents(20, "первый");

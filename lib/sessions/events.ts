@@ -10,23 +10,29 @@
  */
 import type { MessageStreamEvent } from "eve/client";
 import { sessions } from "eve/server";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { runningBashJob } from "../sandbox/bash-jobs";
 import { getDb } from "../db/client";
 import { agentSessions, appSessions, bashJobs, sessionEvents } from "../db/schema";
 import { sleep } from "../sleep";
 import { copySessionFromEvent } from "./agent-sessions";
+import { readSessionEventPrefix } from "./event-prefix";
 import { findAppSessionById, hasSessionEvent, setTitleIfEmpty } from "./service";
 
 /** Чтение потока сессии с абсолютного номера события. */
 export type SessionEventReader = (
   eveSessionId: string,
   startIndex: number,
+  targets?: ReadonlySet<string>,
 ) => AsyncIterable<MessageStreamEvent>;
 
-const defaultReader: SessionEventReader = (eveSessionId, startIndex) =>
-  sessions.attach(eveSessionId).stream({ startIndex, follow: false });
+const defaultReader: SessionEventReader = (eveSessionId, startIndex, targets) => {
+  const session = sessions.attach(eveSessionId);
+  return targets === undefined
+    ? session.stream({ startIndex, follow: false })
+    : readSessionEventPrefix((options) => session.stream(options), startIndex, targets);
+};
 
 /** События-приращения: синхронизация идёт без ожидания, чтобы не тормозить поток. */
 export const INCREMENTAL_EVENTS: ReadonlySet<string> = new Set([
@@ -131,6 +137,7 @@ function eventId(event: MessageStreamEvent): string | null {
 export async function syncAppSession(
   appSessionId: string,
   reader: SessionEventReader = defaultReader,
+  targets?: ReadonlySet<string>,
 ): Promise<SyncResult> {
   for (let attempt = 0; attempt < MAX_SYNC_ATTEMPTS; attempt += 1) {
     const session = await findAppSessionById(appSessionId);
@@ -139,8 +146,19 @@ export async function syncAppSession(
     }
 
     const cursor = session.streamCursor;
+    let remaining: ReadonlySet<string> | undefined;
+    if (targets !== undefined) {
+      const ids = [...targets];
+      const saved = ids.length === 0 ? [] : await getDb()
+        .select({ id: sessionEvents.eventId })
+        .from(sessionEvents)
+        .where(and(eq(sessionEvents.appSessionId, appSessionId), inArray(sessionEvents.eventId, ids)));
+      const known = new Set(saved.map(({ id }) => id));
+      remaining = new Set(ids.filter((id) => !known.has(id)));
+      if (remaining.size === 0) return { stored: 0, cursor };
+    }
     const events: MessageStreamEvent[] = [];
-    for await (const event of reader(session.eveSessionId, cursor)) {
+    for await (const event of reader(session.eveSessionId, cursor, remaining)) {
       events.push(event);
     }
     if (events.length === 0) return { stored: 0, cursor };
@@ -202,41 +220,49 @@ export async function syncAppSession(
 }
 
 const inFlight = new Map<string, Promise<SyncResult>>();
-const rerunRequested = new Set<string>();
+const pendingTargets = new Map<string, Set<string | null>>();
 
 async function runUntilQuiet(
   appSessionId: string,
   reader: SessionEventReader,
 ): Promise<SyncResult> {
   let result: SyncResult = { stored: 0, cursor: 0 };
-  do {
-    rerunRequested.delete(appSessionId);
-    result = await syncAppSession(appSessionId, reader);
-  } while (rerunRequested.has(appSessionId));
+  for (let targets = pendingTargets.get(appSessionId); targets; targets = pendingTargets.get(appSessionId)) {
+    pendingTargets.delete(appSessionId);
+    result = await syncAppSession(
+      appSessionId,
+      reader,
+      targets.has(null) ? undefined : new Set([...targets].filter((id): id is string => id !== null)),
+    );
+  }
   return result;
 }
 
-/**
- * Запрашивает синхронизацию сессии. Одновременно в процессе идёт не больше
- * одной на сессию; пришедшее за время чтения подбирает повторное чтение.
- */
-export function requestSessionSync(
+function startSessionSync(
   appSessionId: string,
-  reader: SessionEventReader = defaultReader,
+  reader: SessionEventReader,
 ): Promise<SyncResult> {
   const current = inFlight.get(appSessionId);
-  if (current !== undefined) {
-    rerunRequested.add(appSessionId);
-    return current;
-  }
+  if (current !== undefined) return current;
 
   const promise = runUntilQuiet(appSessionId, reader).finally(() => {
     inFlight.delete(appSessionId);
-    // Запрос пришёл между проверкой и удалением — не теряем его.
-    if (rerunRequested.has(appSessionId)) void requestSessionSync(appSessionId, reader);
+    if (pendingTargets.has(appSessionId)) return startSessionSync(appSessionId, reader);
   });
   inFlight.set(appSessionId, promise);
   return promise;
+}
+
+/** Читает непрерывный префикс до уже опубликованных событий, без обхода всей истории. */
+export function requestSessionSync(
+  appSessionId: string,
+  eventId: string | null,
+  reader: SessionEventReader = defaultReader,
+): Promise<SyncResult> {
+  let targets = pendingTargets.get(appSessionId);
+  if (targets === undefined) pendingTargets.set(appSessionId, targets = new Set());
+  targets.add(eventId);
+  return startSessionSync(appSessionId, reader);
 }
 
 /**
@@ -250,7 +276,7 @@ export async function syncAndConfirm(
   reader: SessionEventReader = defaultReader,
 ): Promise<boolean> {
   for (let attempt = 0; attempt < CONFIRM_ATTEMPTS; attempt += 1) {
-    await requestSessionSync(appSessionId, reader);
+    await requestSessionSync(appSessionId, eventId, reader);
     if (eventId === null) return true;
     if (await hasSessionEvent(appSessionId, eventId)) return true;
     await sleep(CONFIRM_DELAY_MS);

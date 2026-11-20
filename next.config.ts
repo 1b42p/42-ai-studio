@@ -13,6 +13,11 @@ const distDir = readNextDistDir();
 
 const nextConfig: NextConfig = {
   distDir,
+  experimental: {
+    // withEve использует внешний rewrite. Длинная история может задержать
+    // приём ответа на вопрос дольше стандартных 30 секунд прокси Next.js.
+    proxyTimeout: 90_000,
+  },
   // Встроенный блок правил Next.js для агентов англоязычный, и `next dev`
   // перезаписывает им AGENTS.md. Правила переведены на русский, поэтому
   // автогенерация блока отключена.
