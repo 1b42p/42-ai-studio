@@ -3,12 +3,12 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import type { SandboxSessionContext } from "eve/sandbox/provider";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
 import { loadConfig } from "../../lib/config";
 import { getLockSqlClient, getSqlClient } from "../../lib/db/client";
-import { getFakeBackend } from "../../lib/sandbox/fake";
+import * as fake from "../../lib/sandbox/fake";
 import { appSessions, daytonaKeys, sandboxes } from "../../lib/db/schema";
 import { assertEveSessionAccess } from "../../lib/sessions/access";
 import { createDaytonaKey, createUser, db, resetDatabase } from "./support/db";
@@ -53,8 +53,8 @@ test("первое вложение привязывает поток к вла�
 test("имена машин уникальны внутри организации, но не между организациями", async () => {
   const directory = loadConfig().fakeSandboxDir!;
   const resources = { cpu: 2, memoryGb: 4, diskGb: 8 };
-  const a = getFakeBackend(directory, "dtn_names_a", resources);
-  const b = getFakeBackend(directory, "dtn_names_b", resources);
+  const a = fake.getFakeBackend(directory, "dtn_names_a", resources);
+  const b = fake.getFakeBackend(directory, "dtn_names_b", resources);
   const appSessionId = randomUUID();
   const first = await a.create({ name: "same-name", appSessionId });
   const second = await b.create({ name: "same-name", appSessionId });
@@ -63,6 +63,57 @@ test("имена машин уникальны внутри организаци
   expect((await b.get("same-name")).id).toBe(second.id);
   await expect(a.create({ name: "same-name", appSessionId })).rejects.toMatchObject({ status: 409 });
   await Promise.all([first.delete(), second.delete()]);
+});
+
+test("запоздалый starting в объекте SDK не оставляет выданную песочницу без учёта", async () => {
+  await createDaytonaKey();
+  const user = await createUser();
+  const eveSessionId = randomUUID();
+  const [session] = await db().insert(appSessions).values({ userId: user.id, eveSessionId }).returning();
+  const ctx = {
+    kind: "session",
+    session: { id: eveSessionId, auth: { current: null, initiator: null }, turn: { id: randomUUID(), sequence: 0 } },
+    storagePath: loadConfig().fakeSandboxDir!,
+    resolveProjectPath: (filename: string) => path.resolve(filename),
+  } satisfies SandboxSessionContext;
+  const lifecycle = createDaytonaLifecycle();
+  const getBackend = fake.getFakeBackend;
+  let createdId: string | undefined;
+  const freshReads: string[] = [];
+  const backendSpy = vi.spyOn(fake, "getFakeBackend").mockImplementation((...args) => {
+    const backend = getBackend(...args);
+    return {
+      ...backend,
+      async create(input) {
+        const handle = await backend.create(input);
+        expect(handle.state).toBe("started");
+        createdId = handle.id;
+        Object.defineProperty(handle, "state", { value: "starting" });
+        return handle;
+      },
+      async get(idOrName) {
+        const handle = await backend.get(idOrName);
+        if (idOrName === createdId) freshReads.push(handle.state);
+        return handle;
+      },
+    };
+  });
+  let opened: Awaited<ReturnType<typeof lifecycle.start>> | undefined;
+  try {
+    opened = await lifecycle.start(ctx, undefined, {
+      templateKey: "late-starting", dockerfile: "FROM python:3.12-slim-bookworm\n", files: [],
+    });
+    const [row] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, session.id));
+    expect(row).toMatchObject({
+      daytonaSandboxId: opened.state.sandboxId, state: "started", runningSince: expect.any(Date),
+    });
+    expect(freshReads).toEqual(["started"]);
+    expect((await fakeSandbox.counters()).created).toBe(1);
+  } finally {
+    backendSpy.mockRestore();
+    await opened?.connection.close?.();
+    await lifecycle.onSessionEnd(ctx, opened?.state ?? null, { reason: "deleted" });
+  }
 });
 
 test("метка удаления, появившаяся пока start ждёт блокировку, запрещает создание", async () => {

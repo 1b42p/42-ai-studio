@@ -285,13 +285,27 @@ async function captureMachineObserver(appSessionId: string) {
   };
 }
 
-async function connected(machine: DaytonaMachine, appSessionId: string, wait: SandboxWait): Promise<SandboxConnection> {
+async function connected(
+  backend: DaytonaBackend, machine: DaytonaMachine, appSessionId: string, wait: SandboxWait,
+): Promise<SandboxConnection> {
   await waitForSandboxMaintenance(appSessionId);
   await assertSandboxWait(wait);
+  // Daytona SDK can finish waiting on a started event, then apply the response
+  // of an older poll to that same handle. Verify an unexpected state on a
+  // fresh handle before recording readiness or handing it to eve.
+  if (machine.state !== "started") {
+    machine = await readMachine(backend, machine.id, () => assertSandboxWait(wait));
+    if (sandboxStateForLoss(machine.state)) throw new SandboxSessionGoneError("Песочница утрачена.");
+    if (machine.state !== "started") {
+      if (sandboxState(machine.state) !== "starting") throw new StudioSandboxError("sandbox_start_failed");
+      await machine.ready();
+    }
+    await assertSandboxWait(wait);
+  }
   const db = getDb();
   const identity = and(eq(sandboxes.appSessionId, appSessionId), eq(sandboxes.daytonaSandboxId, machine.id));
   const updated = await recordSandboxTransition({
-    newState: sandboxState(machine.state), source: "app",
+    newState: "started", source: "app",
     changes: { startingSince: null, startingKind: null,
       lastActiveAt: new Date(), daytonaActivityAt: machine.lastActivityAt ?? null, stoppedAt: null,
       waitGeneration: wait.generation, launchStartedAt: null },
@@ -480,7 +494,7 @@ export function createDaytonaLifecycle() {
       async function openWithSlot(grant: DaytonaKey | undefined) {
         const sql = await getLockSqlClient().reserve();
         let locked = false;
-        let opened: { machine: DaytonaMachine; state: State } | undefined;
+        let opened: { backend: DaytonaBackend; machine: DaytonaMachine; state: State } | undefined;
         try {
           await sql`select pg_advisory_lock(1, hashtext(${session.id}::text))`;
           locked = true;
@@ -508,7 +522,7 @@ export function createDaytonaLifecycle() {
                 () => assertSandboxWait(wait),
                 await captureMachineObserver(session.id),
               );
-              opened = { machine, state: { keyId: existing.daytonaKeyId, sandboxId: machine.id } };
+              opened = { backend, machine, state: { keyId: existing.daytonaKeyId, sandboxId: machine.id } };
             } catch (error) {
               if (!(error instanceof SandboxSessionGoneError)) throw error;
               await recordSandboxTransition({ sandboxId: existing.id, newState: "gone", source: "observed" });
@@ -551,7 +565,7 @@ export function createDaytonaLifecycle() {
                       existing.daytonaSandboxId,
                     );
                     if (await checkpointMachine(session.id, key.id, machine, wait)) {
-                      opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
+                      opened = { backend, machine, state: { keyId: key.id, sandboxId: machine.id } };
                     } else {
                       await assertSandboxWait(wait);
                       await discardMachine(key.id, machine);
@@ -590,7 +604,7 @@ export function createDaytonaLifecycle() {
                   throw error;
                 }
                 if (await checkpointMachine(session.id, grant.id, created, wait)) {
-                  opened = { machine: created, state: { keyId: grant.id, sandboxId: created.id } };
+                  opened = { backend, machine: created, state: { keyId: grant.id, sandboxId: created.id } };
                   created = undefined;
                 } else {
                   await assertSandboxWait(wait);
@@ -623,7 +637,7 @@ export function createDaytonaLifecycle() {
           finally { await sql.release(); }
         }
         if (opened === undefined) throw new StudioSandboxError("sandbox_create_failed");
-        return { state: opened.state, connection: await connected(opened.machine, session.id, wait) };
+        return { state: opened.state, connection: await connected(opened.backend, opened.machine, session.id, wait) };
       }
     },
     async resume(ctx: SandboxSessionContext, _artifact: Readonly<Artifact>, state: Readonly<State>) {
@@ -678,7 +692,7 @@ export function createDaytonaLifecycle() {
             () => assertSandboxWait(wait),
             await captureMachineObserver(session.id),
           );
-          return await connected(machine, session.id, wait);
+          return await connected(backend, machine, session.id, wait);
         } catch (error) {
           if (error instanceof SandboxSessionGoneError) {
             await recordSandboxTransition({
