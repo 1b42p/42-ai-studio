@@ -1,0 +1,58 @@
+{
+  "startedAt": "2026-11-21T08:39:54.590Z",
+  "voice": "ru-RU-SvetlanaNeural",
+  "total": 12,
+  "rateLimited": 1,
+  "successful": 11,
+  "attempts": [
+    {
+      "outcome": "success",
+      "ms": 879
+    },
+    {
+      "outcome": "success",
+      "ms": 625
+    },
+    {
+      "outcome": "success",
+      "ms": 592
+    },
+    {
+      "outcome": "success",
+      "ms": 720
+    },
+    {
+      "outcome": "success",
+      "ms": 675
+    },
+    {
+      "outcome": "success",
+      "ms": 728
+    },
+    {
+      "outcome": "success",
+      "ms": 647
+    },
+    {
+      "outcome": "success",
+      "ms": 566
+    },
+    {
+      "outcome": "success",
+      "ms": 857
+    },
+    {
+      "outcome": "success",
+      "ms": 592
+    },
+    {
+      "outcome": "error",
+      "status": 429,
+      "code": "HANDSHAKE"
+    },
+    {
+      "outcome": "success",
+      "ms": 637
+    }
+  ]
+}

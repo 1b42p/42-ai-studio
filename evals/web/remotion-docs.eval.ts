@@ -2,6 +2,12 @@ import { defineEval } from "eve/evals";
 import { includes } from "eve/evals/expect";
 import { SEQUENCE_URL, assertWebOnly, blockedRead, emptySearch, readStub, webSession } from "./fixtures";
 
+const frameDocsUrl = "https://www.remotion.dev/docs/use-current-frame";
+// https://www.remotion.dev/docs/use-current-frame: краткая выдержка для обоих форматов страницы.
+const frameDocs = `Frames are zero-indexed. Inside a timed component, useCurrentFrame()
+returns the frame relative to the parent's start. To get the absolute frame inside
+such a component, call useCurrentFrame() at the top level and pass the value down.`;
+
 // Выдержка из https://www.remotion.dev/docs/sequence.md, прочитана 2026-11-04.
 const sequenceDocs = `---
 id: sequence
@@ -180,6 +186,8 @@ export default Array.from({ length: 3 }, () => defineEval({
   async test(t) {
     const session = await webSession(t, [
       readStub("sequence", SEQUENCE_URL, "<Sequence>", sequenceDocs, "en"),
+      readStub("current-frame-markdown", `${frameDocsUrl}.md`, "useCurrentFrame()", frameDocs, "en"),
+      readStub("current-frame-page", frameDocsUrl, "useCurrentFrame()", frameDocs, "en"),
       blockedRead, emptySearch,
     ]);
     const turn = await session.send("Объясни по-русски по официальной документации Remotion, как работает <Sequence>, свойства from и durationInFrames и отсчёт кадров внутри. Сам ролик создавать не нужно.");

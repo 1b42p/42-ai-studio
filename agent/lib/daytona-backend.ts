@@ -1,9 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { Worker } from "node:worker_threads";
 import { setTimeout as delay } from "node:timers/promises";
 import { Daytona, DaytonaConflictError, DaytonaNotFoundError, Image, SandboxState, type Sandbox } from "@daytona/sdk";
@@ -118,10 +116,12 @@ function wrap(sandbox: Sandbox): DaytonaMachine {
 // SDK до освобождения блокировки. Уже принятый Daytona запрос отменить нельзя;
 // следующий вызов подтверждает удаление через get/404.
 const DELETE_WORKER = String.raw`
+const { createRequire } = require("node:module");
 const { parentPort, workerData } = require("node:worker_threads");
 (async () => {
   try {
-    const { Daytona } = require(workerData.modulePath);
+    const requireFromApp = createRequire(workerData.appPackagePath);
+    const { Daytona } = requireFromApp("@daytona/sdk");
     const client = new Daytona({
       apiKey: workerData.secret, apiUrl: workerData.apiUrl,
       requestTimeoutMs: Math.max(1, workerData.deadline - Date.now())
@@ -156,11 +156,10 @@ export async function deleteDaytonaMachine(
     signal.throwIfAborted();
     return;
   }
-  const require = createRequire(resolve("package.json"));
   const worker = new Worker(DELETE_WORKER, {
     eval: true,
     workerData: {
-      modulePath: require.resolve("@daytona/sdk"),
+      appPackagePath: resolve("package.json"),
       apiUrl: config.daytonaApiUrl, secret, sandboxId, deadline,
     },
     stdout: true, stderr: true,
