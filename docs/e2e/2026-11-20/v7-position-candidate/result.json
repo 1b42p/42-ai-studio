@@ -1,0 +1,21 @@
+{
+  "scenario": "В7",
+  "build": "isolated Next/Eve, live model and Daytona",
+  "phase": "passed",
+  "quotaMemoryGiB": 10,
+  "queue": {
+    "position": 2,
+    "total": 2,
+    "reason": "capacity"
+  },
+  "queueAfterCancellation": {
+    "position": 1,
+    "total": 1,
+    "reason": "capacity"
+  },
+  "grantSeconds": 24.61,
+  "turn": "turn.completed",
+  "cleaned": true,
+  "deleteStatus": 204,
+  "earlierDeleteStatus": 204
+}
