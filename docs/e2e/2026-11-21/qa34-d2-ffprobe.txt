@@ -1,0 +1,10 @@
+out/utrennyaya-zaryadka-v1.mp4 2316738 bytes
+codec_name=h264
+codec_type=video
+width=1920
+height=1080
+duration=29.900000
+codec_name=aac
+codec_type=audio
+duration=29.909000
+duration=29.909000
