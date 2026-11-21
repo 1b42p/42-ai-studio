@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { ToolStub } from "eve/evals";
 
 import data from "../fixtures/voiceover/project.json";
@@ -286,8 +287,25 @@ function piperSetupStubs(): ToolStub[] {
   const install =
     "(?:python3?\\s+-m\\s+)?pip\\s+install[^;&\\n]*piper-tts[^;&\\n]*";
   const download = `python3?\\s+-m\\s+piper\\.download_voices\\s+${escapePattern(PIPER_VOICE)}[^;&\\n]*`;
+  const skill = "/root/.agents/skills/voiceover";
+  const lookup = [
+    'for dir in "$HOME/.agents/skills/voiceover" /workspace/skills/voiceover; do',
+    'if test -r "$dir/references/piper.md" && test -r "$dir/scripts/piper_speak.py"; then',
+    String.raw`printf '%s\n' "$dir"`,
+    'cat "$dir/references/piper.md"',
+    "exit 0",
+    "fi",
+    "done",
+    "exit 1",
+  ].map((line) => escapePattern(line).replaceAll(" ", "\\s+"))
+    .join("(?:\\s*;\\s*|\\s+)");
 
   return [
+    commandStub(
+      "piper-locate-skill",
+      `^\\s*${lookup}\\s*;?\\s*$`,
+      `${skill}\n${readFileSync("agent/skills/voiceover/references/piper.md", "utf8")}`,
+    ),
     commandStub(
       "piper-install",
       `^\\s*${install}\\s*$`,
@@ -304,6 +322,8 @@ function piperSetupStubs(): ToolStub[] {
 function environmentStubs(fallback: boolean): ToolStub[] {
   const metadata = `${data.composition}  ${data.fps} fps  ${data.width}×${data.height}  ${data.frames} frames (${duration(data.videoDurationMs)} sec)\n`;
   const listing = `${Object.keys(data.files).join("\n")}\npublic/voice/\nout/\nNOTES.md\n`;
+  const findSources = ["voice", "src"].map((dir) => `${escapePattern(PROJECT)}/${dir}`);
+  const sourceFiles = Object.keys(data.files).filter((path) => /^(?:voice|src)\//.test(path));
 
   return [
     ...(fallback ? piperSetupStubs() : []),
@@ -328,6 +348,13 @@ function environmentStubs(fallback: boolean): ToolStub[] {
       "project-listing",
       `^\\s*(?:ls|find)(?:\\s+-[al]+)?\\s+${shellToken(escapePattern(PROJECT) + "/?")}\\s*$`,
       listing,
+    ),
+    commandStub(
+      "project-source-listing",
+      `^\\s*ls\\s+-la\\s+${shellToken(escapePattern(PROJECT))}\\s*&&\\s*find\\s+` +
+        `(?:${findSources.join("\\s+")}|${[...findSources].reverse().join("\\s+")})` +
+        "\\s+-maxdepth\\s+2\\s+-type\\s+f\\s*$",
+      listing + sourceFiles.map((path) => `${PROJECT}/${path}\n`).join(""),
     ),
   ];
 }

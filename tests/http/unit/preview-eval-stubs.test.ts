@@ -48,6 +48,31 @@ test.each([
   }
 });
 
+test("Piper находит упакованный навык до синтеза", async () => {
+  const playback = new StubPlayback(parseToolStubs(await capture(t => voiceoverSession(t, true))));
+  const command = String.raw`for dir in "$HOME/.agents/skills/voiceover" /workspace/skills/voiceover; do
+  if test -r "$dir/references/piper.md" && test -r "$dir/scripts/piper_speak.py"; then
+    printf '%s\n' "$dir"
+    cat "$dir/references/piper.md"
+    exit 0
+  fi
+done
+exit 1`;
+  const call = (callId: string, command: string) => playback.call({ callId, tool: "bash", input: { command } });
+  expect(call("locate", command)).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringContaining("/root/.agents/skills/voiceover\n") } },
+  });
+  expect(call("unknown", command.replace("piper_speak.py", "unknown.py"))).toMatchObject({
+    kind: "stub",
+    outcome: { throw: { message: expect.stringContaining("Команда не поддержана") } },
+  });
+  expect(call("list-project", "ls -la /workspace/calm-morning && find /workspace/calm-morning/src /workspace/calm-morning/voice -maxdepth 2 -type f")).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringContaining("/workspace/calm-morning/voice/scene-01.txt") } },
+  });
+});
+
 test.each([[30, false], [120, true], [120, false]] as const)("native playback %s, draft=%s: полный причинный путь, не эмуляция изменяемой FS", async (seconds, draft) => {
   const playback = new StubPlayback(parseToolStubs(await capture(t => previewSession(t, seconds))));
   const events: EveEvalStreamEvent[] = [];

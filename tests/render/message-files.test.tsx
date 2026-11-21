@@ -69,6 +69,22 @@ afterEach(() => {
 });
 
 describe("файлы в ответе", () => {
+  test.each(["</thinking", "</thinking>"])("тег размышления %s не скрывает готовый ролик", async (closing) => {
+    await renderOnDesktop(
+      view(` <thinking>Готовлю ссылку${closing}Готово: [ролик](out/final.mp4)\n\nТри сцены.`, {
+        entries: [entry("/workspace/out/final.mp4", { contentType: "video/mp4" })],
+      }),
+    );
+
+    await expect.element(page.getByText("Три сцены.")).toBeVisible();
+    const reasoning = page.getByRole("button", { name: /Размышление/ });
+    await expect.element(reasoning).toBeVisible();
+    expect(document.querySelector("video")?.getAttribute("src")).toContain(`/api/media/${MEDIA_ID}`);
+    await expect.element(page.getByText("Готовлю ссылку")).not.toBeInTheDocument();
+    await reasoning.click();
+    await expect.element(page.getByText("Готовлю ссылку")).toBeVisible();
+  });
+
   test("в браузере разбор даёт тот же результат, что на сервере", () => {
     expect(resolveSandboxPath("out/final.mp4")).toEqual({
       kind: "file",

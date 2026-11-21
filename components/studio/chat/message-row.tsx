@@ -48,12 +48,41 @@ function textOfUserMessage(message: EveMessage): string {
     .join("\n");
 }
 
+function splitInlineReasoning(text: string): { reasoning?: string; answer: string } {
+  const opening = /^\s*<thinking>/u.exec(text);
+  if (!opening) return { answer: text };
+
+  const content = text.slice(opening[0].length);
+  // Some providers omit the final `>` and put the answer immediately after the tag.
+  const closing = /<\/thinking>?/u.exec(content);
+  if (!closing) return { reasoning: content, answer: "" };
+
+  return {
+    reasoning: content.slice(0, closing.index),
+    answer: content.slice(closing.index + closing[0].length),
+  };
+}
+
 /**
  * Подряд идущие размышления сливаются в одну строку, подряд идущие вызовы —
  * в один `Trace`. Пустые размышления не показываются.
  */
 function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[] {
   const groups: AssistantGroup[] = [];
+
+  function addReasoning(id: string, text: string, running: boolean) {
+    if (text.trim().length === 0) return;
+    const last = groups.at(-1);
+    if (last?.kind === "reasoning") {
+      groups[groups.length - 1] = {
+        ...last,
+        text: last.text + text,
+        running: last.running || running,
+      };
+    } else {
+      groups.push({ kind: "reasoning", id, text, running });
+    }
+  }
 
   for (const part of parts) {
     if (part.type === "authorization") {
@@ -68,34 +97,25 @@ function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[]
       continue;
     }
     if (part.type === "text") {
-      if (part.text.trim().length === 0) continue;
+      const { answer, reasoning } = splitInlineReasoning(part.text);
+      const id = part.id ?? `text-${groups.length}`;
+      const streaming = part.state === "streaming";
+      if (reasoning !== undefined) {
+        addReasoning(`${id}-inline-reasoning`, reasoning, streaming && answer.trim().length === 0);
+      }
+      if (answer.trim().length === 0) continue;
       groups.push({
         kind: "text",
-        id: part.id ?? `text-${groups.length}`,
-        text: part.text,
-        streaming: part.state === "streaming",
+        id,
+        text: answer,
+        streaming,
         stepIndex: part.stepIndex,
       });
       continue;
     }
 
     if (part.type === "reasoning") {
-      if (part.text.trim().length === 0) continue;
-      const last = groups.at(-1);
-      if (last?.kind === "reasoning") {
-        groups[groups.length - 1] = {
-          ...last,
-          text: last.text + part.text,
-          running: last.running || part.state === "streaming",
-        };
-      } else {
-        groups.push({
-          kind: "reasoning",
-          id: part.id ?? `reasoning-${groups.length}`,
-          text: part.text,
-          running: part.state === "streaming",
-        });
-      }
+      addReasoning(part.id ?? `reasoning-${groups.length}`, part.text, part.state === "streaming");
       continue;
     }
 
