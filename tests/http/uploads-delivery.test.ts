@@ -124,8 +124,10 @@ describe("доставка файла агенту", () => {
     expect(new Uint8Array((await fakeSandbox.files.read(id, path))!)).toEqual(bytes);
 
     const cookie = await loginAs(user);
-    const response = await fetchApp(`/api/sessions/${id}`, { headers: { cookie } });
-    expect(await response.json()).toMatchObject({ title: "Отчёт 2026.csv" });
+    await expect.poll(async () => {
+      const response = await fetchApp(`/api/sessions/${id}`, { headers: { cookie } });
+      return response.json();
+    }, { timeout: 5_000 }).toMatchObject({ title: "Отчёт 2026.csv" });
   }, 30_000);
 
   test("файл 30 МиБ доходит, когда предел канала поднят", async () => {
