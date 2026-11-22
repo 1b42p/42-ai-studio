@@ -1,14 +1,12 @@
 /**
- * Идемпотентность и зависшие строки `message_files` (#8): повторная доставка
- * хука не дублирует копию, `copying` старше 15 минут перезапускается или
- * показывается как `copy_failed`.
+ * Повтор шагов публикации: `copying` — незавершённая работа, а не таймер.
  */
 import type { HookContext } from "eve/hooks";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import messageFilesHook from "../../agent/hooks/message-files";
 import { media, messageFiles } from "../../lib/db/schema";
-import { COPYING_STALE_MS } from "../../lib/media/files";
+import { mediaObjectKey } from "../../lib/media/keys";
 import { captureMessageFiles } from "../../lib/media/message-files";
 import { parseSandboxLinks } from "../../lib/media/sandbox-path";
 import type { Storage } from "../../lib/s3";
@@ -65,8 +63,11 @@ describe("строки файлов сообщения", () => {
       getSandbox: async () => sandbox,
     };
 
-    await captureMessageFiles(options);
-    await captureMessageFiles(options);
+    await Promise.all([captureMessageFiles(options), captureMessageFiles(options)]);
+    await captureMessageFiles({
+      ...options,
+      getSandbox: async () => { throw new Error("готовая копия не открывает песочницу"); },
+    });
 
     const rows = await db().select().from(messageFiles);
     const mediaRows = await db().select().from(media);
@@ -99,9 +100,11 @@ describe("строки файлов сообщения", () => {
     expect(await s3().getBytes(mediaRow!.objectKey)).toEqual(bytes);
   }, 30_000);
 
-  test("свежая copying не перезапускается и не трогает песочницу", async () => {
+  test("повтор шага сразу подбирает незавершённую запись даже без повторной ссылки", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
+    await fakeSandbox.seed(id, { "out/final.mp4": "кадры" });
+    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
     await db().insert(messageFiles).values({
       appSessionId: id,
       messageId: "turn_0:0",
@@ -112,18 +115,16 @@ describe("строки файлов сообщения", () => {
     await captureMessageFiles({
       appSessionId: id,
       messageId: "turn_0:0",
-      links: [{ kind: "file", path: "/workspace/out/final.mp4" }],
+      links: [],
       maxBytes: 1024 * 1024,
       userId: user.id,
-      getSandbox: async () => {
-        throw new Error("песочница не должна открываться");
-      },
+      getSandbox: async () => sandbox,
     });
 
     const rows = await db().select().from(messageFiles);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.state).toBe("copying");
-    expect(await db().select().from(media)).toEqual([]);
+    expect(rows[0]?.state).toBe("ready");
+    expect(await db().select().from(media)).toHaveLength(1);
   }, 30_000);
 
   test("отказ S3 переводит строку в missing/copy_failed", async () => {
@@ -132,6 +133,7 @@ describe("строки файлов сообщения", () => {
     await fakeSandbox.seed(id, { "out/final.mp4": new TextEncoder().encode("кадры") });
     const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
     const failing = {
+      objectInfo: async () => null,
       putStream: async () => {
         throw new Error("S3 недоступен");
       },
@@ -187,21 +189,20 @@ describe("строки файлов сообщения", () => {
     expect(rows.filter((row) => row.reason === "outside_workspace")).toHaveLength(20);
   }, 30_000);
 
-  test("зависшая copying старше 15 минут копируется заново", async () => {
+  test("повтор принимает завершённый объект S3 после сбоя перед записью media", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
-    await fakeSandbox.seed(id, { "out/final.mp4": new TextEncoder().encode("кадры") });
-    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
-    const stale = new Date(Date.now() - COPYING_STALE_MS - 60_000);
-
-    await db().insert(messageFiles).values({
+    const [pending] = await db().insert(messageFiles).values({
       appSessionId: id,
       messageId: "turn_0:0",
       sandboxPath: "/workspace/out/final.mp4",
       state: "copying",
-      createdAt: stale,
-      updatedAt: stale,
+    }).returning();
+    const key = mediaObjectKey({
+      userId: user.id, appSessionId: id, kind: "message_file", name: "final.mp4", objectId: pending!.id,
     });
+    const bytes = new TextEncoder().encode("сохранённый ролик");
+    await s3().put(key, bytes, "video/mp4");
 
     await captureMessageFiles({
       appSessionId: id,
@@ -209,19 +210,22 @@ describe("строки файлов сообщения", () => {
       links: [{ kind: "file", path: "/workspace/out/final.mp4" }],
       maxBytes: 1024 * 1024,
       userId: user.id,
-      getSandbox: async () => sandbox,
+      getSandbox: async () => {
+        throw new Error("объект уже загружен, песочница не нужна");
+      },
     });
 
     const [row] = await db().select().from(messageFiles);
     expect(row?.state).toBe("ready");
     expect(row?.mediaId).not.toBeNull();
     expect(await db().select().from(media)).toHaveLength(1);
+    expect(await s3().getBytes(key)).toEqual(bytes);
   }, 30_000);
 
-  test("зависшая copying старше 15 минут отдаётся как missing/copy_failed", async () => {
+  test("даже старая copying остаётся copying; чтение не открывает песочницу", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
-    const stale = new Date(Date.now() - COPYING_STALE_MS - 60_000);
+    const stale = new Date(Date.now() - 24 * 60 * 60 * 1000);
     await db().insert(messageFiles).values({
       appSessionId: id,
       messageId: "turn_0:0",
@@ -238,7 +242,8 @@ describe("строки файлов сообщения", () => {
       files: Array<{ state: string; reason: string | null }>;
     };
     expect(body.files).toEqual([
-      expect.objectContaining({ state: "missing", reason: "copy_failed" }),
+      expect.objectContaining({ state: "copying", reason: null }),
     ]);
+    expect(await fakeSandbox.calls(id)).toEqual([]);
   });
 });

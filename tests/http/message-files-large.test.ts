@@ -1,14 +1,11 @@
 /**
  * Предел `MEDIA_COPY_MAX_BYTES` читает хук в процессе eve (#8). У основного
  * экземпляра окружение eve зафиксировано на старте, поэтому этот файл
- * поднимает свой сервер eve с пределом 1000 байт и приложение, которое
- * проксирует агент на него (`EVE_BASE_URL`). Основной экземпляр не
- * останавливается: общий dev-сервер eve всё равно взял бы его окружение,
- * а отдельный сервер даёт нужную изоляцию.
+ * поднимает свой сервер eve с пределом 1000 байт. HTTP-список файлов
+ * читает основной экземпляр приложения из той же тестовой базы.
  */
 import { expect, test } from "vitest";
 
-import { startApp } from "./support/app";
 import { createSessionAs, eveClientAs, readStreamUntil } from "./support/chat";
 import { createDaytonaKey, createUser, resetDatabase } from "./support/db";
 import { startEveDev } from "./support/eve-dev";
@@ -24,16 +21,12 @@ test("файл больше предела не копируется и оста
     MEDIA_COPY_MAX_BYTES: "1000",
     EVE_DEV_STATE_DIR: `.tmp/eve-media-limit-${process.pid}`,
   });
-  const app = await startApp({
-    env: { EVE_BASE_URL: eve.url, MEDIA_COPY_MAX_BYTES: "1000" },
-  });
-
   try {
     const user = await createUser();
-    const { id } = await createSessionAs(user, { baseUrl: app.url });
+    const { id } = await createSessionAs(user);
     await fakeSandbox.seed(id, { "out/big.mp4": new Uint8Array(2000) });
 
-    const client = await eveClientAs(user, id, { baseUrl: app.url });
+    const client = await eveClientAs(user, id, { baseUrl: eve.url });
     const response = (await client.sessions.create({ message: "Вот ![кадр](out/big.mp4)" }))
       .response;
     await readStreamUntil(response, "session.waiting");
@@ -42,7 +35,7 @@ test("файл больше предела не копируется и оста
       user,
       id,
       (items) => items.length === 1 && items[0]?.state !== "copying",
-      { baseUrl: app.url, timeoutMs: 20_000 },
+      { timeoutMs: 20_000 },
     );
     expect(files).toEqual([
       expect.objectContaining({
@@ -52,7 +45,6 @@ test("файл больше предела не копируется и оста
       }),
     ]);
   } finally {
-    await app.stop();
     await eve.stop();
   }
 }, 300_000);

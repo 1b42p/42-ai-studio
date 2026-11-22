@@ -26,6 +26,7 @@ export function mediaObjectKey(input: {
   appSessionId: string;
   kind: MediaKind;
   name: string;
+  objectId?: string;
 }): string {
-  return `u/${input.userId}/s/${input.appSessionId}/${MEDIA_KIND_SEGMENTS[input.kind]}/${randomUUID()}/${safeFileName(input.name)}`;
+  return `u/${input.userId}/s/${input.appSessionId}/${MEDIA_KIND_SEGMENTS[input.kind]}/${input.objectId ?? randomUUID()}/${safeFileName(input.name)}`;
 }
