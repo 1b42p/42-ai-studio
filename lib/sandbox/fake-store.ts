@@ -499,6 +499,33 @@ export class FakeStore {
     });
   }
 
+  async findLiveJob(machineId: string, jobIds: readonly string[]): Promise<string | null> {
+    return this.transaction(async (data) => {
+      const machine = this.find(data, machineId);
+      if (machine.state === "destroyed") throw fakeNotFound();
+      if (machine.state !== "started") return null;
+      for (const jobId of jobIds) {
+        if (!JOB_ID_PATTERN.test(jobId)) throw new Error("Invalid fake job id");
+        if (machine.killedJobs?.includes(jobId)) continue;
+        const directory = path.join(this.machineRoot(machine.id), "tmp", ".eve", "jobs", jobId);
+        try {
+          await fs.access(directory);
+        } catch (error) {
+          if (hasCode(error, "ENOENT")) continue;
+          throw error;
+        }
+        try {
+          const exit = await fs.readFile(path.join(directory, "exit"), "utf8");
+          if (/^-?\d+$/.test(exit.trim())) continue;
+        } catch (error) {
+          if (!hasCode(error, "ENOENT")) throw error;
+        }
+        return jobId;
+      }
+      return null;
+    });
+  }
+
   /** Останавливает процесс задания, не создавая файла `exit`. */
   async killProcess(appSessionId: string, jobId: string): Promise<void> {
     if (!JOB_ID_PATTERN.test(jobId)) throw new Error("Invalid fake job id");
