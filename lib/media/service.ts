@@ -4,7 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { appSessions, media, messageFiles, type Media } from "@/lib/db/schema";
 
-import { fileNameForPath, isStaleCopying } from "./files";
+import { fileNameForPath } from "./files";
 import type { MessageFileView } from "./types";
 
 /** Медиа пользователя; чужое и несуществующее неразличимы. */
@@ -18,10 +18,7 @@ export async function findMediaForUser(id: string, userId: string): Promise<Medi
   return record?.media ?? null;
 }
 
-/**
- * Все файлы сессии по сообщениям. Зависшая `copying` старше 15 минут
- * показывается как `missing`/`copy_failed`: копирование уже не идёт.
- */
+/** Только сохранённые статусы и метаданные, без I/O с песочницей. */
 export async function listSessionFiles(appSessionId: string): Promise<MessageFileView[]> {
   const rows = await getDb()
     .select({
@@ -29,7 +26,6 @@ export async function listSessionFiles(appSessionId: string): Promise<MessageFil
       path: messageFiles.sandboxPath,
       state: messageFiles.state,
       reason: messageFiles.reason,
-      updatedAt: messageFiles.updatedAt,
       mediaId: messageFiles.mediaId,
       contentType: media.contentType,
       name: media.originalName,
@@ -41,18 +37,5 @@ export async function listSessionFiles(appSessionId: string): Promise<MessageFil
     .where(and(eq(messageFiles.appSessionId, appSessionId), isNull(appSessions.deletedAt)))
     .orderBy(messageFiles.createdAt, messageFiles.id);
 
-  const now = Date.now();
-  return rows.map((row) => {
-    const stale = row.state === "copying" && isStaleCopying(row.updatedAt, now);
-    return {
-      messageId: row.messageId,
-      path: row.path,
-      state: stale ? "missing" : row.state,
-      reason: stale ? "copy_failed" : row.reason,
-      mediaId: row.mediaId,
-      contentType: row.contentType,
-      name: row.name ?? fileNameForPath(row.path),
-      sizeBytes: row.sizeBytes,
-    };
-  });
+  return rows.map((row) => ({ ...row, name: row.name ?? fileNameForPath(row.path) }));
 }
