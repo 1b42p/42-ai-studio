@@ -1,61 +1,186 @@
-import type { EveEvalContext, ToolStub } from "eve/evals";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { blockedRead, emptySearch, webSession } from "../web/fixtures";
+import { defineEval, type EveEvalContext, type ToolStub } from "eve/evals";
+import { satisfies } from "eve/evals/expect";
 
-export async function documentSession(t: EveEvalContext, path: string) {
-  const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const packaged = ["references/formats.md", "references/charts.md", "scripts/inspect_document.py"];
-  const files: ToolStub[] = packaged.flatMap((relative, index): ToolStub[] => {
-    const content = readFileSync(resolve("agent/skills/reading-documents", relative), "utf8");
-    const suffix = relative.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return [
-      { id: `document-package-${index}`, tool: "read_file",
-        match: { filePath: { pattern: `reading-documents/${suffix}$` } },
-        outcome: { response: { path: `/root/.agents/skills/reading-documents/${relative}`,
-          content, totalLines: content.split("\n").length, truncated: false } } },
-      { id: `document-cat-${index}`, tool: "bash",
-        match: { command: { pattern: `(?:cat|head|tail)[\\s\\S]*reading-documents/${suffix}` } },
-        outcome: { response: { status: "completed", exitCode: 0, stdout: content, stderr: "", truncated: false } } },
-    ];
-  });
-  const stubs: ToolStub[] = [
-    {
-      id: "document-commands", tool: "bash",
-      match: { command: { allOf: [{ pattern: "inspect_document\\.py" }, { pattern: escapedPath }] } },
-      outcome: { response: { status: "completed", exitCode: 0, truncated: false,
-        stdout: `Источник ${path} прочитан. Полный текст: /workspace/source/material/overview.md. ` +
-          "Таблицы: /workspace/source/material/tables/data.csv. " +
-          "Москва: 13010.1, Казань: 20500.2. Нужны параметры ролика.", stderr: "" } },
+import { blockedRead, emptySearch, webSession } from "../web/fixtures";
+import { documentImages, documentPaths, type DocumentName } from "./media-fixture";
+import recordings from "./recordings.json";
+
+export { documentPaths } from "./media-fixture";
+
+const PACKAGED = ["SKILL.md", "references/formats.md", "references/charts.md", "scripts/inspect_document.py"];
+const SKILL = "reading-documents";
+const HOME = String.raw`(?:echo\s+["']?\$HOME["']?|printenv\s+HOME|printf\s+'%s\\n'\s+"\$HOME")`;
+const LABELED_HOME = String.raw`printf\s+'HOME=%s\\n'\s+"\$HOME"`;
+const IMPORTS = String.raw`python3?\s+-c\s+["']import\s+pdfplumber,\s*pptx,\s*openpyxl,\s*charset_normalizer["']`;
+const NEXT_COMMAND = "\\s*(?:&&|;|\\n)\\s*";
+
+function escapePattern(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function pathForms(path: string) {
+  const relative = path.replace(/^\/workspace\//, "");
+  return [path, relative, `./${relative}`];
+}
+
+function shellPath(path: string) {
+  const paths = pathForms(path).map(escapePattern).join("|");
+  return `["']?(?:${paths})["']?`;
+}
+
+function bashFixture(id: string, pattern: string, stdout: string): ToolStub {
+  return {
+    id,
+    tool: "bash",
+    match: { command: { pattern } },
+    outcome: { response: { status: "completed", exitCode: 0, stdout, stderr: "", truncated: false } },
+  };
+}
+
+function readResponse(path: string, text: string) {
+  const lines = text.trimEnd().split("\n");
+  return {
+    path,
+    content: lines.map((line, index) => `${index + 1}: ${line}`).join("\n"),
+    totalLines: lines.length,
+    truncated: false,
+  };
+}
+
+function withBootstrap(id: string, command: string, stdout: string): ToolStub[] {
+  return [
+    { pattern: "", stdout: "" },
+    { pattern: `${IMPORTS}${NEXT_COMMAND}`, stdout: "" },
+    { pattern: `${HOME}${NEXT_COMMAND}(?:${IMPORTS}${NEXT_COMMAND})?`, stdout: "/root\n" },
+    { pattern: `${LABELED_HOME}${NEXT_COMMAND}(?:${IMPORTS}${NEXT_COMMAND})?`, stdout: "HOME=/root\n" },
+  ].map((prefix, index) => bashFixture(
+    `${id}-${index}`,
+    `^\\s*${prefix.pattern}${command}\\s*$`,
+    prefix.stdout + stdout,
+  ));
+}
+
+export async function documentSession(t: EveEvalContext, name: DocumentName) {
+  const { input, output } = documentPaths(name);
+  const recording = recordings[name];
+  const skillDirectory = `(?:(?:/root|~|\\$HOME|\\$\\{HOME\\})/\\.agents/)?skills/${SKILL}`;
+  const createDirectory = `mkdir\\s+-p\\s+${shellPath(output)}`;
+  const extract = `(?:${createDirectory}${NEXT_COMMAND})?` +
+    `python3?\\s+["']?${skillDirectory}/scripts/inspect_document\\.py["']?\\s+${shellPath(input)}` +
+    `(?:\\s+--out(?:=|\\s+)${shellPath(output)})?`;
+  const references: ToolStub[] = PACKAGED.map((relative, index) => ({
+    id: `document-package-${index}`,
+    tool: "read_file",
+    match: { filePath: { pattern: `(?:^|/)skills/${SKILL}/${escapePattern(relative)}$` } },
+    outcome: {
+      response: readResponse(`/root/.agents/skills/${SKILL}/${relative}`, readFileSync(`agent/skills/${SKILL}/${relative}`, "utf8")),
     },
+  }));
+  const files: ToolStub[] = Object.entries(recording.files).map(([relative, content], index) => ({
+    id: `document-extract-${index}`,
+    tool: "read_file",
+    match: { filePath: { enum: pathForms(`${output}/${relative}`) } },
+    outcome: { response: readResponse(`${output}/${relative}`, content) },
+  }));
+  const images: ToolStub[] = documentImages(name).map(({ path, size, width, height }, index) => ({
+    id: `document-image-${index}`,
+    tool: "read_file",
+    match: { filePath: { enum: pathForms(path) } },
+    outcome: { response: {
+      path, content: `Image ${width}x${height}`, totalLines: 1, truncated: false,
+      file: { mediaType: "image/png", size, width, height },
+    } },
+  }));
+
+  return webSession(t, [
+    ...references,
     ...files,
-    { id: "document-home", tool: "bash", match: { command: { pattern: "HOME|printenv|pwd" } },
-      outcome: { response: { status: "completed", exitCode: 0, stdout: "/root\n", stderr: "", truncated: false } } },
-    { id: "document-list", tool: "bash", match: { command: { pattern: "\\bls\\b|\\bfind\\b|rg --files" } },
-      outcome: { response: { status: "completed", exitCode: 0, stderr: "", truncated: false,
-        stdout: `/root/.agents/skills/reading-documents/scripts/inspect_document.py\n` +
-          `/root/.agents/skills/reading-documents/references/formats.md\n${path}\n` } } },
-    // Проверка импортов/установка/ls не означает, что документ разобран.
-    { id: "document-environment", tool: "bash",
-      outcome: { response: { status: "completed", exitCode: 0, stdout: "", stderr: "", truncated: false } } },
-    {
-      id: "document-files", tool: "read_file",
-      match: { filePath: { const: "/workspace/source/material/overview.md" } },
-      outcome: { response: { path: "/workspace/source/material/overview.md", totalLines: 6, truncated: false,
-        content: "1: # Продажи по городам\n2: | Город | Выручка |\n3: | --- | --- |\n" +
-          "4: | Москва | 13010.1 |\n5: | Казань | 20500.2 |\n6: Источник прочитан целиком." } },
-    },
-    { id: "document-table", tool: "read_file",
-      match: { filePath: { const: "/workspace/source/material/tables/data.csv" } },
-      outcome: { response: { path: "/workspace/source/material/tables/data.csv", totalLines: 3, truncated: false,
-        content: "Город,Выручка\nМосква,13010.1\nКазань,20500.2" } } },
-    { id: "document-raw-csv", tool: "read_file",
-      match: { filePath: { pattern: "\\.csv$" } },
-      outcome: { response: { path, totalLines: 3, truncated: false,
-        content: "Город;Выручка\nМосква;13 010,1\nКазань;20 500,2" } } },
+    ...images,
     { id: "document-other-files", tool: "read_file", outcome: { throw: { message: "Файл не найден или не является текстовым." } } },
-  ];
-  // webSession добавляет безусловные stubs остальных инструментов и проверяет
-  // полноту по /eve/v1/info. Ни файлов, ни настоящей песочницы у этих оценок нет.
-  return webSession(t, [...stubs, blockedRead, emptySearch]);
+    ...withBootstrap("document-commands", extract, recording.stdout.replace("{output}", output)),
+    bashFixture("document-home", `^\\s*${HOME}\\s*$`, "/root\n"),
+    bashFixture("document-labeled-home", `^\\s*${LABELED_HOME}\\s*$`, "HOME=/root\n"),
+    ...withBootstrap("document-dependencies", IMPORTS, ""),
+    ...withBootstrap(
+      "document-skill-list",
+      `rg\\s+--files\\s+["']?${skillDirectory}["']?`,
+      PACKAGED.map((path) => `/root/.agents/skills/${SKILL}/${path}\n`).join(""),
+    ),
+    ...PACKAGED.map((relative, index) => bashFixture(
+      `document-reference-cat-${index}`,
+      `^\\s*cat\\s+["']?${skillDirectory}/${escapePattern(relative)}["']?\\s*$`,
+      readFileSync(`agent/skills/${SKILL}/${relative}`, "utf8"),
+    )),
+    ...withBootstrap(
+      "document-input-list",
+      `ls(?:\\s+-[alh]+)?\\s+${shellPath(input)}(?:\\s+${shellPath("/workspace/.eve/attachments/ab12")})?`,
+      `${input}\n`,
+    ),
+    bashFixture("document-create-output", `^\\s*${createDirectory}\\s*$`, ""),
+    bashFixture("document-cwd", String.raw`^\s*pwd\s*$`, "/workspace\n"),
+    bashFixture("document-disk-space", String.raw`^\s*df\s+-h\s+/workspace\s*$`,
+      "Filesystem Size Used Avail Use% Mounted on\noverlay 5.0G 120M 4.9G 3% /workspace\n"),
+    bashFixture("document-output-list", `^\\s*ls(?:\\s+-[alh]+)?\\s+${shellPath(output)}\\s*$`, `${Object.keys(recording.files).join("\n")}\n`),
+    { id: "document-other-commands", tool: "bash", outcome: { throw: { message: "Для этапа чтения эта команда не предусмотрена." } } },
+    blockedRead,
+    emptySearch,
+  ]);
+}
+
+export function documentCases(name: DocumentName, kind: string, mediaType: string) {
+  const { input, output } = documentPaths(name);
+  const overview = pathForms(`${output}/overview.md`);
+  const kazan = name === "data.csv" ? /1\s*318[.,]6/u : /20\s*500[.,]2/u;
+  const slideTable = name === "deck.pptx"
+    ? new RegExp(`^${escapePattern(output)}/tables/s\\d+-\\d+\\.csv$`, "u")
+    : null;
+
+  return Array.from({ length: 3 }, () => defineEval({
+    description: `Агент читает приложенный ${kind} перед подготовкой ролика.`,
+    tags: ["documents", "loads-skill", kind.toLowerCase()],
+    async test(t) {
+      const session = await documentSession(t, name);
+      const turn = await session.send(
+        `Хочу сделать ролик по приложенному файлу. Пока только прочитай текст и выпиши показатели по Москве и Казани. Если единицы в документе не указаны, так и скажи; ` +
+        `картинки и сам ролик пока не нужны.\nAttached file ${input} (${mediaType})`,
+      );
+      t.succeeded();
+      const optionalReads = new Set(turn.events.flatMap((event) =>
+        event.type === "actions.requested" ? event.data.actions.flatMap((action) =>
+          action.kind === "tool-call" && action.toolName === "read_file" &&
+          typeof action.input === "object" && action.input !== null && "filePath" in action.input &&
+          typeof action.input.filePath === "string" && (
+            action.input.filePath === input || slideTable?.test(action.input.filePath)
+          ) ? [action.callId] : []) : []));
+      const unexpectedFailure = turn.events.some((event) =>
+        event.type === "action.result" && event.data.status === "failed" &&
+        !optionalReads.has(event.data.result.callId));
+      t.check(unexpectedFailure, satisfies((value) => value === false, "нет ошибок обязательных действий"));
+      t.loadedSkill(SKILL);
+      t.calledTool("bash", { input: { command: (value: unknown) =>
+        typeof value === "string" && value.includes("inspect_document.py") && value.includes(input) } });
+      t.calledTool("read_file", { input: { filePath: (value: unknown) =>
+        typeof value === "string" && overview.includes(value) } });
+      const extractAt = turn.events.findIndex((event) => {
+        if (event.type !== "action.result" || event.data.status !== "completed") return false;
+        const result = event.data.result;
+        const value = result.kind === "tool-result" && result.toolName === "bash" ? result.output : null;
+        return typeof value === "object" && value !== null && "stdout" in value &&
+          typeof value.stdout === "string" && value.stdout.includes(`Результаты: ${output}\n`);
+      });
+      const overviewAt = turn.events.findIndex((event) => {
+        if (event.type !== "action.result" || event.data.status !== "completed") return false;
+        const result = event.data.result;
+        const value = result.kind === "tool-result" && result.toolName === "read_file" ? result.output : null;
+        return typeof value === "object" && value !== null && "path" in value && value.path === `${output}/overview.md`;
+      });
+      t.check(extractAt >= 0 && overviewAt > extractAt, satisfies(Boolean, "обзор прочитан после извлечения"));
+      t.notCalledTool("edit_file");
+      t.messageIncludes(/москв/i);
+      t.messageIncludes(/казан/i);
+      t.messageIncludes(/13\s*010[.,]1/u);
+      t.messageIncludes(kazan);
+    },
+  }));
 }
