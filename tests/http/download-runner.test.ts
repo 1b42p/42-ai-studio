@@ -66,7 +66,7 @@ describe("запускатель yt-dlp", () => {
   test("YouTube получает cookies, чужой сайт — нет, окружение минимальное", async () => {
     const resolveDns = async () => [PUBLIC_IP] as const;
     await runDownload({ url: "https://www.youtube.com/ok", moments: [0.5] }, await context(), {
-      config: config(),
+      config: config({ ffmpegPath: "/usr/bin" }),
       resolveDns,
     });
     const youtube = await readStubLog();
