@@ -70,6 +70,7 @@ const errors = {
   "/unavailable": "ERROR: Video unavailable",
   "/geo": "ERROR: This video is not available due to geo restriction",
   "/login": "ERROR: Sign in to confirm you're not a bot",
+  "/diagnostics": "ERROR: Unexpected response; session-note-831 and https://cdn.example.com/video.mp4?signature=secret-test-value",
 };
 
 if (pathname in errors) fail(errors[pathname]);
@@ -136,9 +137,9 @@ if (pathname === "/mkv") {
   process.exit(0);
 }
 
-if (pathname === "/ok") {
+if (pathname === "/ok" || pathname === "/direct.mp4") {
   if (metadata) {
-    process.stdout.write(`${JSON.stringify(info())}\n`);
+    process.stdout.write(`${JSON.stringify(info(pathname === "/direct.mp4" ? { extractor: "generic" } : {}))}\n`);
     process.exit(0);
   }
   copySample("sample.mp4", "mp4");
