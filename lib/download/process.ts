@@ -9,10 +9,10 @@ export interface ProcessResult {
 }
 
 export class ProcessLimitError extends Error {
-  readonly limit: "timeout" | "too_large";
+  readonly limit: "timeout" | "too_large" | "stdout_too_large";
   readonly bytes: number | undefined;
 
-  constructor(limit: "timeout" | "too_large", bytes?: number) {
+  constructor(limit: "timeout" | "too_large" | "stdout_too_large", bytes?: number) {
     super(limit);
     this.name = "ProcessLimitError";
     this.limit = limit;
@@ -80,8 +80,9 @@ function killGroup(pid: number | undefined): void {
 }
 
 /**
- * Запуск без оболочки, в своей группе процессов. Поток вывода обрезается,
- * каталог проверяется раз в секунду, отмена и срок убивают всю группу.
+ * Запуск без оболочки, в своей группе процессов. По умолчанию сохраняется
+ * хвост вывода. Для структурированного stdout сохраняется целый ответ
+ * или процесс завершается при превышении заданного предела.
  */
 export async function runCaptured(options: {
   readonly bin: string;
@@ -90,6 +91,7 @@ export async function runCaptured(options: {
   readonly env: NodeJS.ProcessEnv;
   readonly signal: AbortSignal;
   readonly maxDirBytes?: number;
+  readonly fullStdoutMaxBytes?: number;
 }): Promise<ProcessResult> {
   options.signal.throwIfAborted();
   const child = spawn(options.bin, [...options.args], {
@@ -101,25 +103,35 @@ export async function runCaptured(options: {
 
   let stdout = "";
   let stderr = "";
-  const append = (current: string, chunk: Buffer) => {
-    const next = current + chunk.toString("utf8");
+  let stdoutBytes = 0;
+  let limit: ProcessLimitError | null = null;
+  const stopFor = (reason: ProcessLimitError["limit"], bytes?: number) => {
+    if (limit !== null) return;
+    limit = new ProcessLimitError(reason, bytes);
+    killGroup(child.pid);
+  };
+  const append = (current: string, chunk: string | Buffer) => {
+    const next = current + chunk.toString();
     return next.length > OUTPUT_CAP ? next.slice(-OUTPUT_CAP) : next;
   };
   child.stdout?.setEncoding("utf8");
   child.stderr?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string | Buffer) => {
-    stdout = append(stdout, Buffer.from(chunk));
+    if (options.fullStdoutMaxBytes === undefined) {
+      stdout = append(stdout, chunk);
+      return;
+    }
+    stdoutBytes += Buffer.byteLength(chunk);
+    if (stdoutBytes > options.fullStdoutMaxBytes) {
+      stopFor("stdout_too_large", stdoutBytes);
+      return;
+    }
+    stdout += chunk.toString();
   });
   child.stderr?.on("data", (chunk: string | Buffer) => {
-    stderr = append(stderr, Buffer.from(chunk));
+    stderr = append(stderr, chunk);
   });
 
-  let limit: ProcessLimitError | null = null;
-  const stopFor = (reason: "timeout" | "too_large", bytes?: number) => {
-    if (limit !== null) return;
-    limit = new ProcessLimitError(reason, bytes);
-    killGroup(child.pid);
-  };
   const onAbort = () => killGroup(child.pid);
   options.signal.addEventListener("abort", onAbort, { once: true });
 
