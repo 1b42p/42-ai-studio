@@ -51,7 +51,11 @@ export async function createDownloadIsolation(options: {
     "--cap-drop", "ALL", "--die-with-parent", "--new-session",
     "--proc", "/proc", "--dev", "/dev",
     "--ro-bind", "/usr", "/usr",
-    ...["/lib", "/lib64", "/bin", "/etc/ssl/certs", "/etc/pki/tls/certs"].flatMap((dir) => ["--ro-bind-try", dir, dir]),
+    ...[
+      "/lib", "/lib64", "/bin",
+      "/etc/ssl/certs", "/etc/ssl/cert.pem", "/etc/ca-certificates/extracted",
+      "/etc/pki/tls/certs", "/etc/pki/tls/cert.pem", "/etc/pki/ca-trust/extracted",
+    ].flatMap((entry) => ["--ro-bind-try", entry, entry]),
     "--ro-bind", await realpath(process.execPath), NODE,
     "--setenv", "PATH", "/studio-bin:/usr/local/bin:/usr/bin:/bin",
   ];
