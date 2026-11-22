@@ -194,6 +194,7 @@ export function errorDetail(line: string): string {
 }
 
 export type DownloadFailureCode =
+  | "download_not_configured"
   | "download_unsupported_site"
   | "download_unavailable"
   | "download_login_required"
@@ -210,7 +211,8 @@ export function classifyYtDlpError(stderr: string): DownloadFailureCode {
   if (/DRM protected/i.test(haystack)) return "download_drm";
   if (/No suitable extractor found|Unsupported URL/i.test(haystack)) return "download_unsupported_site";
   if (/geo restriction/i.test(haystack)) return "download_geo_blocked";
-  if (/Sign in to confirm|age-restricted/i.test(haystack)) return "download_login_required";
+  if (/none of these impersonate targets are available/i.test(detail)) return "download_not_configured";
+  if (/Sign in to confirm|age-restricted|only works when logged[ -]in/i.test(haystack)) return "download_login_required";
   if (/HTTP Error 429|try again later/i.test(haystack)) return "download_rate_limited";
   if (/This video is unavailable|Private video|Video unavailable/i.test(haystack)) return "download_unavailable";
   if (/Name or service not known|Temporary failure in name resolution|Unable to download|Connection reset|Network is unreachable|getaddrinfo|timed out/i.test(haystack)) {

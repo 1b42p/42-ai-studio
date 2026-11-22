@@ -10,7 +10,7 @@ import { voiceoverSession } from "../../../evals/voiceover/fixtures";
 import { questionSession } from "../../../evals/questions/fixtures";
 import { videoSession } from "../../../evals/video/fixtures";
 import { webSession } from "../../../evals/web/fixtures";
-import { documentSession } from "../../../evals/documents/fixtures";
+import { documentPaths, documentSession } from "../../../evals/documents/fixtures";
 import type { EveEvalStreamEvent } from "eve/evals";
 
 const toolNames = ["bash", "read_file", "edit_file", "agent", "ask_question", "speak", "list_voices", "download_video", "read_page", "web_search", "set_session_preview"];
@@ -37,7 +37,7 @@ test.each([
   ["questions", (t: EveEvalContext) => questionSession(t)],
   ["video", (t: EveEvalContext) => videoSession(t, { caseId: "preview-isolation" })],
   ["web", (t: EveEvalContext) => webSession(t, [{ id: "pages", tool: "read_page", outcome: { response: {} } }, { id: "search", tool: "web_search", outcome: { response: {} } }])],
-  ["documents", (t: EveEvalContext) => documentSession(t, "/workspace/source/book.pdf")],
+  ["documents", (t: EveEvalContext) => documentSession(t, "report.pdf")],
 ] as const)("%s: все эффекты изолированы и не больше 100 native правил", async (name, create) => {
   const stubs = await capture(create);
   expect(stubs.length).toBeLessThanOrEqual(100);
@@ -70,6 +70,32 @@ exit 1`;
   expect(call("list-project", "ls -la /workspace/calm-morning && find /workspace/calm-morning/src /workspace/calm-morning/voice -maxdepth 2 -type f")).toMatchObject({
     kind: "stub",
     outcome: { response: { exitCode: 0, stdout: expect.stringContaining("/workspace/calm-morning/voice/scene-01.txt") } },
+  });
+});
+
+test.each([
+  ["data.csv", "tables/data.csv", "Казань,1318.6"],
+  ["report.pdf", "tables/p1-1.csv", "Казань,20500.2"],
+  ["deck.pptx", "tables/s1-1.csv", "Казань,20500.2"],
+] as const)("запись %s возвращает файлы своего формата", async (name, table, value) => {
+  const playback = new StubPlayback(parseToolStubs(await capture((t) => documentSession(t, name))));
+  const { input, output } = documentPaths(name);
+  const command = `python3 "$HOME/.agents/skills/reading-documents/scripts/inspect_document.py" ${input} --out ${output}`;
+  expect(playback.call({ callId: "extract", tool: "bash", input: { command } })).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringContaining(`Результаты: ${output}\n`) } },
+  });
+  expect(playback.call({ callId: "table", tool: "read_file", input: { filePath: `${output}/${table}` } })).toMatchObject({
+    kind: "stub",
+    outcome: { response: { content: expect.stringContaining(value) } },
+  });
+  expect(playback.call({
+    callId: "unlisted",
+    tool: "read_file",
+    input: { filePath: `${output}/tables/nonexistent.csv` },
+  })).toMatchObject({ kind: "stub", outcome: { throw: expect.any(Object) } });
+  expect(playback.call({ callId: "bad-output", tool: "bash", input: { command: `${command}-other` } })).toMatchObject({
+    kind: "stub", outcome: { throw: expect.any(Object) },
   });
 });
 

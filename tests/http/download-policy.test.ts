@@ -55,6 +55,8 @@ describe("текст ошибки yt-dlp", () => {
       ["ERROR: This video is unavailable", "download_unavailable"],
       ["ERROR: No suitable extractor found", "download_unsupported_site"],
       ["ERROR: Unsupported URL: https://example.com/x", "download_unsupported_site"],
+      ["ERROR: [dailymotion] clip: The extractor is attempting impersonation, but none of these impersonate targets are available: firefox.", "download_not_configured"],
+      ["ERROR: [vimeo] clip: The web client only works when logged-in.", "download_login_required"],
       ["ERROR: This video is not available due to geo restriction", "download_geo_blocked"],
       ["ERROR: Sign in to confirm you’re not a bot", "download_login_required"],
       ["ERROR: This video is age-restricted", "download_login_required"],
