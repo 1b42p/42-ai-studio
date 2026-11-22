@@ -197,8 +197,14 @@ async function publishFile(
       } catch (error) {
         if (error instanceof MediaSessionGoneError) throw error;
         const reason = error instanceof MediaCopyError ? error.reason : "copy_failed";
-        // Если ответ PUT потерялся, не затираем уже сохранённый объект.
-        result = reason === "copy_failed" ? await existingObject() ?? reason : reason;
+        if (reason !== "copy_failed") {
+          result = reason;
+        } else {
+          // Потерянный ответ PUT может скрывать уже сохранённый снимок.
+          // Если объекта ещё нет, оставляем copying и повторяем в том же шаге.
+          result = await existingObject();
+          if (result === null) throw error;
+        }
       }
     }
     if (result !== null) await finishFile(appSessionId, ownerId, row.id, result);
@@ -274,9 +280,10 @@ export async function reconcileMessageFiles(storage = getStorage()): Promise<voi
           const expired = now.getTime() - row.createdAt.getTime() >= PENDING_LIMIT_MS;
           try {
             await requireLiveMediaSession(group.appSessionId);
+            // Ошибка HEAD не доказывает отсутствие снимка даже после срока.
             const file = await storedFile(storage, objectKey, originalName, AbortSignal.timeout(5_000))
-              .catch(() => null);
-            if (file || expired) {
+              .catch(() => undefined);
+            if (file || (expired && file === null)) {
               await finishFile(group.appSessionId, group.ownerId, row.id, file ?? "copy_failed");
             } else {
               await withLiveMediaSession(group.appSessionId, async (tx) => {

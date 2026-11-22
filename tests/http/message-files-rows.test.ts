@@ -17,7 +17,7 @@ import { fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs } from "./support/chat";
 import { buildFileLookup } from "../../components/studio/chat/message-files";
-import { sessionFiles } from "./support/media";
+import { mediaRedirect, readSigned, sessionFiles } from "./support/media";
 import { getLockSqlClient } from "../../lib/db/client";
 import { createUser, db, resetDatabase } from "./support/db";
 import { fakeSandbox } from "./support/fake-sandbox";
@@ -113,10 +113,10 @@ describe("строки файлов сообщения", () => {
     }
   });
 
-  test("временный отказ фонового HEAD оставляет время на следующий независимый повтор", async () => {
+  test("отказ фонового HEAD не объявляет потерянным даже просроченный снимок", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
-    const due = new Date(Date.now() - 120_000);
+    const due = new Date(Date.now() - 25 * 60 * 60 * 1000);
     const [row] = await db().insert(messageFiles).values({
       appSessionId: id, messageId: "turn_0:0", sandboxPath: "/workspace/final.mp4",
       state: "copying", createdAt: due, updatedAt: due,
@@ -274,18 +274,14 @@ describe("строки файлов сообщения", () => {
     expect(await db().select().from(media)).toHaveLength(1);
   }, 30_000);
 
-  test("отказ S3 переводит строку в missing/copy_failed", async () => {
+  test("временный отказ PUT повторяет публикацию из песочницы в том же шаге", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
-    await fakeSandbox.seed(id, { "out/final.mp4": new TextEncoder().encode("кадры") });
+    const bytes = new TextEncoder().encode("кадры");
+    await fakeSandbox.seed(id, { "out/final.mp4": bytes });
     const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
-    const failing = {
-      objectInfo: async () => null,
-      putStream: async () => {
-        throw new Error("S3 недоступен");
-      },
-      deleteObject: async () => undefined,
-    } as unknown as Storage;
+    const storage = new Storage(loadConfig());
+    vi.spyOn(storage, "putStream").mockRejectedValueOnce(new Error("временный отказ S3"));
 
     await captureMessageFiles({
       appSessionId: id,
@@ -293,15 +289,44 @@ describe("строки файлов сообщения", () => {
       links: [{ kind: "file", path: "/workspace/out/final.mp4" }],
       maxBytes: 1024 * 1024,
       userId: user.id,
-      storage: failing,
+      storage,
       getSandbox: async () => sandbox,
     });
 
-    const [row] = await db().select().from(messageFiles);
-    expect(row).toMatchObject({ state: "missing", reason: "copy_failed", mediaId: null });
-    expect(await db().select().from(media)).toEqual([]);
-    expect(await s3().listKeys(`u/${user.id}/`)).toEqual([]);
+    const [file] = await sessionFiles(user, id);
+    expect(file).toMatchObject({ state: "ready", reason: null });
+    const link = await mediaRedirect(user, file!.mediaId!, "?download=1");
+    expect(link.status).toBe(302);
+    expect(await readSigned(link.location!)).toEqual(bytes);
   }, 30_000);
+
+  test("потерянный ответ PUT не заменяет снимок изменившимся файлом", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const path = "out/final.mp4";
+    const bytes = new TextEncoder().encode("исходные кадры");
+    await fakeSandbox.seed(id, { [path]: bytes });
+    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
+    const storage = new Storage(loadConfig());
+    const put = storage.putStream.bind(storage);
+    vi.spyOn(storage, "putStream").mockImplementationOnce(async (...args) => {
+      await put(...args);
+      await fakeSandbox.files.write(id, path, new TextEncoder().encode("новые кадры"));
+      throw new Error("ответ PUT потерян");
+    });
+
+    await captureMessageFiles({
+      appSessionId: id, messageId: "turn_0:0",
+      links: parseSandboxLinks(`[файл](${path})`),
+      maxBytes: 1024, storage, getSandbox: async () => sandbox,
+    });
+
+    const [file] = await sessionFiles(user, id);
+    expect(file).toMatchObject({ state: "ready" });
+    const link = await mediaRedirect(user, file!.mediaId!, "?download=1");
+    expect(link.status).toBe(302);
+    expect(await readSigned(link.location!)).toEqual(bytes);
+  });
 
   test("несколько блоков одного шага делят предел в 20 ссылок", async () => {
     const user = await createUser();

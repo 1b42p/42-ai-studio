@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
 
+import { displayMessages } from "../../components/studio/chat/display-messages";
 import { media } from "../../lib/db/schema";
 import { defaultMessageReducer } from "eve/client";
 import { createSessionAs, eveClientAs, readStreamUntil } from "./support/chat";
@@ -55,9 +56,9 @@ test("перезапуск eve продолжает незавершённую �
     expect(completed[0]?.meta.id).not.toBe(completed[1]?.meta.id);
     const reducer = defaultMessageReducer();
     const data = events.reduce(reducer.reduce, reducer.initial());
-    expect(data.messages.flatMap((message) =>
-      message.role === "assistant" ? message.parts.filter((part) => part.type === "text") : [],
-    )).toHaveLength(2);
+    expect(displayMessages(data.messages, events).flatMap((message) =>
+      message.role === "assistant" ? message.parts.flatMap((part) => part.type === "text" ? [part.text] : []) : [],
+    )).toEqual([`Эхо: Вот [ролик](${filePath})`]);
     expect(await db().select().from(media)).toHaveLength(1);
     expect(await s3().listKeys(`u/${user.id}/s/${id}/`)).toHaveLength(1);
     const link = await mediaRedirect(user, file!.mediaId!, "?download=1");
