@@ -159,10 +159,12 @@ export class Storage {
   /** Размер и тип объекта из метаданных; `null` — объекта нет. */
   async objectInfo(
     key: string,
+    signal?: AbortSignal,
   ): Promise<{ size: number; contentType: string | undefined } | null> {
     try {
       const response = await this.client.send(
         new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
+        { abortSignal: signal },
       );
       return { size: response.ContentLength ?? 0, contentType: response.ContentType };
     } catch (error) {

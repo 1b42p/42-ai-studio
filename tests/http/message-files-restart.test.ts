@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
 
 import { media } from "../../lib/db/schema";
+import { defaultMessageReducer } from "eve/client";
 import { createSessionAs, eveClientAs, readStreamUntil } from "./support/chat";
 import { createDaytonaKey, createUser, db } from "./support/db";
 import { startEveDev } from "./support/eve-dev";
@@ -47,6 +48,16 @@ test("перезапуск eve продолжает незавершённую �
     const restarted = await eveClientAs(user, id, { baseUrl: eve.url });
     const events = await readStreamUntil(restarted.sessions.attach(session.state.sessionId).stream(), "session.waiting");
     expect(events.at(-1)?.type).toBe("session.waiting");
+    const completed = events.filter((event) => event.type === "message.completed");
+    expect(completed).toHaveLength(2);
+    expect(completed[0]?.data.stepIndex).toBe(completed[1]?.data.stepIndex);
+    expect(completed[0]?.data.turnId).toBe(completed[1]?.data.turnId);
+    expect(completed[0]?.meta.id).not.toBe(completed[1]?.meta.id);
+    const reducer = defaultMessageReducer();
+    const data = events.reduce(reducer.reduce, reducer.initial());
+    expect(data.messages.flatMap((message) =>
+      message.role === "assistant" ? message.parts.filter((part) => part.type === "text") : [],
+    )).toHaveLength(2);
     expect(await db().select().from(media)).toHaveLength(1);
     expect(await s3().listKeys(`u/${user.id}/s/${id}/`)).toHaveLength(1);
     const link = await mediaRedirect(user, file!.mediaId!, "?download=1");

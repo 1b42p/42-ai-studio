@@ -1,21 +1,25 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, min, or, sql } from "drizzle-orm";
 import type { SandboxSession } from "eve/sandbox";
 
 import { getDb, getLockSqlClient } from "@/lib/db/client";
-import { media, messageFiles, type MessageFileReason } from "@/lib/db/schema";
+import { appSessions, media, messageFiles, type MessageFileReason } from "@/lib/db/schema";
 import { getStorage, type Storage } from "@/lib/s3";
 import { findAppSessionById } from "@/lib/sessions/service";
+import { sleep } from "@/lib/sleep";
 
 import { copySandboxFile, MediaCopyError, type CopiedSandboxFile } from "./copy";
 import { contentTypeForPath, fileNameForPath, MAX_MESSAGE_LINKS } from "./files";
 import { mediaObjectKey } from "./keys";
 import { MediaSessionGoneError, requireLiveMediaSession, withLiveMediaSession } from "./live-session";
-import type { SandboxLink } from "./sandbox-path";
+import { messageFileId, messageIdOf } from "./message-id";
+import { parseSandboxLinks, type SandboxLink } from "./sandbox-path";
 
-export interface CaptureMessageFilesOptions {
+interface MessagePublication {
   appSessionId: string;
-  /** `<turnId>:<stepIndex>` из данных события `message.completed`. */
   messageId: string;
+}
+
+export interface CaptureMessageFilesOptions extends MessagePublication {
   links: readonly SandboxLink[];
   maxBytes: number;
   userId?: string;
@@ -24,47 +28,67 @@ export interface CaptureMessageFilesOptions {
   getSandbox: () => Promise<SandboxSession>;
 }
 
-type PendingFile = { id: string; sandboxPath: string };
+type PendingFile = { id: string; sandboxPath: string; createdAt: Date };
 
 class MessageFileGoneError extends Error {}
+
+const RETRY_SPACING_MS = 60_000;
+const PENDING_LIMIT_MS = 24 * 60 * 60 * 1000;
 
 function messageScope(appSessionId: string, messageId: string) {
   return and(eq(messageFiles.appSessionId, appSessionId), eq(messageFiles.messageId, messageId));
 }
 
-/**
- * Сохраняем все ссылки до первого I/O. Повтор того же шага подбирает все
- * незавершённые строки, даже если модель повторно написала другой текст.
- */
-async function queueFiles(options: CaptureMessageFilesOptions): Promise<void> {
-  const { appSessionId, messageId, links } = options;
-  await withLiveMediaSession(appSessionId, async (tx) => {
-    const states = await tx.select({
-      sandboxPath: messageFiles.sandboxPath,
-      reason: messageFiles.reason,
-    }).from(messageFiles).where(messageScope(appSessionId, messageId));
-
-    const seen = new Set(states.map((row) => row.sandboxPath));
-    let room = MAX_MESSAGE_LINKS - states.filter((row) => row.reason !== "too_many").length;
-    const added = links.flatMap((link) => {
-      if (seen.has(link.path)) return [];
-      seen.add(link.path);
-      const reason: MessageFileReason | null =
-        room-- <= 0 ? "too_many" : link.kind === "rejected" ? link.reason : null;
-      return [{
-        appSessionId, messageId, sandboxPath: link.path,
-        state: reason === null ? "copying" as const : "missing" as const,
-        reason,
-      }];
-    });
-    if (added.length > 0) await tx.insert(messageFiles).values(added);
-  });
+export function completedMessageFiles(data: { turnId?: string; stepIndex?: number; message?: string }) {
+  const stepId = messageIdOf(data.turnId, data.stepIndex);
+  if (stepId === undefined || !data.message) return null;
+  const links = parseSandboxLinks(data.message);
+  return links.length === 0 ? null : { messageId: messageFileId(stepId, data.message), links };
 }
 
-function pendingFiles({ appSessionId, messageId }: CaptureMessageFilesOptions) {
-  return getDb().select({ id: messageFiles.id, sandboxPath: messageFiles.sandboxPath })
+/** Вызывающий держит блокировку живой сессии; синхронизатор журнала тоже. */
+export async function recordMessageFiles(
+  tx: Parameters<Parameters<typeof withLiveMediaSession>[1]>[0],
+  { appSessionId, messageId, links }: MessagePublication & { links: readonly SandboxLink[] },
+): Promise<void> {
+  const states = await tx.select({
+    sandboxPath: messageFiles.sandboxPath,
+    reason: messageFiles.reason,
+  }).from(messageFiles).where(messageScope(appSessionId, messageId));
+
+  const seen = new Set(states.map((row) => row.sandboxPath));
+  let room = MAX_MESSAGE_LINKS - states.filter((row) => row.reason !== "too_many").length;
+  const added = links.flatMap((link) => {
+    const sandboxPath = link.path.replaceAll("\0", "");
+    // Составной B-tree индекс имеет предел размера ключа. Недопустимо,
+    // чтобы длинный Markdown-путь блокировал запись всей истории сессии.
+    if (Buffer.byteLength(sandboxPath, "utf8") > 2048 || seen.has(sandboxPath)) return [];
+    seen.add(sandboxPath);
+    const reason: MessageFileReason | null =
+      room-- <= 0 ? "too_many" : link.kind === "rejected" ? link.reason : null;
+    return [{
+      appSessionId, messageId, sandboxPath,
+      state: reason === null ? "copying" as const : "missing" as const,
+      reason,
+    }];
+  });
+  if (added.length > 0) await tx.insert(messageFiles).values(added);
+}
+
+function pendingFiles({ appSessionId, messageId }: MessagePublication, due?: Date) {
+  return getDb().select({
+    id: messageFiles.id, sandboxPath: messageFiles.sandboxPath, createdAt: messageFiles.createdAt,
+  })
     .from(messageFiles)
-    .where(and(messageScope(appSessionId, messageId), eq(messageFiles.state, "copying")));
+    .where(and(messageScope(appSessionId, messageId), eq(messageFiles.state, "copying"),
+      due ? lte(messageFiles.updatedAt, due) : undefined));
+}
+
+export async function pendingMessageIdsForStep(appSessionId: string, stepId: string): Promise<string[]> {
+  const rows = await getDb().selectDistinct({ messageId: messageFiles.messageId }).from(messageFiles)
+    .where(and(eq(messageFiles.appSessionId, appSessionId), eq(messageFiles.state, "copying"),
+      or(eq(messageFiles.messageId, stepId), sql`starts_with(${messageFiles.messageId}, ${`${stepId}:`})`)));
+  return rows.map((row) => row.messageId);
 }
 
 async function finishFile(appSessionId: string, ownerId: string, id: string, result: CopiedSandboxFile | MessageFileReason) {
@@ -87,13 +111,22 @@ async function finishFile(appSessionId: string, ownerId: string, id: string, res
 }
 
 /** Один писатель на сообщение. Блокировка освобождается при смерти процесса. */
-async function withPublicationLock<T>(options: CaptureMessageFilesOptions, run: () => Promise<T>): Promise<T> {
+async function withPublicationLock<T>(
+  options: MessagePublication, run: () => Promise<T>, wait = true,
+): Promise<T | undefined> {
   const operation = `${options.appSessionId}:${options.messageId}`;
   const lock = await getLockSqlClient().reserve();
   let locked = false;
   try {
-    await lock`select pg_advisory_lock(5, hashtext(${operation}::text))`;
-    locked = true;
+    if (wait) {
+      await lock`select pg_advisory_lock(5, hashtext(${operation}::text))`;
+      locked = true;
+    } else {
+      const [claim] = await lock<{ locked: boolean }[]>`
+        select pg_try_advisory_lock(5, hashtext(${operation}::text)) as locked`;
+      locked = claim?.locked === true;
+    }
+    if (!locked) return;
     return await run();
   } finally {
     try {
@@ -113,7 +146,7 @@ async function publishPending(
   ownerId: string,
   access?: SandboxAccess,
 ): Promise<boolean> {
-  return withPublicationLock(options, async () => {
+  return (await withPublicationLock(options, async () => {
     // Другой исполнитель мог закончить публикацию, пока мы ждали замок
     // или открывали песочницу. Список перечитывается под замком.
     const pending = await pendingFiles(options);
@@ -125,7 +158,14 @@ async function publishPending(
       if (outcome.status === "rejected") throw outcome.reason;
     }
     return outcomes.some((outcome) => outcome.status === "fulfilled" && outcome.value === "needs-sandbox");
-  });
+  })) ?? false;
+}
+
+function storedFile(storage: Storage, objectKey: string, originalName: string, signal?: AbortSignal) {
+  return storage.objectInfo(objectKey, signal).then((object): CopiedSandboxFile | null => object && ({
+    objectKey, originalName, sizeBytes: object.size,
+    contentType: object.contentType ?? contentTypeForPath(originalName),
+  }));
 }
 
 async function publishFile(
@@ -140,14 +180,7 @@ async function publishFile(
   const objectKey = mediaObjectKey({
     appSessionId, userId: ownerId, kind: "message_file", name: originalName, objectId: row.id,
   });
-  const existingObject = async (): Promise<CopiedSandboxFile | null> => {
-    const object = await storage.objectInfo(objectKey);
-    if (object === null) return null;
-    return {
-      objectKey, originalName, sizeBytes: object.size,
-      contentType: object.contentType ?? contentTypeForPath(originalName),
-    };
-  };
+  const existingObject = () => storedFile(storage, objectKey, originalName);
   try {
     await requireLiveMediaSession(appSessionId);
     // Сбой после завершения PUT, но до коммита SQL: принимаем ровно тот же
@@ -179,21 +212,86 @@ async function publishFile(
 
 /** Вызывается внутри шага Eve; возврат хука означает конец публикации. */
 export async function captureMessageFiles(options: CaptureMessageFilesOptions): Promise<void> {
+  // Eve журналирует исключение хука, но не повторяет его. Пока песочница
+  // относится к этому шагу, повторяем короткие сбои сами.
+  for (const delay of [200, 1_000, null]) {
+    try {
+      await captureOnce(options);
+      return;
+    } catch (error) {
+      if (error instanceof MediaSessionGoneError) return;
+      if (delay === null) throw error;
+      await sleep(delay);
+    }
+  }
+}
+
+async function captureOnce(options: CaptureMessageFilesOptions): Promise<void> {
   const session = await findAppSessionById(options.appSessionId);
   if (session === null || (options.userId !== undefined && options.userId !== session.userId)) return;
 
-  try {
-    if (options.links.length > 0) await queueFiles(options);
-    if ((await pendingFiles(options).limit(1)).length === 0) return;
-    if (!(await publishPending(options, session.userId))) return;
-    // Открытие песочницы может само занять соединение пула замков; не держим
-    // замок публикации до получения готовой песочницы.
-    const access: SandboxAccess = await options.getSandbox().then(
-      (sandbox) => ({ sandbox }),
-      (error: unknown) => ({ error }),
-    );
-    await publishPending(options, session.userId, access);
-  } catch (error) {
-    if (!(error instanceof MediaSessionGoneError)) throw error;
+  if (options.links.length > 0) {
+    await withLiveMediaSession(options.appSessionId, (tx) => recordMessageFiles(tx, options));
+  }
+  if ((await pendingFiles(options).limit(1)).length === 0) return;
+  if (!(await publishPending(options, session.userId))) return;
+  // Открытие песочницы может само занять соединение пула замков; не держим
+  // замок публикации до получения готовой песочницы.
+  const access: SandboxAccess = await options.getSandbox().then(
+    (sandbox) => ({ sandbox }),
+    (error: unknown) => ({ error }),
+  );
+  await publishPending(options, session.userId, access);
+}
+
+/**
+ * Завершает операции с уже выгруженными байтами независимо от хода Eve.
+ * Исторический путь в песочнице мог быть перезаписан. Никакого нового PUT
+ * здесь нет: только проверка стабильного ключа и конечный статус по сроку.
+ */
+export async function reconcileMessageFiles(storage = getStorage()): Promise<void> {
+  const now = new Date();
+  const due = new Date(now.getTime() - RETRY_SPACING_MS);
+  const groups = await getDb().select({
+    appSessionId: messageFiles.appSessionId, messageId: messageFiles.messageId,
+    ownerId: appSessions.userId,
+  }).from(messageFiles)
+    .innerJoin(appSessions, eq(appSessions.id, messageFiles.appSessionId))
+    .where(and(eq(messageFiles.state, "copying"), isNull(appSessions.deletedAt), lte(messageFiles.updatedAt, due)))
+    .groupBy(messageFiles.appSessionId, messageFiles.messageId, appSessions.userId)
+    .orderBy(asc(min(messageFiles.updatedAt)), asc(messageFiles.appSessionId), asc(messageFiles.messageId))
+    .limit(20);
+
+  for (const group of groups) {
+    try {
+      await withPublicationLock(group, async () => {
+        const outcomes = await Promise.allSettled((await pendingFiles(group, due)).map(async (row) => {
+          const originalName = fileNameForPath(row.sandboxPath);
+          const objectKey = mediaObjectKey({
+            appSessionId: group.appSessionId, userId: group.ownerId,
+            kind: "message_file", name: originalName, objectId: row.id,
+          });
+          const expired = now.getTime() - row.createdAt.getTime() >= PENDING_LIMIT_MS;
+          try {
+            await requireLiveMediaSession(group.appSessionId);
+            const file = await storedFile(storage, objectKey, originalName, AbortSignal.timeout(5_000))
+              .catch(() => null);
+            if (file || expired) {
+              await finishFile(group.appSessionId, group.ownerId, row.id, file ?? "copy_failed");
+            } else {
+              await withLiveMediaSession(group.appSessionId, async (tx) => {
+                await tx.update(messageFiles).set({ updatedAt: now }).where(eq(messageFiles.id, row.id));
+              });
+            }
+          } catch (error) {
+            if (!(error instanceof MediaSessionGoneError || error instanceof MessageFileGoneError)) throw error;
+            await storage.deleteObject(objectKey);
+          }
+        }));
+        if (outcomes.some((outcome) => outcome.status === "rejected")) throw new Error("publication_reconcile_failed");
+      }, false);
+    } catch {
+      console.warn("[media] publication_reconcile_failed");
+    }
   }
 }

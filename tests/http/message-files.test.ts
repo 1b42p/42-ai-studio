@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { MessageStreamEvent } from "eve/client";
 
 import { media } from "../../lib/db/schema";
+import { messageFileId } from "../../lib/media/message-id";
 import { fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, sendAndWait } from "./support/chat";
@@ -35,8 +36,8 @@ function completed(events: readonly MessageStreamEvent[]): {
 } {
   const event = events.find((item) => item.type === "message.completed");
   if (event === undefined) throw new Error("в потоке нет message.completed");
-  const data = event.data as { stepIndex: number; turnId: string };
-  return { messageId: `${data.turnId}:${data.stepIndex}` };
+  const data = event.data;
+  return { messageId: messageFileId(`${data.turnId}:${data.stepIndex}`, data.message) };
 }
 
 describe("копирование файла из ответа", () => {
