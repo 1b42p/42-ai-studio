@@ -12,6 +12,7 @@ import { useMemo, useRef, useState, type DragEvent, type ReactNode } from "react
 import { ChatComposer } from "@/components/studio/chat/chat-composer";
 import type { ChatStatus } from "@/components/studio/chat/chat-status";
 import type { AttachmentsController } from "@/components/studio/chat/attachments";
+import { displayMessages } from "@/components/studio/chat/display-messages";
 import {
   buildFileLookup,
   type MessageFilesState,
@@ -214,7 +215,7 @@ export function ChatView({
 }: ChatViewProps) {
   const { data, events, status } = agent;
   const files = useMemo(() => buildFileLookup(messageFiles), [messageFiles]);
-  const messages = data.messages;
+  const messages = useMemo(() => displayMessages(data.messages, events), [data.messages, events]);
   const openInputs = openConversationInputs(data);
   const inlineIds = inlineQuestionIds(data);
   const pinnedInputs = openInputs.filter((input) => !inlineIds.has(input.request.requestId));

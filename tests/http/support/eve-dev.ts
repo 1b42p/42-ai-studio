@@ -16,6 +16,7 @@ const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 export interface EveDevServer {
   url: string;
   stop(): Promise<void>;
+  crash(): Promise<void>;
   output(): string;
 }
 
@@ -26,14 +27,17 @@ export interface EveDevServer {
  */
 export async function startEveDev(
   env: Record<string, string>,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; resume?: boolean } = {},
 ): Promise<EveDevServer> {
   const timeoutMs = options.timeoutMs ?? 240_000;
+  const args = [path.join(projectRoot, "node_modules", "eve", "bin", "eve.js"), "dev", "--no-ui", "--port", "0"];
+  if (options.resume) args.push("--resume");
   const child: ChildProcess = spawn(
     process.execPath,
-    [path.join(projectRoot, "node_modules", "eve", "bin", "eve.js"), "dev", "--no-ui", "--port", "0"],
+    args,
     {
       cwd: projectRoot,
+      detached: true,
       env: {
         ...process.env,
         ...testEnvValues(),
@@ -72,8 +76,15 @@ export async function startEveDev(
   return {
     url,
     output: () => output,
+    async crash() {
+      if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+      const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+      // Останавливаем и CLI, и его worker: SIGTERM сначала дожидается работы.
+      process.kill(-child.pid, "SIGKILL");
+      await exited;
+    },
     async stop() {
-      if (child.exitCode !== null) return;
+      if (child.exitCode !== null || child.signalCode !== null) return;
       child.kill("SIGTERM");
       const stopped = await Promise.race([
         new Promise<boolean>((resolve) => child.once("exit", () => resolve(true))),

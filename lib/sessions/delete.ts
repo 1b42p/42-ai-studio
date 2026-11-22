@@ -3,15 +3,15 @@ import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";
 import { Client } from "eve/client";
 
-import { deleteDaytonaMachine, daytonaSandboxName } from "@/agent/lib/daytona-backend";
-import { DELETED_KEY_MARKER } from "@/agent/lib/daytona-key-pool";
 import { signInternalToken } from "@/lib/auth/internal-tokens";
-import { loadConfig } from "@/lib/config";
+import { loadConfig, localEveStateDirectory } from "@/lib/config";
 import { getStorage } from "@/lib/s3";
-import { DAYTONA_KEY_PURPOSE, decryptSecret } from "@/lib/secrets";
-import { errorStatus, isMissingSandbox } from "@/lib/sandbox/errors";
+import { errorStatus } from "@/lib/sandbox/errors";
 import { recordSandboxTransition } from "@/lib/usage/sandbox";
 import { cancellableQuery as query } from "@/lib/db/cancellable-query";
+import { eraseStudioWorkflowData, forgetStudioWorkflowErasure } from "@/lib/workflow/erase-session-data";
+import { enqueueLateUploadCleanup } from "./late-upload-cleanup";
+import { deleteSessionDaytonaMachines } from "./daytona-erasure";
 
 export interface SessionDeletionResult {
   status: "deleted" | "not_found" | "conflict" | "upstream_error";
@@ -38,6 +38,12 @@ interface DeletingSession {
 }
 
 class DeletionConflict extends Error {}
+
+async function forgetWorkflowErasure(appSessionId: string, userId: string, signal: AbortSignal) {
+  signal.throwIfAborted();
+  const stateDir = localEveStateDirectory({ optional: true });
+  if (stateDir !== null) await forgetStudioWorkflowErasure(stateDir, { appSessionId, userId });
+}
 
 /** ReservedSql имеет только запросы/release: транзакцией управляем явно. */
 async function transactionOnReserved<T>(
@@ -125,28 +131,39 @@ export async function deleteSessionData(
       if (!journal) return { status: "not_found", timings };
       const prefix = `u/${journal.userId}/s/${journal.id}/`;
       await timed("s3Final", () => getStorage().deletePrefix(prefix, { signal }));
+      await forgetWorkflowErasure(journal.id, journal.userId, signal);
       await timed("database", () => query(sql!`delete from session_deletions where id = ${appSessionId}`, signal));
       console.info("[session:delete] completed", { appSessionId, timings });
       return { status: "deleted", timings };
     }
 
     await timed("eve", async () => {
-      if (!session.eveSessionId) return;
-      const stepSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
-      const token = await signInternalToken("eve_session_end", { sid: session.eveSessionId });
-      stepSignal.throwIfAborted();
-      const eve = new Client({
-        host: config.internalAppUrl, redirect: "error",
-        headers: { Authorization: `Bearer ${token}` },
-      }).sessions.attach(session.eveSessionId);
-      const cancelled = await eve.cancel({ signal: stepSignal });
-      if (cancelled.status !== "accepted" && cancelled.status !== "no_active_turn") {
-        throw new Error("Unexpected eve cancel result");
-      }
-      const reset = await eve.reset({ reason: "deleted_by_user", signal: stepSignal });
-      if (reset.status !== "reset" && reset.status !== "no_active_session") {
-        throw new Error("Unexpected eve reset result");
-      }
+      if (!session.eveSessionId && !session.startRequestedAt) return;
+      await eraseStudioWorkflowData({
+        stateDir: localEveStateDirectory(),
+        owner: {
+          appSessionId: session.id, userId: session.userId,
+          eveSessionIds: session.eveSessionId ? [session.eveSessionId] : [],
+        },
+        signal,
+        async resetSession(id, signal) {
+          const stepSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+          const token = await signInternalToken("eve_session_end", { sid: id });
+          stepSignal.throwIfAborted();
+          const eve = new Client({
+            host: config.internalAppUrl, redirect: "error",
+            headers: { Authorization: `Bearer ${token}` },
+          }).sessions.attach(id);
+          const cancelled = await eve.cancel({ signal: stepSignal });
+          if (cancelled.status !== "accepted" && cancelled.status !== "no_active_turn") {
+            throw new Error("Unexpected eve cancel result");
+          }
+          const reset = await eve.reset({ reason: "deleted_by_user", signal: stepSignal });
+          if (reset.status !== "reset" && reset.status !== "no_active_session") {
+            throw new Error("Unexpected eve reset result");
+          }
+        },
+      });
     });
 
     await timed("daytona", async () => {
@@ -177,41 +194,16 @@ export async function deleteSessionData(
         });
         if (!maintenanceClaimed) await delay(100, undefined, { signal: stepSignal });
       }
-      const [sandbox] = await query(sql!<{
-        id: string; daytonaSandboxId: string; state: string;
-        keyId: string; encrypted: string; keyDeletedAt: Date | null;
-        pendingDeletion: boolean;
-      }[]>`select s.id, s.daytona_sandbox_id as "daytonaSandboxId", s.state,
-        k.id as "keyId", k.api_key_encrypted as encrypted, k.deleted_at as "keyDeletedAt",
-        exists (select 1 from pending_sandbox_deletions p
-          where p.daytona_key_id = s.daytona_key_id
-            and p.daytona_sandbox_id = s.daytona_sandbox_id) as "pendingDeletion"
-        from sandboxes s join daytona_keys k on k.id = s.daytona_key_id
-        where s.app_session_id = ${appSessionId}`, stepSignal);
-      if (!sandbox || (sandbox.state === "gone" && !sandbox.pendingDeletion)) return;
-      if (!(sandbox.keyDeletedAt && sandbox.encrypted === DELETED_KEY_MARKER)) {
-        const secret = decryptSecret(sandbox.encrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE);
-        const identity = sandbox.daytonaSandboxId ||
-          (session.eveSessionId ? daytonaSandboxName(session.eveSessionId) : undefined);
-        if (!identity) throw new Error("Sandbox identity missing");
-        try {
-          await deleteDaytonaMachine(sandbox.keyId, secret, identity, {
-            signal: stepSignal, deadline: stepDeadline,
-          });
-        } catch (error) {
-          stepSignal.throwIfAborted();
-          if (!isMissingSandbox(error)) throw error;
-        }
+      await deleteSessionDaytonaMachines(sql!, session, { signal: stepSignal, deadline: stepDeadline });
+      const [sandbox] = await query(sql!<{ id: string }[]>`
+        select id from sandboxes where app_session_id = ${appSessionId} and state <> 'gone'`, stepSignal);
+      if (sandbox) {
+        await recordSandboxTransition({
+          sandboxId: sandbox.id, newState: "gone", source: "app",
+          changes: { startingSince: null, startingKind: null, launchStartedAt: null },
+          signal: stepSignal,
+        });
       }
-      await query(sql!`delete from pending_sandbox_deletions
-        where daytona_key_id = ${sandbox.keyId}
-          and daytona_sandbox_id = ${sandbox.daytonaSandboxId}`, stepSignal);
-      stepSignal.throwIfAborted();
-      await recordSandboxTransition({
-        sandboxId: sandbox.id, newState: "gone", source: "app",
-        changes: { startingSince: null, startingKind: null, launchStartedAt: null },
-        signal: stepSignal,
-      });
       stepSignal.throwIfAborted();
     });
 
@@ -222,10 +214,14 @@ export async function deleteSessionData(
     await transactionOnReserved(sql, signal, async (tx) => {
       await query(tx`insert into session_deletions (id, user_id)
         values (${appSessionId}, ${session.userId}) on conflict (id) do nothing`, signal);
+      await enqueueLateUploadCleanup(tx, session, signal);
       await timed("database", () => query(tx`delete from app_sessions where id = ${appSessionId}`, signal));
       signal.throwIfAborted();
     });
     await timed("s3Final", () => getStorage().deletePrefix(prefix, { signal }));
+    if (session.eveSessionId || session.startRequestedAt) {
+      await forgetWorkflowErasure(session.id, session.userId, signal);
+    }
     await query(sql`delete from session_deletions where id = ${appSessionId}`, signal);
     console.info("[session:delete] completed", { appSessionId, timings });
     return { status: "deleted", timings };

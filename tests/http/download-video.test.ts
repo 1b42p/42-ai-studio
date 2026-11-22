@@ -64,6 +64,7 @@ function downloadConfig(overrides: Partial<DownloadConfig> = {}): DownloadConfig
     youtubeCookies: config.youtubeCookies,
     downloadMaxBytes: config.downloadMaxBytes,
     downloadTimeoutMs: config.downloadTimeoutMs,
+    appTestMode: config.appTestMode,
     ...overrides,
   };
 }
@@ -111,6 +112,7 @@ beforeEach(async () => {
 
 afterAll(() => {
   expect(appOutput()).not.toContain("FAKE-COOKIE-VALUE");
+  expect(appOutput()).not.toContain("session-note-831");
 });
 
 describe("download_video", () => {
@@ -188,6 +190,22 @@ describe("download_video", () => {
     const output = completedOutput(await sendAndWait(user, id, toolCommand({ url: OK })));
     const frames = output.frames as unknown[];
     expect(frames).toHaveLength(1);
+  });
+
+  test("прямая ссылка на одно видео обрабатывается универсальным экстрактором", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const events = await sendAndWait(user, id, toolCommand({ url: "https://93.184.216.34/direct.mp4" }));
+    expect(completedOutput(events)).toMatchObject({ site: "generic", videoCodec: "h264" });
+  });
+
+  test("диагностика дочернего процесса не попадает в поток и журнал", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const events = await sendAndWait(user, id, toolCommand({ url: "https://93.184.216.34/diagnostics" }));
+    expect(failureMessage(events)).toMatch(/^download_failed:/);
+    expect(JSON.stringify(events)).not.toContain("session-note-831");
+    expect(appOutput()).not.toContain("session-note-831");
   });
 
   test("ошибки сайта, размер, пустой файл и нехватка места не оставляют видео", async () => {

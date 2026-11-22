@@ -70,20 +70,23 @@ describe("titleFromEvents", () => {
     ).toBe("Нужен ролик");
   });
 
-  test("вложение без текста не даёт названия, берётся следующее сообщение", () => {
+  test("название первого запроса без текста — имя первого файла", () => {
     expect(
       titleFromEvents([
         {
           type: "message.received",
           data: {
             message: "[file: a.png (image/png)]",
-            parts: [{ type: "file", filename: "a.png", mediaType: "image/png" }],
+            parts: [
+              { type: "file", filename: "a.png", mediaType: "image/png" },
+              { type: "file", filename: "b.png", mediaType: "image/png" },
+            ],
           },
         },
         { type: "session.waiting", data: {} },
         { type: "message.received", data: { message: "теперь текст" } },
       ]),
-    ).toBe("Теперь текст");
+    ).toBe("a.png");
   });
 
   test("первое сообщение с текстом побеждает", () => {

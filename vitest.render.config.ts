@@ -61,7 +61,7 @@ const serveAudio: BrowserCommand<[]> = async (context) => {
   });
 };
 
-/** Все запросы медиа — 404: вторая ошибка показывает карточку скачивания. */
+/** Все запросы медиа — 404: вторая ошибка показывает, что файл недоступен. */
 const failMedia: BrowserCommand<[string]> = async (context, pattern) => {
   if (context.provider.name !== "playwright") {
     throw new Error("Подмена медиа доступна только с провайдером Playwright");

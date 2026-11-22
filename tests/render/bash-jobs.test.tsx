@@ -274,10 +274,33 @@ test("401 и 404 останавливают опрос и объясняют п�
   expect(fetchMock).toHaveBeenCalledTimes(1);
 
   const missing = uniqueJobId();
-  respond(404);
+  fetchMock.mockImplementation(async () => new Response(null, { status: 404 }));
   await renderOnDesktop(view([bashPart(missing)]));
-  await settle();
+  await settle(30_000);
   await expect.element(page.getByText("Задание недоступно", { exact: true })).toBeVisible();
+  const attempts = fetchMock.mock.calls.length;
+  expect(attempts).toBeGreaterThan(2);
+  await settle(60_000);
+  expect(fetchMock).toHaveBeenCalledTimes(attempts);
+});
+
+test("первый 404 не мешает увидеть окончательный результат после возвращения на вкладку", async () => {
+  const jobId = uniqueJobId();
+  respond(404);
+  respond(jobBody(jobId, { status: "completed", exitCode: 0, stdout: "готовый ролик\n" }));
+  await renderOnDesktop(view([bashPart(jobId)]));
+  await settle();
+
+  visibility = "hidden";
+  document.dispatchEvent(new Event("visibilitychange"));
+  await settle(60_000);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+
+  visibility = "visible";
+  document.dispatchEvent(new Event("visibilitychange"));
+  await settle();
+  await expect.element(page.getByText("Код 0", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("готовый ролик", { exact: true })).toBeVisible();
   await settle(60_000);
   expect(fetchMock).toHaveBeenCalledTimes(2);
 });

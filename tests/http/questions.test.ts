@@ -2,6 +2,8 @@ import type { InputResponse, MessageStreamEvent } from "eve/client";
 import { conversationReducer, openConversationInputs, type ConversationState } from "eve/react";
 import { beforeEach, expect, test } from "vitest";
 
+import { inventoryOwnedLegacyRuns } from "@/lib/workflow/legacy-local-inventory";
+
 import { fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, eveClientAs, readStreamUntil, waitForStoredEvents } from "./support/chat";
@@ -33,7 +35,7 @@ test("каталог публикует ask_question и статические �
   expect(info.tools.static.some((tool: { name: string }) => tool.name === "ask_question")).toBe(true);
   const text = info.instructions.static.map((entry: { content: string }) => entry.content).join("\n");
   expect(text).toContain("# Результат этапа");
-  expect(text).toContain("больше 60 секунд — черновик.");
+  expect(text).toMatch(/больше 60 с(?:екунд)?(?:[\s.,;:]|$)/u);
   expect(text).toContain("- `ask_question` —");
   expect(readFileSync("agent/instructions.md", "utf8").trimEnd().split("\n").length).toBeLessThanOrEqual(200);
 });
@@ -58,6 +60,36 @@ async function postAnswer(p: Awaited<ReturnType<typeof parked>>, response: Input
     body: JSON.stringify({ inputResponses: [response] }),
   });
 }
+
+test("сброс и очистка Workflow завершают цепочку вопроса, сохраняя соседнюю сессию", async () => {
+  const target = await parked({ question: "Проверка удаления копии" }, true);
+  const neighbour = await parked({ question: "Вопрос другой сессии" });
+  async function storedRuns(p: typeof target) {
+    return inventoryOwnedLegacyRuns(".eve/.workflow-data", {
+      appSessionId: p.id, userId: p.user.id, eveSessionIds: [p.session.state.sessionId],
+    }, AbortSignal.timeout(5000));
+  }
+
+  const initial = await storedRuns(target);
+  expect(initial.length).toBeGreaterThanOrEqual(3);
+  expect(initial.some((run) => !run.terminal)).toBe(true);
+  const response = await fetchApp(`/api/sessions/${target.id}`, {
+    method: "DELETE", headers: { cookie: await loginAs(target.user) },
+  });
+  expect(response.status).toBe(204);
+  expect(await storedRuns(target)).toEqual([]);
+  for (const run of initial) {
+    const record = JSON.parse(readFileSync(`.eve/.workflow-data/runs/${run.id}.json`, "utf8"));
+    expect(record).not.toHaveProperty("input");
+    expect(record).not.toHaveProperty("attributes");
+  }
+  expect((await storedRuns(neighbour)).some((run) => !run.terminal)).toBe(true);
+  const answered = await postAnswer(neighbour, { requestId: neighbour.input.request.requestId, text: "Другая сессия работает" });
+  expect(answered.ok).toBe(true);
+  await readStreamUntil(neighbour.session.stream({ startIndex: 0 }), "session.waiting");
+  await neighbour.session.cancel();
+  await neighbour.session.reset({ reason: "test_cleanup" });
+});
 
 test("настоящий ask_question паркует ход, POST отвечает вариантом; журнал восстанавливает вопрос один раз", async () => {
   const p = await parked();

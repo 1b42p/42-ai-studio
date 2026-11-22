@@ -263,7 +263,9 @@ for (const [viewport, renderSettings] of [
       await expect.element(page.getByText(
         "Агент запоминает ваши постоянные предпочтения и использует их во всех ваших сессиях. Выключенная память не используется, но остаётся сохранённой. Просмотреть или очистить её нельзя.",
       )).toBeVisible();
-      await expect.element(toggle).toHaveAccessibleDescription("Изменение действует со следующего сообщения.");
+      await expect.element(toggle).toHaveAccessibleDescription(
+        "Изменение действует со следующего запроса после завершения текущего ответа.",
+      );
       await page.getByText("Запоминать мои предпочтения", { exact: true }).click();
       await expect.element(toggle).toHaveAttribute("aria-checked", String(!enabled));
       expectNoHorizontalScroll();

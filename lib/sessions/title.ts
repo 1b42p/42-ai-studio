@@ -1,5 +1,5 @@
 /**
- * Название сессии из текста сообщения пользователя. Модель название не
+ * Название сессии из текста или вложения пользователя. Модель название не
  * придумывает: правила чисто текстовые, чтобы список и поиск были стабильны.
  */
 
@@ -75,40 +75,37 @@ export function titleSearchKey(title: string): string {
   return title.toLocaleLowerCase("ru").replaceAll("ё", "е").replaceAll("Ё", "е");
 }
 
-function textFromMessage(data: unknown): string | null {
+function titleFromMessage(data: unknown): string | null {
   if (data === null || typeof data !== "object") return null;
   const record = data as { parts?: unknown; message?: unknown };
 
   if (Array.isArray(record.parts)) {
     const texts: string[] = [];
+    let filename: string | undefined;
     for (const part of record.parts) {
       if (part === null || typeof part !== "object") continue;
-      const item = part as { type?: unknown; text?: unknown };
+      const item = part as { type?: unknown; text?: unknown; filename?: unknown };
       if (item.type === "text" && typeof item.text === "string") texts.push(item.text);
+      if (item.type === "file" && filename === undefined) {
+        filename = typeof item.filename === "string" && item.filename.trim()
+          ? item.filename.trim()
+          : "Вложение";
+      }
     }
-    const joined = texts.join("");
-    // Сводка вложения лежит в data.message (`[file: …]`). Текстовых частей нет —
-    // это не название, его даст следующее сообщение.
-    if (joined.trim() === "") return null;
-    return joined;
+    return sessionTitleFromText(texts.join("")) ?? (filename === undefined ? null : truncateTitle(filename));
   }
 
-  if (typeof record.message === "string" && record.message.trim() !== "") {
-    return record.message;
-  }
-  return null;
+  return typeof record.message === "string" ? sessionTitleFromText(record.message) : null;
 }
 
 /**
  * Первое сообщение пользователя, из которого получается название.
- * Вложение без текста и пустая разметка название не ставят.
+ * Если текста нет, берётся имя первого вложения.
  */
 export function titleFromEvents(events: readonly TitleSourceEvent[]): string | null {
   for (const event of events) {
     if (event.type !== "message.received") continue;
-    const text = textFromMessage(event.data);
-    if (text === null) continue;
-    const title = sessionTitleFromText(text);
+    const title = titleFromMessage(event.data);
     if (title !== null) return title;
   }
   return null;

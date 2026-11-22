@@ -13,7 +13,7 @@ import { getStorage, type Storage } from "@/lib/s3";
 
 import { contentTypeForPath, fileNameForPath } from "./files";
 import { mediaObjectKey } from "./keys";
-import { requireLiveMediaSession } from "./live-session";
+import { MediaSessionGoneError, requireLiveMediaSession } from "./live-session";
 import { resolveSandboxFilePath } from "./sandbox-path";
 
 export type MediaCopyReason = "not_found" | "outside_workspace" | "too_large" | "copy_failed";
@@ -42,6 +42,8 @@ export interface CopySandboxFileOptions {
   contentType?: string;
   storage?: Storage;
   abortSignal?: AbortSignal;
+  /** Идентификатор зарезервированной строки для повторяемой публикации. */
+  objectId?: string;
   /** Уже проверенный небольшой файл: публикуются именно эти байты, без повторного чтения. */
   validatedBytes?: Uint8Array;
 }
@@ -110,6 +112,7 @@ export async function copySandboxFile(
       appSessionId: options.appSessionId,
       kind: options.kind ?? "message_file",
       name: originalName,
+      objectId: options.objectId,
     });
     const storage = options.storage ?? getStorage();
     try {
@@ -160,6 +163,7 @@ export async function copySandboxFile(
     appSessionId: options.appSessionId,
     kind: options.kind ?? "message_file",
     name: originalName,
+    objectId: options.objectId,
   });
   const storage = options.storage ?? getStorage();
   const limited = limitedStream(source, options.maxBytes);
@@ -170,7 +174,12 @@ export async function copySandboxFile(
     // Удаление могло очистить префикс, пока поток ещё загружался.
     await requireLiveMediaSession(options.appSessionId);
   } catch (error) {
-    // Не оставляем часть объекта, если поток оборвался или превысил предел.
+    // Неподтверждённый ответ S3 не доказывает, что объект не сохранился.
+    // Повторяемую копию проверяет владелец операции по тому же ключу.
+    if (options.objectId !== undefined && error instanceof MediaSessionGoneError) throw error;
+    if (options.objectId !== undefined && !(error instanceof MediaCopyError)) {
+      throw new MediaCopyError("copy_failed", "Не удалось подтвердить сохранение файла", { cause: error });
+    }
     try {
       await storage.deleteObject(objectKey);
     } catch (cleanupError) {

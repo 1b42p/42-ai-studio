@@ -27,6 +27,7 @@ function config(overrides: Partial<DownloadConfig> = {}): DownloadConfig {
     youtubeCookies: COOKIES,
     downloadMaxBytes: 5 * 1024 * 1024,
     downloadTimeoutMs: 60_000,
+    appTestMode: true,
     ...overrides,
   };
 }
@@ -65,7 +66,7 @@ describe("запускатель yt-dlp", () => {
   test("YouTube получает cookies, чужой сайт — нет, окружение минимальное", async () => {
     const resolveDns = async () => [PUBLIC_IP] as const;
     await runDownload({ url: "https://www.youtube.com/ok", moments: [0.5] }, await context(), {
-      config: config(),
+      config: config({ ffmpegPath: "/usr/bin" }),
       resolveDns,
     });
     const youtube = await readStubLog();
@@ -74,7 +75,8 @@ describe("запускатель yt-dlp", () => {
       expect(call.argv).toEqual(expect.arrayContaining([
         "--ignore-config",
         "--use-extractors",
-        "default,-generic",
+        "default",
+        "--proxy",
         "--no-playlist",
         "--ffmpeg-location",
         "/usr/bin/ffmpeg",
@@ -106,6 +108,13 @@ describe("запускатель yt-dlp", () => {
     expect(other[0]?.argv).not.toContain("--cookies");
     await expect(access(other[0]!.cwd)).rejects.toThrow();
   }, 30_000);
+
+  test("свободный текст yt-dlp не передаётся в сообщение об ошибке", async () => {
+    await expect(runDownload({ url: "https://www.youtube.com/diagnostics" }, await context(), {
+      config: config(),
+      resolveDns: async () => [PUBLIC_IP],
+    })).rejects.toThrow(/^download_failed: Не удалось скачать видео: сайт или загрузчик не завершил скачивание\.$/);
+  });
 
   test("вторая загрузка YouTube ждёт пять секунд по переданным часам", async () => {
     let clock = 1_000;

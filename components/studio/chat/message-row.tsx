@@ -6,7 +6,7 @@ import type {
   EveMessage,
   EveMessagePart,
 } from "eve/react";
-import { BrainIcon } from "lucide-react";
+import { BrainIcon, CircleHelpIcon } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
 import { AuthorizationCard, type AuthorizationPart } from "./authorization-card";
@@ -26,7 +26,7 @@ import {
   TraceLine,
   TraceTitle,
 } from "@/components/ui/trace";
-import { messageIdOf } from "@/lib/media/message-id";
+import { messageFileId, messageIdOf } from "@/lib/media/message-id";
 
 type AssistantGroup =
   | { readonly kind: "authorization"; readonly id: string; readonly part: AuthorizationPart }
@@ -36,6 +36,7 @@ type AssistantGroup =
       readonly kind: "text";
       readonly id: string;
       readonly text: string;
+      readonly sourceText: string;
       readonly streaming: boolean;
       readonly stepIndex?: number;
     }
@@ -107,7 +108,8 @@ function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[]
       groups.push({
         kind: "text",
         id,
-        text: answer,
+         text: answer,
+        sourceText: part.text,
         streaming,
         stepIndex: part.stepIndex,
       });
@@ -186,9 +188,20 @@ function AssistantContent({
           return <AuthorizationCard key={group.id} part={group.part} allowHosts={authorizationAllowHosts} />;
         }
         if (group.kind === "question") {
+          const inputs = questionsFor(data, group.part.toolCallId);
+          if (group.part.state === "output-error" && inputs.length === 0) {
+            return (
+              <Trace key={group.id}>
+                <TraceLine status="error">
+                  <TraceIcon><CircleHelpIcon /></TraceIcon>
+                  <TraceTitle>Не удалось задать вопрос</TraceTitle>
+                </TraceLine>
+              </Trace>
+            );
+          }
           // Copies are answered through the parent's pinned prompt.
           if (!onRespond) return null;
-          return questionsFor(data, group.part.toolCallId).map((input) => (
+          return inputs.map((input) => (
             <InputPrompt key={input.request.requestId} input={input}
               disabled={inputDisabled} onRespond={onRespond} />
           ));
@@ -220,13 +233,15 @@ function AssistantContent({
           );
         }
 
-        // Идентификатор сообщения тот же, что у сервера: `<turnId>:<stepIndex>`.
-        const messageId = messageIdOf(turnId, group.stepIndex);
+        const stepId = messageIdOf(turnId, group.stepIndex);
+        const messageId = stepId !== undefined && !group.streaming
+          ? messageFileId(stepId, group.sourceText)
+          : undefined;
 
         return (
           <ChatMarkdown
             key={group.id}
-            resolver={files.resolve(messageId)}
+            resolver={files.resolve(messageId, stepId)}
             streaming={group.streaming}
             text={group.text}
           />

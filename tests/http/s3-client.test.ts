@@ -1,7 +1,7 @@
 /** Клиент S3: круговой прогон объекта и подписанной ссылки. */
 import { describe, expect, test } from "vitest";
 
-import { getStorage } from "../../lib/s3";
+import { getStorage, StorageObjectSizeMismatch } from "../../lib/s3";
 import { s3 } from "./support/s3";
 
 const KEY = "u/test-user/s/test-session/uploads/0af1c2d3/sample.bin";
@@ -49,7 +49,7 @@ describe("клиент S3", () => {
     const storage = getStorage();
     const bytes = new Uint8Array([4, 3, 2, 1]);
 
-    const url = await storage.presignUpload(KEY, "application/octet-stream", { expiresIn: 300 });
+    const url = await storage.presignUpload(KEY, "application/octet-stream", bytes.length, { expiresIn: 300 });
     const upload = await fetch(url, {
       method: "PUT",
       body: bytes,
@@ -58,22 +58,23 @@ describe("клиент S3", () => {
     });
 
     expect(upload.status).toBe(200);
-    expect(await storage.getObject(KEY)).toEqual(bytes);
+    expect(await storage.getObject(KEY, bytes.length)).toEqual(bytes);
+    await expect(storage.getObject(KEY, bytes.length - 1)).rejects.toBeInstanceOf(StorageObjectSizeMismatch);
 
     await storage.deletePrefix(PREFIX);
   });
 });
 
 describe("совместимость со строгими провайдерами", () => {
-  test("ссылка на загрузку без контрольной суммы и с подписанным content-type", async () => {
-    const url = await getStorage().presignUpload(KEY, "image/png", { expiresIn: 300 });
+  test("ссылка на загрузку подписывает размер и тип без контрольной суммы", async () => {
+    const url = await getStorage().presignUpload(KEY, "image/png", 1, { expiresIn: 300 });
 
     expect(url).not.toMatch(/checksum/i);
-    expect(new URL(url).searchParams.get("X-Amz-SignedHeaders")).toBe("content-type;host");
+    expect(new URL(url).searchParams.get("X-Amz-SignedHeaders")).toBe("content-length;content-type;host");
   });
 
   test("PUT с другим Content-Type отвергается", async () => {
-    const url = await getStorage().presignUpload(KEY, "image/png", { expiresIn: 300 });
+    const url = await getStorage().presignUpload(KEY, "image/png", 1, { expiresIn: 300 });
     const upload = await fetch(url, {
       method: "PUT",
       body: new Uint8Array([1]),

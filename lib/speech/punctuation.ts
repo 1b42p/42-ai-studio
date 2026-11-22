@@ -10,6 +10,14 @@ function normalizeBreaks(text: string): string {
   return text.replace(/[\n\r]/g, " ");
 }
 
+/** Ключ поиска с неизменными индексами UTF-16. */
+function matchKey(text: string): string {
+  return text.replace(/\p{L}/gu, (letter) => {
+    const folded = letter.toLowerCase().replace("ё", "е");
+    return folded.length === letter.length ? folded : letter;
+  });
+}
+
 function attachesToNext(char: string, spaceBefore: boolean, spaceAfter: boolean): boolean {
   if (char === '"' || char === "'") return spaceBefore;
   if (char === "—" || char === "–") return false;
@@ -45,25 +53,26 @@ function splitGap(
 
 /**
  * Возвращает знаки препинания к единицам речи сервиса.
- * Единицу, которой нет в исходном тексте, оставляет как пришла.
+ * Если границы не удаётся привязать к исходнику, оставляет текст сервиса.
  */
 export function attachPunctuation(source: string, units: readonly string[]): string[] {
-  const text = normalizeBreaks(source);
+  const text = normalizeBreaks(source.normalize("NFC"));
+  const matches = matchKey(text);
   const out = [...units];
   let cursor = 0;
   let previous: number | null = null;
 
   for (let index = 0; index < units.length; index++) {
-    const unit = units[index] ?? "";
+    const unit = normalizeBreaks((units[index] ?? "").normalize("NFC"));
     if (unit.length === 0) continue;
-    const found = text.indexOf(unit, cursor);
-    if (found === -1) continue;
+    const found = matches.indexOf(matchKey(unit), cursor);
+    if (found === -1) return [...units];
 
     const { prefix, suffix } = splitGap(text, cursor, text.slice(cursor, found));
     if (suffix !== "" && previous !== null) out[previous] += suffix;
     const leading = suffix !== "" && previous === null ? suffix : "";
-    out[index] = leading + prefix + unit;
     cursor = found + unit.length;
+    out[index] = leading + prefix + text.slice(found, cursor);
     previous = index;
   }
 

@@ -120,6 +120,7 @@ describe("parseConfig", () => {
     const issues = issuesOf({
       ...validEnv(),
       NODE_ENV: "production",
+      APP_URL: "https://studio.example.com",
       TELEGRAM_CLIENT_ID: "123456789",
       TELEGRAM_CLIENT_SECRET: "test-client-secret",
     });
@@ -441,6 +442,14 @@ describe("parseConfig: модель агента", () => {
 });
 
 describe("parseConfig: вход через Telegram", () => {
+  test("рабочий публичный адрес требует HTTPS для защищённой cookie", () => {
+    const issues = issuesOf({ ...productionEnv(), APP_URL: "http://studio.example.com" });
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toContain("APP_URL");
+    expect(issues[0]).toContain("https");
+  });
+
   test("по умолчанию издатель oauth.telegram.org, срок 30 дней, dev-вход выключен", () => {
     const config = parseConfig(validEnv());
 

@@ -196,8 +196,17 @@ export async function checkOutboundAddress(
   policy: OutboundPolicy,
   signal?: AbortSignal,
 ): Promise<URL> {
+  return (await resolveOutboundAddress(input, policy, signal)).url;
+}
+
+/** Возвращает уже проверенные IP для клиента, который сам открывает сокет. */
+export async function resolveOutboundAddress(
+  input: string,
+  policy: OutboundPolicy,
+  signal?: AbortSignal,
+): Promise<{ url: URL; addresses: { address: string; family: 4 | 6 }[] }> {
   const url = acceptUrl(input, policy);
-  const stop = signal ?? AbortSignal.timeout(policy.timeoutMs);
-  await withSignal(resolveHost(url, policy), stop);
-  return url;
+  const timeout = AbortSignal.timeout(policy.timeoutMs);
+  const stop = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  return { url, addresses: await withSignal(resolveHost(url, policy), stop) };
 }

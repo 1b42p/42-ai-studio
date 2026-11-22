@@ -1,7 +1,7 @@
 /**
  * Серверный модуль конфигурации: единственное место, где читаются переменные
  * окружения проекта. Остальной код `process.env` напрямую не читает (исключение —
- * переменные самого фреймворка: `NODE_ENV`, `PORT`, `EVE_*`).
+ * переменные самого фреймворка: `NODE_ENV`, `PORT`, `EVE_*`, `NEXT_RUNTIME`).
  *
  * Файлы `.env*` читаются через `loadEnvConfig` из `@next/env` — тем же механизмом,
  * что и Next.js. Переменные, заданные в самом процессе, главнее файлов.
@@ -433,6 +433,9 @@ export function parseConfig(env: EnvRecord): AppConfig {
     }
 
     if (production) {
+      if (!data.APP_URL.startsWith("https://")) {
+        addIssue("APP_URL", "рабочий адрес должен использовать https://");
+      }
       if (data.TELEGRAM_CLIENT_ID === undefined) {
         addIssue("TELEGRAM_CLIENT_ID", "обязательна при NODE_ENV=production");
       }
@@ -589,6 +592,30 @@ export function loadConfig(): AppConfig {
     cachedConfig = parseConfig(process.env);
   }
   return cachedConfig;
+}
+
+/** Shared by Next and the co-located Eve 0.83 process. An external World needs its own erasure adapter. */
+export function localEveStateDirectory(): string;
+export function localEveStateDirectory(options: { optional: true }): string | null;
+export function localEveStateDirectory(options?: { optional: true }): string | null {
+  loadDotenvFiles();
+  const target = process.env.WORKFLOW_TARGET_WORLD;
+  if ((target && target !== "local") || process.env.VERCEL_DEPLOYMENT_ID ||
+      process.env.EVE_NEXT_PRODUCTION_ORIGIN) {
+    if (options?.optional) return null;
+    throw new Error("The configured Eve storage does not use the local erasure adapter");
+  }
+  const devStateDir = process.env.NODE_ENV === "production" ? undefined : process.env.EVE_DEV_STATE_DIR;
+  return resolve(devStateDir || ".eve");
+}
+
+/** Only the default, co-located Nitro build can explain the bundled World marker. */
+export function bundledProductionEveServerDirectory(dataDir: string): string | null {
+  if (process.env.NODE_ENV !== "production") return null;
+  const stateDir = localEveStateDirectory({ optional: true });
+  if (stateDir === null || process.env.WORKFLOW_LOCAL_DATA_DIR ||
+      dataDir !== resolve(stateDir, ".workflow-data")) return null;
+  return resolve(".output", "server");
 }
 
 export interface EvalJudgeConfig {

@@ -12,7 +12,7 @@ import { loadConfig } from "@/lib/config";
 import { findMediaForUser } from "@/lib/media/service";
 import { findAppSessionById } from "@/lib/sessions/service";
 import { mediaIdFromAppMediaUrl } from "@/lib/media/media-url";
-import { getStorage } from "@/lib/s3";
+import { getStorage, StorageObjectSizeMismatch } from "@/lib/s3";
 
 export const ATTACHMENT_UNAVAILABLE =
   "Файл недоступен. Попросите пользователя прикрепить его заново.";
@@ -50,7 +50,13 @@ export async function fetchUserAttachment(
     throw attachmentError(ATTACHMENT_SIZE_MISMATCH);
   }
 
-  const bytes = await storage.getObject(record.objectKey);
+  let bytes: Uint8Array;
+  try {
+    bytes = await storage.getObject(record.objectKey, record.sizeBytes);
+  } catch (error) {
+    if (error instanceof StorageObjectSizeMismatch) throw attachmentError(ATTACHMENT_SIZE_MISMATCH);
+    throw error;
+  }
   if ((await findAppSessionById(record.appSessionId)) === null) {
     throw attachmentError(ATTACHMENT_UNAVAILABLE);
   }

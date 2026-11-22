@@ -5,7 +5,7 @@ import { ResumedChat } from "@/components/studio/chat/resumed-chat";
 import { getCurrentUser, requireUser } from "@/lib/auth/guard";
 import { loadConfig } from "@/lib/config";
 import { isUuid } from "@/lib/sessions/access";
-import { findUserSession, SESSION_START_WINDOW_MS } from "@/lib/sessions/service";
+import { findUserSession, isSessionStarting } from "@/lib/sessions/service";
 
 const UNTITLED_DOCUMENT = "Новая сессия · 42 AI Studio";
 
@@ -44,17 +44,14 @@ export default async function SessionPage({
   const session = await findUserSession(user.id, sessionId);
   if (session === null) notFound();
 
-  const starting =
-    session.startRequestedAt !== null &&
-    Date.now() - session.startRequestedAt.getTime() < SESSION_START_WINDOW_MS;
-
   return (
     <ResumedChat
+      key={session.id}
       authorizationAllowHosts={loadConfig().ssrfTestAllowHosts}
       appSessionId={session.id}
       initialEveSessionId={session.eveSessionId}
       initialTitle={session.title}
-      starting={starting}
+      starting={isSessionStarting(session)}
     />
   );
 }

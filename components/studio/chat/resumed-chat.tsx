@@ -8,25 +8,30 @@ import { ChatFrame } from "@/components/studio/chat/chat-frame";
 import { ChatPanel } from "@/components/studio/chat/chat-panel";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ButtonLink } from "@/components/studio/button-link";
+import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { sleep } from "@/lib/sleep";
 
 const EVENTS_BATCH = 2000;
 const START_POLL_MS = 1000;
-const START_WAIT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 
 type Phase = "empty" | "error" | "loading" | "ready" | "starting";
 
+function fetchForResume(url: string, signal: AbortSignal): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) });
+}
+
 /** Читает всю сохранённую историю пачками до курсора. */
-async function loadAllEvents(appSessionId: string): Promise<MessageStreamEvent[]> {
+async function loadAllEvents(appSessionId: string, signal: AbortSignal): Promise<MessageStreamEvent[]> {
   const events: MessageStreamEvent[] = [];
   let after = -1;
 
   for (;;) {
-    const response = await fetch(
+    const response = await fetchForResume(
       `/api/sessions/${appSessionId}/events?after=${after}&limit=${EVENTS_BATCH}`,
+      signal,
     );
-    if (!response.ok) throw new Error(`Не удалось загрузить события: ${response.status}`);
+    if (!response.ok) throw new Error("Не удалось загрузить события.");
 
     const body = (await response.json()) as {
       events: Array<{ seq: number; payload: MessageStreamEvent }>;
@@ -106,20 +111,19 @@ function StatusScreen({ text }: { text: string }) {
   );
 }
 
-function LoadError({ text }: { text: string }) {
+function LoadError({ text, onRetry }: { text: string; onRetry: () => void }) {
   return (
     <div className="mx-auto flex w-full max-w-3xl items-start p-6">
       <Alert variant="destructive">
         <AlertTitle>Не удалось открыть беседу</AlertTitle>
         <AlertDescription>
-          {text}{" "}
-          <ButtonLink
-            href="/s"
-            size="sm"
-            variant="link"
-          >
-            Начать новую сессию
-          </ButtonLink>
+          <p>{text}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={onRetry}>Повторить</Button>
+            <ButtonLink href="/s" size="sm" variant="link">
+              Начать новую сессию
+            </ButtonLink>
+          </div>
         </AlertDescription>
       </Alert>
     </div>
@@ -132,13 +136,13 @@ export interface ResumedChatProps {
   initialEveSessionId: string | null;
   /** Название с сервера. Пока пустое, шапка спросит его после первого сообщения. */
   initialTitle: string | null;
-  /** Создание сессии eve начато не дольше 60 секунд назад. */
+  /** На момент SSR сервер ещё ждёт привязки сессии eve. */
   starting: boolean;
 }
 
 /**
  * Страница беседы: пока история не загружена, чат не монтируется — хук
- * `useEveAgent` читает `initialEvents` и `initialSession` при создании
+ * `useStudioAgent` читает `initialEvents` и `initialSession` при создании
  * хранилища, то есть на первом рендере.
  */
 export function ResumedChat({
@@ -157,65 +161,70 @@ export function ResumedChat({
 
   useEffect(() => {
     if (phase !== "starting") return;
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const poll = async () => {
-      const deadline = Date.now() + START_WAIT_MS;
-      while (!cancelled && Date.now() < deadline) {
-        await sleep(START_POLL_MS);
-        if (cancelled) return;
+      try {
+        const response = await fetchForResume(`/api/sessions/${appSessionId}`, signal);
+        if (!response.ok) throw new Error("Статус сессии недоступен.");
+        const body = (await response.json()) as { eveSessionId?: unknown; starting?: unknown };
+        if (signal.aborted) return;
 
-        const response = await fetch(`/api/sessions/${appSessionId}`);
-        if (!response.ok) continue;
-        const body = (await response.json()) as { eveSessionId: string | null };
-        if (body.eveSessionId !== null) {
-          if (cancelled) return;
+        if (typeof body.eveSessionId === "string" && body.eveSessionId !== "") {
           setEveSessionId(body.eveSessionId);
           setPhase("loading");
-          return;
+        } else if (body.eveSessionId === null && body.starting === true) {
+          timer = setTimeout(poll, START_POLL_MS);
+        } else if (body.eveSessionId === null && body.starting === false) {
+          setPhase("empty");
+        } else {
+          throw new Error("Некорректный статус сессии.");
         }
-      }
-
-      if (!cancelled) {
-        setError("Сообщение не отправилось: сессия eve не создалась.");
+      } catch {
+        if (signal.aborted) return;
+        setError("Не удалось проверить статус первой отправки. Попробуйте ещё раз.");
         setPhase("error");
       }
     };
 
     void poll();
     return () => {
-      cancelled = true;
+      controller.abort();
+      clearTimeout(timer);
     };
   }, [appSessionId, phase]);
 
   useEffect(() => {
-    if (eveSessionId === null) return;
-    let cancelled = false;
+    if (phase !== "loading" || eveSessionId === null) return;
+    const controller = new AbortController();
 
     const load = async () => {
       try {
-        const loaded = await loadAllEvents(appSessionId);
-        if (cancelled) return;
+        const loaded = await loadAllEvents(appSessionId, controller.signal);
+        if (controller.signal.aborted) return;
         setEvents(loaded);
         setPhase("ready");
-      } catch (cause) {
-        if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : "Не удалось загрузить беседу.");
+      } catch {
+        if (controller.signal.aborted) return;
+        setError("Не удалось загрузить историю беседы. Попробуйте ещё раз.");
         setPhase("error");
       }
     };
 
     void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [appSessionId, eveSessionId]);
+    return () => controller.abort();
+  }, [appSessionId, eveSessionId, phase]);
 
   return (
     <ChatFrame>
       {phase === "starting" ? <StatusScreen text="Сообщение отправляется…" /> : null}
       {phase === "loading" ? <StatusScreen text="Загружаем беседу…" /> : null}
-      {phase === "error" ? <LoadError text={error ?? "Неизвестная ошибка."} /> : null}
+      {phase === "error" ? (
+        <LoadError text={error ?? "Неизвестная ошибка."}
+          onRetry={() => setPhase(eveSessionId === null ? "starting" : "loading")} />
+      ) : null}
       {phase === "empty" ? (
         <ChatWithSession appSessionId={appSessionId} initialTitle={initialTitle} authorizationAllowHosts={authorizationAllowHosts} />
       ) : null}

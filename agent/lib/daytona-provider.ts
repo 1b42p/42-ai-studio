@@ -237,10 +237,10 @@ async function checkpointMachine(
  * сразу попадает в pending, чтобы повторный `deleteKey` её нашёл, даже если
  * удаление сейчас сорвётся.
  */
-async function discardMachine(keyId: string, machine: DaytonaMachine): Promise<void> {
-  await rememberPendingDeletion(keyId, machine.id);
+async function discardMachine(keyId: string, machine: DaytonaMachine, appSessionId: string): Promise<void> {
+  await rememberPendingDeletion(keyId, machine.id, appSessionId);
   try {
-    await machine.delete();
+    await machine.delete(undefined, true);
     await forgetPendingDeletion(keyId, machine.id);
   } catch (error) {
     console.error("[sandbox] cleanup_pending", errorStatus(error) ?? "transport");
@@ -341,7 +341,7 @@ async function seed(connection: SandboxConnection, artifact: Readonly<Artifact>)
 
 async function provision(
   backend: DaytonaBackend, name: string, appSessionId: string,
-  artifact: Readonly<Artifact>, wait: SandboxWait, previousId?: string,
+  artifact: Readonly<Artifact>, wait: SandboxWait, keyId: string, previousId?: string,
 ) {
   let machine: DaytonaMachine | undefined;
   try {
@@ -354,10 +354,16 @@ async function provision(
   } catch (error) {
     if (!isMissingSandbox(error) && !(error instanceof SandboxSessionGoneError)) throw error;
   }
+  let createStarted = false;
   try {
     if (!machine) {
-      await beginSandboxLaunch(wait);
-      machine = await backend.create({ name, appSessionId, dockerfile: artifact.dockerfile });
+      machine = await backend.create({
+        name, appSessionId, dockerfile: artifact.dockerfile,
+        async beforeCreate() {
+          await beginSandboxLaunch(wait, { createKeyId: keyId });
+          createStarted = true;
+        },
+      });
     }
     if (machine.state === "build_failed") throw new StudioSandboxError("sandbox_create_failed");
     // No database checkpoint means no tool has used this machine yet. Reapply
@@ -367,6 +373,7 @@ async function provision(
     finally { await connection.close?.(); }
     return machine;
   } catch (error) {
+    if (!machine && !createStarted) throw error;
     if (error instanceof StudioSandboxError && error.code === "sandbox_wait_cancelled") throw error;
     let cleanupFailed = false;
     try { await (await backend.get(name)).delete(); }
@@ -522,7 +529,7 @@ export function createDaytonaLifecycle() {
                   const found = await backend.get(name);
                   if (deleted) {
                     // Машину удалённого ключа не будим и не сеем: сразу в очистку.
-                    await discardMachine(key.id, found);
+                    await discardMachine(key.id, found, session.id);
                   } else {
                     if (found.state !== "started" && !grant) {
                       throw new StudioSandboxError("capacity_exhausted");
@@ -531,15 +538,16 @@ export function createDaytonaLifecycle() {
                       backend,
                       name,
                       session.id,
-                      artifact,
-                      wait,
-                      existing.daytonaSandboxId,
+                       artifact,
+                       wait,
+                       key.id,
+                       existing.daytonaSandboxId,
                     );
                     if (await checkpointMachine(session.id, key.id, machine, wait)) {
                       opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
                     } else {
                       await assertSandboxWait(wait);
-                      await discardMachine(key.id, machine);
+                      await discardMachine(key.id, machine, session.id);
                     }
                   }
                 } catch (error) {
@@ -562,7 +570,7 @@ export function createDaytonaLifecycle() {
                 if (!grant) throw new StudioSandboxError("capacity_exhausted");
                 const backend = backendForKey(grant);
                 try {
-                  created = await provision(backend, name, session.id, artifact, wait, existing?.daytonaSandboxId);
+                  created = await provision(backend, name, session.id, artifact, wait, grant.id, existing?.daytonaSandboxId);
                 } catch (error) {
                   if (isQuotaExceeded(error)) {
                     await exhaustPool(grant.id);
@@ -579,7 +587,7 @@ export function createDaytonaLifecycle() {
                   created = undefined;
                 } else {
                   await assertSandboxWait(wait);
-                  await discardMachine(grant.id, created);
+                  await discardMachine(grant.id, created, session.id);
                   created = undefined;
                   throw new StudioSandboxError("capacity_exhausted");
                 }

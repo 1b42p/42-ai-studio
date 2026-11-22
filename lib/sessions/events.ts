@@ -9,6 +9,7 @@
  * идемпотентной даже при синхронизациях из разных процессов.
  */
 import type { MessageStreamEvent } from "eve/client";
+import { completedMessageFiles, recordMessageFiles } from "../media/message-files";
 import { sessions } from "eve/server";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
@@ -153,6 +154,12 @@ export async function syncAppSession(
       payload: stripNullCharacters(event),
     }));
     const touch = events.some((event) => TOUCH_EVENTS.has(event.type));
+    // Используем исходный Markdown, не JSONB-копию.
+    const publications = events.flatMap((event) => {
+      if (event.type !== "message.completed") return [];
+      const publication = completedMessageFiles(event.data);
+      return publication ? [{ appSessionId, ...publication }] : [];
+    });
 
     const stored = await getDb().transaction(async (tx) => {
       const updated = await tx
@@ -191,6 +198,9 @@ export async function syncAppSession(
           .values(jobs)
           .onConflictDoNothing({ target: [bashJobs.appSessionId, bashJobs.jobId] });
       }
+      // Если хук не успел записать задачу, журнал создаёт её вместе с
+      // подтверждённым событием.
+      for (const publication of publications) await recordMessageFiles(tx, publication);
       return true;
     });
 

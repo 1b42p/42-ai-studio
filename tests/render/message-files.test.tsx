@@ -9,10 +9,11 @@ import { commands, page } from "vitest/browser";
 
 import { ChatView } from "@/components/studio/chat/chat-view";
 import type { MessageFilesState } from "@/components/studio/chat/message-files";
+import { messageFileId } from "@/lib/media/message-id";
 import { resolveSandboxPath } from "@/lib/media/sandbox-path";
 import type { MessageFileView } from "@/lib/media/types";
 
-import { fileConversation } from "./fixtures/conversations";
+import { assistantText, fileConversation } from "./fixtures/conversations";
 import { expectNoHorizontalScroll, renderOnDesktop, renderOnPhone } from "./support/render";
 
 const MEDIA_ID = "0b9b4b0a-1a1a-4a4a-8a8a-123456789abc";
@@ -38,8 +39,8 @@ function entry(path: string, overrides: Partial<MessageFileView> = {}): MessageF
   };
 }
 
-function view(text: string, messageFiles?: MessageFilesState) {
-  const events = fileConversation(text);
+function view(text: string | readonly MessageStreamEvent[], messageFiles?: MessageFilesState) {
+  const events = typeof text === "string" ? fileConversation(text) : text;
   return (
     <div className="h-dvh">
       <ChatView
@@ -69,6 +70,45 @@ afterEach(() => {
 });
 
 describe("файлы в ответе", () => {
+  test("после повтора незавершённого шага тот же ответ и его плеер видны один раз", async () => {
+    const text = "## Ролик готов.\n\n[Смотреть](out/final.mp4)";
+    const history = fileConversation(text);
+    await renderOnDesktop(view([...history.slice(0, 6), ...assistantText("turn_0", text), ...history.slice(7)], {
+      entries: [entry("/workspace/out/final.mp4", { contentType: "video/mp4" })],
+    }));
+
+    expect(page.getByRole("heading", { name: "Ролик готов." }).elements()).toHaveLength(1);
+    expect(document.querySelectorAll("video")).toHaveLength(1);
+  });
+
+  test("повтор сохраняет разные ответы и отдельные одинаковые блоки без нового запуска этого шага", async () => {
+    const first = "## Исходный ролик.\n\n[Смотреть](out/final.mp4)";
+    const changed = "## Обновлённый ролик.\n\n[Смотреть](out/final.mp4)";
+    const history = fileConversation(first);
+    const retry = assistantText("turn_0", changed);
+    const separateBlock = assistantText("turn_0", changed).slice(1, 3);
+    const nextTurn = assistantText("turn_1", changed);
+    const updatedId = "0b9b4b0a-1a1a-4a4a-8a8a-123456789abd";
+    const path = "/workspace/out/final.mp4";
+    await renderOnDesktop(view([
+      ...history.slice(0, 6), ...retry.slice(0, 3), ...separateBlock, retry[3]!,
+      ...history.slice(7), ...nextTurn,
+    ], {
+      entries: [
+        entry(path, { contentType: "video/mp4", messageId: messageFileId("turn_0:0", first) }),
+        entry(path, {
+          contentType: "video/mp4", messageId: messageFileId("turn_0:0", changed), mediaId: updatedId,
+        }),
+      ],
+    }));
+
+    expect(page.getByRole("heading", { name: "Исходный ролик." }).elements()).toHaveLength(1);
+    expect(page.getByRole("heading", { name: "Обновлённый ролик." }).elements()).toHaveLength(3);
+    expect([...document.querySelectorAll("video")].map((video) => video.getAttribute("src"))).toEqual([
+      `/api/media/${MEDIA_ID}`, `/api/media/${updatedId}`, `/api/media/${updatedId}`,
+    ]);
+  });
+
   test.each(["</thinking", "</thinking>"])("тег размышления %s не скрывает готовый ролик", async (closing) => {
     await renderOnDesktop(
       view(` <thinking>Готовлю ссылку${closing}Готово: [ролик](out/final.mp4)\n\nТри сцены.`, {
@@ -352,24 +392,22 @@ describe("файлы в ответе", () => {
     });
   });
 
-  test("повторная ошибка показывает карточку скачивания", async () => {
+  test.each([
+    ["final.mp4", "video/mp4"],
+    ["frame.png", "image/png"],
+    ["voice.mp3", "audio/mpeg"],
+  ])("после повторной ошибки %s явно недоступен, но его можно попробовать скачать", async (name, contentType) => {
     await commands.failMedia("**/api/media/**");
     await renderOnDesktop(
-      view("![кадр](out/final.mp4)", {
-        entries: [
-          entry("/workspace/out/final.mp4", {
-            contentType: "video/mp4",
-            name: "final.mp4",
-          }),
-        ],
+      view(`![результат](out/${name})`, {
+        entries: [entry(`/workspace/out/${name}`, { contentType, name })],
       }),
     );
 
-    // Первая ошибка оставила бы видео с адресом `?retry=1`; карточка
-    // появляется только после второй.
-    await vi.waitFor(() => {
-      expect(document.querySelector("video")).toBeNull();
-    });
+    await expect.element(page.getByText("Файл недоступен")).toBeVisible();
+    await expect.element(page.getByText(name)).toBeVisible();
     await expect.element(page.getByRole("link", { name: "Скачать" })).toBeVisible();
+    expect(document.querySelector("video, img")).toBeNull();
+    await expect.element(page.getByRole("button", { name: "Воспроизвести" })).not.toBeInTheDocument();
   });
 });

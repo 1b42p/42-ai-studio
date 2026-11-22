@@ -26,9 +26,13 @@ export function ReadPageCard({ part }: ToolCardProps) {
     const host = url?.hostname ?? (typeof output.host === "string" ? output.host : "Страница");
     const title = typeof output.title === "string" && output.title.trim().length > 0 ? output.title : host;
     const partial = typeof output.nextOffset === "number";
-    const description = `${characterCount.format(output.content.length)} знаков${partial ? ", прочитана часть страницы" : ""}`;
+    const sourceTruncated = output.sourceTruncated === true;
+    const status = sourceTruncated
+      ? ", страница прочитана не полностью: превышен лимит HTML"
+      : partial ? ", прочитана часть страницы" : "";
+    const description = `${characterCount.format(output.content.length)} знаков${status}`;
 
-    return <WebToolSource url={url} title={title} description={description} />;
+    return <WebToolSource url={url} title={title} description={description} wrapDescription={sourceTruncated} />;
   }
 
   if (part.state === "output-available") {

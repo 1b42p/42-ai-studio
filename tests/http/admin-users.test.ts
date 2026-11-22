@@ -31,7 +31,7 @@ import {
 import { getFakeBackend } from "../../lib/sandbox/fake";
 import { appOutput, fetchApp } from "./support/app";
 import { loginAs, loginViaTelegram } from "./support/auth";
-import { createSessionAs } from "./support/chat";
+import { createSessionAs, sendAndWait, waitForStoredEvents } from "./support/chat";
 import { createDaytonaKey, createUser, db, resetDatabase } from "./support/db";
 import { fakeSandbox } from "./support/fake-sandbox";
 import { DEFAULT_PROFILE } from "./support/oidc-issuer";
@@ -481,6 +481,15 @@ interface DeletionFixture {
   cookie: string;
 }
 
+async function seedDurableSession(user: User, id: string, message: string): Promise<string> {
+  await sendAndWait(user, id, message);
+  await waitForStoredEvents(user, id, (events) => events.some((event) => event.payload.type === "session.waiting"));
+  const [session] = await db().select({ eveSessionId: appSessions.eveSessionId })
+    .from(appSessions).where(eq(appSessions.id, id));
+  if (!session?.eveSessionId) throw new Error("Eve не привязала тестовую сессию");
+  return session.eveSessionId;
+}
+
 async function seedDeletionFixture(): Promise<DeletionFixture> {
   const target = await createUser({ name: "Удаляемый пользователь" });
   const other = await createUser({ name: "Другой пользователь" });
@@ -495,9 +504,8 @@ async function seedDeletionFixture(): Promise<DeletionFixture> {
   const sessions: DeletionFixture["sessions"] = [];
   for (let index = 0; index < 7; index += 1) {
     const { id } = await createSessionAs(target);
-    const eveId = `adm-${randomUUID()}`;
+    const eveId = await seedDurableSession(target, id, `Секрет тестовой сессии ${index}`);
     await db().update(appSessions).set({
-      eveSessionId: eveId,
       title: `Секрет ${index}`,
       createdAt: new Date(Date.parse("2026-02-01T00:00:00Z") + index * 1000),
       updatedAt: new Date(Date.parse("2026-02-01T00:00:00Z") + index * 1000),
@@ -567,11 +575,6 @@ async function seedDeletionFixture(): Promise<DeletionFixture> {
     }
   }
 
-  await db().insert(sessionEvents).values({
-    appSessionId: sessions[4]!.id,
-    seq: 0,
-    payload: { type: "fixture" },
-  });
   await db().insert(bashJobs).values({
     appSessionId: sessions[1]!.id,
     jobId: "abcdef12",
@@ -652,13 +655,17 @@ describe("удаление пользователя", () => {
 
     const userTables = await getSqlClient()<{ table_name: string }[]>`select table_name
       from information_schema.columns
-      where table_schema = 'public' and column_name = 'user_id'`;
+      where table_schema = 'public' and column_name = 'user_id'
+        and table_name <> 'late_upload_cleanups'`;
     for (const { table_name } of userTables) {
       const rows = await getSqlClient()<{ count: number }[]>`
         select count(*)::int as count from ${getSqlClient()(table_name)}
         where user_id = ${fixture.target.id}`;
       expect(rows[0]!.count, table_name).toBe(0);
     }
+    // Единственное исключение — квитанция для позднего подписанного PUT.
+    expect(await getSqlClient()`select id from late_upload_cleanups where user_id = ${fixture.target.id}`)
+      .toEqual([{ id: fixture.sessions[0]!.id }]);
 
     const sessionTables = await getSqlClient()<{ table_name: string }[]>`select table_name
       from information_schema.columns
@@ -695,9 +702,7 @@ describe("удаление пользователя", () => {
       { cpu: 2, memoryGb: 4, diskGb: 8 },
     );
     const { id } = await createSessionAs(target);
-    const eveId = `fail-${randomUUID()}`;
-    await db().update(appSessions).set({ eveSessionId: eveId })
-      .where(eq(appSessions.id, id));
+    const eveId = await seedDurableSession(target, id, "Сбой при удалении");
     const machine = await backend.create({ name: daytonaSandboxName(eveId), appSessionId: id });
     await db().insert(sandboxes).values({
       appSessionId: id,
@@ -764,6 +769,26 @@ describe("удаление пользователя", () => {
     expect(output).not.toContain(target.name);
     expect(output).not.toContain(String(target.telegramId));
   }, 120_000);
+
+  test("удаление аккаунта сначала завершает финальную очистку уже каскадированной сессии", async () => {
+    const operator = await createUser({ isOperator: true });
+    const target = await createUser();
+    const id = randomUUID();
+    const prefix = `u/${target.id}/s/${id}/`;
+    await getSqlClient()`insert into session_deletions (id, user_id) values (${id}, ${target.id})`;
+    await s3().put(`${prefix}message-files/late.txt`, "late");
+
+    const result = await deleteUserData(target.id, operator.id, {
+      storage: {
+        async deletePrefix() {
+          // The account-wide sweep must not hide a skipped session finalizer.
+          expect(await s3().listKeys(prefix)).toEqual([]);
+          return 0;
+        },
+      },
+    });
+    expect(result.status).toBe("deleted");
+  });
 
   test("оператор-цель — 409 и ничего не удалено", async () => {
     const operator = await createUser({ isOperator: true });

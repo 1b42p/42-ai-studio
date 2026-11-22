@@ -155,8 +155,9 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
     expectNoHorizontalScroll();
   });
 
-  test(`правка: файл больше 4000 строк — только заголовок — ${viewport}`, async () => {
-    const content = `${"x\n".repeat(4001)}`;
+  test(`правка: небольшой diff в файле больше 4000 строк — ${viewport}`, async () => {
+    const prefix = "ранняя строка\n".repeat(10001);
+    const suffix = "поздняя строка\n".repeat(100);
     await render(view({
       ...base,
       state: "output-available",
@@ -164,16 +165,38 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
         path: "/workspace/huge.txt",
         created: false,
         replacements: 1,
-        oldContent: content,
-        newContent: content.replace("x", "y"),
+        oldContent: `${prefix}до правки\n${suffix}`,
+        newContent: `${prefix}после правки\n${suffix}`,
         linesAdded: 1,
         linesRemoved: 1,
       },
     }));
     await expect.element(page.getByText("huge.txt", { exact: true })).toBeVisible();
     await expect.element(page.getByText("+1 −1", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("до правки", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("после правки", { exact: true })).toBeVisible();
+    await expect.element(page.getByText("⋯ 9998 строк без изменений", { exact: true })).toBeVisible();
+    expect(document.body.textContent).not.toContain("Изменение слишком большое для показа");
+    expectNoHorizontalScroll();
+  });
+
+  test(`правка: слишком большой diff показывает только сводку — ${viewport}`, async () => {
+    await render(view({
+      ...base,
+      state: "output-available",
+      output: {
+        path: "/workspace/huge.txt",
+        created: true,
+        replacements: 0,
+        oldContent: null,
+        newContent: "новая строка\n".repeat(4001),
+        linesAdded: 4001,
+        linesRemoved: 0,
+      },
+    }));
+    await expect.element(page.getByText("+4001 −0", { exact: true })).toBeVisible();
     await expect.element(page.getByText("Изменение слишком большое для показа", { exact: true })).toBeVisible();
-    expect(document.body.textContent).not.toContain("⋯");
+    await expect.element(page.getByText("новая строка", { exact: true })).not.toBeInTheDocument();
     expectNoHorizontalScroll();
   });
 }

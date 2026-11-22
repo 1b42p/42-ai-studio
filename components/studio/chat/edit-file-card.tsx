@@ -28,7 +28,6 @@ import {
 import {
   buildDiffRows,
   DIFF_PREVIEW_LINES,
-  isDiffTooLarge,
   type DiffRow,
 } from "@/lib/edit-file/diff-view";
 
@@ -91,10 +90,10 @@ function DiffBody({ rows, expanded }: { rows: DiffRow[]; expanded: boolean }) {
               key={`${row.kind}-${index}`}
               variant={row.kind === "context" ? "default" : row.kind}
             >
-              <span className="inline-block w-8 select-none text-end text-muted-foreground tabular-nums">
+              <span className="inline-block w-[6ch] select-none text-end text-muted-foreground tabular-nums">
                 {oldNum}
               </span>
-              <span className="inline-block w-8 select-none text-end text-muted-foreground tabular-nums">
+              <span className="inline-block w-[6ch] select-none text-end text-muted-foreground tabular-nums">
                 {newNum}
               </span>
               <span className="ms-3 whitespace-pre">{text.length === 0 ? "\n" : text}</span>
@@ -187,7 +186,7 @@ export function EditFileCard({ part }: ToolCardProps) {
   const linesAdded = typeof output?.linesAdded === "number" ? output.linesAdded : 0;
   const linesRemoved = typeof output?.linesRemoved === "number" ? output.linesRemoved : 0;
   const stats = `+${linesAdded} −${linesRemoved}`;
-  const tooLarge = isDiffTooLarge(priorContent, newContent);
+  const rows = buildDiffRows(priorContent, newContent);
 
   const line = (
     <HeaderLine
@@ -197,7 +196,7 @@ export function EditFileCard({ part }: ToolCardProps) {
     />
   );
 
-  if (tooLarge) {
+  if (rows === null) {
     return (
       <TraceCollapsible defaultOpen>
         <TraceCollapsibleTrigger>{line}</TraceCollapsibleTrigger>
@@ -208,7 +207,6 @@ export function EditFileCard({ part }: ToolCardProps) {
     );
   }
 
-  const rows = buildDiffRows(priorContent, newContent);
   const needsToggle = rows.length > DIFF_PREVIEW_LINES;
 
   return (

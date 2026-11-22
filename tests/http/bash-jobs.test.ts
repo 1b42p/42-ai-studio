@@ -47,6 +47,8 @@ function bashRunning(jobId = JOB_ID) {
 
 /** Первый ход сессии с подменённым результатом `bash`. */
 async function startBashJob(user: User, appSessionId: string, jobId = JOB_ID) {
+  // Нативный bash создаёт каталог до публикации `running`.
+  await fakeSandbox.seed(appSessionId, { [`/tmp/.eve/jobs/${jobId}/stdout`]: "старт\n" });
   const client = await eveClientAs(user, appSessionId);
   const created = await client.sessions.create({
     message: '/tool bash {"command":"npm run render"}',
@@ -125,7 +127,6 @@ describe("GET /api/sessions/:id/jobs/:jobId", () => {
       exitCode: 0,
       stdout: "кадр 1\nкадр 2\n",
       stderr: "предупреждение\n",
-      source: "sandbox",
     });
     expect(await job(id)).toMatchObject({ status: "completed", exitCode: 0 });
 
@@ -172,7 +173,6 @@ describe("GET /api/sessions/:id/jobs/:jobId", () => {
       status: "interrupted",
       exitCode: null,
       stdout: "до остановки\n",
-      source: "sandbox",
     });
     expect(await job(id)).toMatchObject({ status: "interrupted", exitCode: null });
   }, 60_000);
@@ -349,4 +349,27 @@ describe("GET /api/sessions/:id/jobs/:jobId", () => {
     });
     expect((await fakeSandbox.counters()).stopped).toBe(stopped);
   }, 60_000);
+
+  test("без открытой карточки и заявок очередь не нужна для активности и сохранения выхода", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    await provisionSandbox(id);
+    await writeJobFiles(id, JOB_ID, { stdout: "первый кадр\n", pid: "4312\n" });
+    await startBashJob(user, id);
+    const before = (await fakeSandbox.counters()).refreshActivity;
+
+    // Ни браузерного запроса, ни нового хода, пока команда работает.
+    await expect.poll(async () => (await fakeSandbox.counters()).refreshActivity, {
+      timeout: 25_000, interval: 250,
+    }).toBeGreaterThan(before);
+
+    await writeJobFiles(id, JOB_ID, { stdout: "последний кадр\n", exit: "7\n" });
+    await expect.poll(async () => await job(id), { timeout: 25_000, interval: 250 })
+      .toMatchObject({ status: "completed", exitCode: 7 });
+
+    await fakeSandbox.stop(id);
+    expect(await (await response(id, JOB_ID, await loginAs(user))).json()).toMatchObject({
+      status: "completed", exitCode: 7, stdout: "последний кадр\n", source: "saved",
+    });
+  }, 70_000);
 });

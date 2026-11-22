@@ -155,6 +155,20 @@ describe("speak", () => {
     expect(await s3().listKeys(`u/${user.id}/s/${id}/tool-media/`)).toEqual([]);
   });
 
+  test("озвучка с пропущенным «не» не выдаётся за целую сцену", async () => {
+    await edgeTtsStub.setMode("skipped_word");
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const result = toolResult(await sendAndWait(user, id, toolCommand("speak", {
+      text: "Дверь не открывается.",
+      outputPath: "voice/incomplete",
+    })), "speak");
+
+    expect(result.status).toBe("failed");
+    expect(result.error?.message).toContain("speak_text_not_readable");
+    expect(await fakeSandbox.files.read(id, "/workspace/voice/incomplete.mp3")).toBeNull();
+  });
+
   test("путь вне рабочей области и неизвестный голос", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
@@ -202,6 +216,31 @@ describe("speak", () => {
 });
 
 describe("list_voices", () => {
+  test("при недоступном каталоге английский speak выбирает голос и выдаёт тайминги", async () => {
+    await edgeTtsStub.setMode("voices_failed");
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const voices = toolResult(await sendAndWait(user, id, toolCommand("list_voices", {
+      language: "en",
+    })), "list_voices");
+    expect(voices.status).toBe("failed");
+    expect(voices.error?.message).toContain("voices_unavailable");
+    expect(voices.error?.message).toContain("без voice");
+
+    const spoken = completedOutput(await sendAndWait(user, id, toolCommand("speak", {
+      text: "Good morning.",
+      language: "en",
+      outputPath: "voice/english",
+    })), "speak");
+    expect(spoken).toMatchObject({
+      voice: "en-US-AvaNeural",
+      language: "en-US",
+      wordCount: 2,
+      timingsPath: "/workspace/voice/english.words.json",
+    });
+    expect((await edgeTtsStub.calls()).voiceRequests).toBe(1);
+  });
+
   test("русский, неизвестный язык и мужской голос", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);

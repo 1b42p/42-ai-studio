@@ -1,20 +1,24 @@
 /**
- * Идемпотентность и зависшие строки `message_files` (#8): повторная доставка
- * хука не дублирует копию, `copying` старше 15 минут перезапускается или
- * показывается как `copy_failed`.
+ * Повтор шагов публикации: `copying` — незавершённая работа, а не таймер.
  */
 import type { HookContext } from "eve/hooks";
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import messageFilesHook from "../../agent/hooks/message-files";
-import { media, messageFiles } from "../../lib/db/schema";
-import { COPYING_STALE_MS } from "../../lib/media/files";
-import { captureMessageFiles } from "../../lib/media/message-files";
+import { appSessions, media, messageFiles } from "../../lib/db/schema";
+import { mediaObjectKey } from "../../lib/media/keys";
+import { captureMessageFiles, reconcileMessageFiles } from "../../lib/media/message-files";
+import * as liveSession from "../../lib/media/live-session";
+import { messageFileId } from "../../lib/media/message-id";
 import { parseSandboxLinks } from "../../lib/media/sandbox-path";
-import type { Storage } from "../../lib/s3";
+import { Storage } from "../../lib/s3";
+import { loadConfig } from "../../lib/config";
 import { fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs } from "./support/chat";
+import { buildFileLookup } from "../../components/studio/chat/message-files";
+import { mediaRedirect, readSigned, sessionFiles } from "./support/media";
+import { getLockSqlClient } from "../../lib/db/client";
 import { createUser, db, resetDatabase } from "./support/db";
 import { fakeSandbox } from "./support/fake-sandbox";
 import { fakeMachineFor, sandboxSessionFrom } from "./support/sandbox-session";
@@ -29,6 +33,147 @@ beforeEach(async () => {
 });
 
 describe("строки файлов сообщения", () => {
+  test("первый временный отказ HEAD не оставляет файл в copying после хука", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    await fakeSandbox.seed(id, { "out/final.mp4": "кадры" });
+    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
+    const storage = new Storage(loadConfig());
+    vi.spyOn(storage, "objectInfo").mockRejectedValueOnce(new Error("temporary HEAD outage"));
+
+    await captureMessageFiles({
+      appSessionId: id, messageId: "turn_0:0",
+      links: parseSandboxLinks("[файл](out/final.mp4)"),
+      maxBytes: 1024, storage, getSandbox: async () => sandbox,
+    });
+
+    expect(await db().select().from(messageFiles)).toMatchObject([{ state: "ready" }]);
+    expect(await s3().listKeys(`u/${user.id}/s/${id}/`)).toHaveLength(1);
+  });
+
+  test("сбой коммита после PUT повторяет привязку и не повторяет PUT", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    await fakeSandbox.seed(id, { "out/final.mp4": "кадры" });
+    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
+    const storage = new Storage(loadConfig());
+    const original = liveSession.withLiveMediaSession;
+    let failed = false;
+    const put = vi.spyOn(storage, "putStream");
+    const dbFailure = vi.spyOn(liveSession, "withLiveMediaSession").mockImplementation(async (sessionId, write) => {
+      if (!failed && put.mock.calls.length === 1) {
+        failed = true;
+        throw new Error("temporary DB outage after PUT");
+      }
+      return original(sessionId, write);
+    });
+    try {
+      await captureMessageFiles({
+        appSessionId: id, messageId: "turn_0:0",
+        links: parseSandboxLinks("[файл](out/final.mp4)"),
+        maxBytes: 1024, storage, getSandbox: async () => sandbox,
+      });
+      expect(failed).toBe(true);
+      expect(put).toHaveBeenCalledTimes(1);
+      expect(await db().select().from(messageFiles)).toMatchObject([{ state: "ready" }]);
+    } finally {
+      dbFailure.mockRestore();
+    }
+  });
+
+  test("расписание принимает выгруженный файл, завершает просроченный и не трогает активный", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const stale = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    const rows = await db().insert(messageFiles).values(["ready", "lost", "locked"].map((name) => ({
+      appSessionId: id, messageId: name, sandboxPath: `/workspace/${name}.mp4`,
+      state: "copying" as const, createdAt: stale, updatedAt: stale,
+    }))).returning();
+    const key = mediaObjectKey({
+      userId: user.id, appSessionId: id, kind: "message_file", name: "ready.mp4",
+      objectId: rows.find((row) => row.messageId === "ready")!.id,
+    });
+    await s3().put(key, new TextEncoder().encode("готовые байты"), "video/mp4");
+    const operation = `${id}:locked`;
+    const lock = await getLockSqlClient().reserve();
+    try {
+      await lock`select pg_advisory_lock(5, hashtext(${operation}::text))`;
+      const response = await fetchApp("/eve/v1/dev/schedules/message-files", { method: "POST" });
+      expect(response.status).toBe(200);
+      expect(await sessionFiles(user, id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ messageId: "ready", state: "ready" }),
+        expect.objectContaining({ messageId: "lost", state: "missing", reason: "copy_failed" }),
+        expect.objectContaining({ messageId: "locked", state: "copying" }),
+      ]));
+      expect(await fakeSandbox.calls(id)).toEqual([]);
+      expect(await s3().listKeys(`u/${user.id}/s/${id}/`)).toEqual([key]);
+    } finally {
+      try { await lock`select pg_advisory_unlock(5, hashtext(${operation}::text))`; }
+      finally { lock.release(); }
+    }
+  });
+
+  test("отказ фонового HEAD не объявляет потерянным даже просроченный снимок", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const due = new Date(Date.now() - 25 * 60 * 60 * 1000);
+    const [row] = await db().insert(messageFiles).values({
+      appSessionId: id, messageId: "turn_0:0", sandboxPath: "/workspace/final.mp4",
+      state: "copying", createdAt: due, updatedAt: due,
+    }).returning();
+    const key = mediaObjectKey({
+      userId: user.id, appSessionId: id, kind: "message_file", name: "final.mp4", objectId: row!.id,
+    });
+    await s3().put(key, new TextEncoder().encode("кадры"), "video/mp4");
+    const storage = new Storage(loadConfig());
+    vi.spyOn(storage, "objectInfo").mockRejectedValueOnce(new Error("temporary outage"));
+    await reconcileMessageFiles(storage);
+    expect(await sessionFiles(user, id)).toMatchObject([{ state: "copying" }]);
+    await db().update(messageFiles).set({ updatedAt: due });
+    await reconcileMessageFiles(storage);
+    expect(await sessionFiles(user, id)).toMatchObject([{ state: "ready" }]);
+  });
+
+  test("разные тексты одного шага сохраняют отдельные снимки даже для одинакового пути", async () => {
+    const user = await createUser();
+    const [session] = await db().insert(appSessions)
+      .values({ userId: user.id, eveSessionId: "test-replayed-model-step" }).returning();
+    const id = session!.id;
+    const path = "/workspace/out/final.mp4";
+    await fakeSandbox.seed(id, { "out/final.mp4": "первая версия" });
+    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
+    const ctx = {
+      session: { id: session!.eveSessionId, auth: { initiator: null } }, getSandbox: async () => sandbox,
+    } as unknown as HookContext;
+    const handler = messageFilesHook.events!["message.completed"]!;
+    const publish = (message: string) => handler({
+      type: "message.completed", data: { message, stepIndex: 0, turnId: "turn_0" },
+    } as never, ctx);
+    const first = "[первая версия](out/final.mp4) [только первая](out/missing.mp4)";
+    const next = "[вторая версия](out/final.mp4)";
+    await publish(first);
+    await fakeSandbox.files.write(id, "out/final.mp4", new TextEncoder().encode("вторая версия"));
+    await publish(next);
+    await publish(next);
+
+    const entries = await sessionFiles(user, id);
+    const lookup = buildFileLookup({ entries });
+    const firstFiles = lookup.resolve(messageFileId("turn_0:0", first), "turn_0:0");
+    const nextFiles = lookup.resolve(messageFileId("turn_0:0", next), "turn_0:0");
+    expect(firstFiles.kind).toBe("lookup");
+    expect(nextFiles.kind).toBe("lookup");
+    if (firstFiles.kind !== "lookup" || nextFiles.kind !== "lookup") return;
+    expect(firstFiles.status("/workspace/out/missing.mp4")).toMatchObject({ kind: "entry" });
+    expect(nextFiles.status("/workspace/out/missing.mp4")).toMatchObject({ kind: "unknown" });
+    const byId = new Map((await db().select().from(media)).map((row) => [row.id, row.objectKey]));
+    expect(byId.size).toBe(2);
+    for (const [files, expected] of [[firstFiles, "первая версия"], [nextFiles, "вторая версия"]] as const) {
+      const status = files.status(path);
+      if (status.kind !== "entry") throw new Error("Снимок не найден");
+      const key = byId.get(status.entry.mediaId!)!;
+      expect(new TextDecoder().decode(await s3().getBytes(key))).toBe(expected);
+    }
+  });
   test("сессия-копия агента пропускается до обращения к базе", async () => {
     const handler = messageFilesHook.events?.["message.completed"];
     expect(handler).toBeTypeOf("function");
@@ -65,8 +210,11 @@ describe("строки файлов сообщения", () => {
       getSandbox: async () => sandbox,
     };
 
-    await captureMessageFiles(options);
-    await captureMessageFiles(options);
+    await Promise.all([captureMessageFiles(options), captureMessageFiles(options)]);
+    await captureMessageFiles({
+      ...options,
+      getSandbox: async () => { throw new Error("готовая копия не открывает песочницу"); },
+    });
 
     const rows = await db().select().from(messageFiles);
     const mediaRows = await db().select().from(media);
@@ -99,9 +247,11 @@ describe("строки файлов сообщения", () => {
     expect(await s3().getBytes(mediaRow!.objectKey)).toEqual(bytes);
   }, 30_000);
 
-  test("свежая copying не перезапускается и не трогает песочницу", async () => {
+  test("повтор шага сразу подбирает незавершённую запись даже без повторной ссылки", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
+    await fakeSandbox.seed(id, { "out/final.mp4": "кадры" });
+    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
     await db().insert(messageFiles).values({
       appSessionId: id,
       messageId: "turn_0:0",
@@ -112,31 +262,26 @@ describe("строки файлов сообщения", () => {
     await captureMessageFiles({
       appSessionId: id,
       messageId: "turn_0:0",
-      links: [{ kind: "file", path: "/workspace/out/final.mp4" }],
+      links: [],
       maxBytes: 1024 * 1024,
       userId: user.id,
-      getSandbox: async () => {
-        throw new Error("песочница не должна открываться");
-      },
+      getSandbox: async () => sandbox,
     });
 
     const rows = await db().select().from(messageFiles);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.state).toBe("copying");
-    expect(await db().select().from(media)).toEqual([]);
+    expect(rows[0]?.state).toBe("ready");
+    expect(await db().select().from(media)).toHaveLength(1);
   }, 30_000);
 
-  test("отказ S3 переводит строку в missing/copy_failed", async () => {
+  test("временный отказ PUT повторяет публикацию из песочницы в том же шаге", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
-    await fakeSandbox.seed(id, { "out/final.mp4": new TextEncoder().encode("кадры") });
+    const bytes = new TextEncoder().encode("кадры");
+    await fakeSandbox.seed(id, { "out/final.mp4": bytes });
     const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
-    const failing = {
-      putStream: async () => {
-        throw new Error("S3 недоступен");
-      },
-      deleteObject: async () => undefined,
-    } as unknown as Storage;
+    const storage = new Storage(loadConfig());
+    vi.spyOn(storage, "putStream").mockRejectedValueOnce(new Error("временный отказ S3"));
 
     await captureMessageFiles({
       appSessionId: id,
@@ -144,15 +289,44 @@ describe("строки файлов сообщения", () => {
       links: [{ kind: "file", path: "/workspace/out/final.mp4" }],
       maxBytes: 1024 * 1024,
       userId: user.id,
-      storage: failing,
+      storage,
       getSandbox: async () => sandbox,
     });
 
-    const [row] = await db().select().from(messageFiles);
-    expect(row).toMatchObject({ state: "missing", reason: "copy_failed", mediaId: null });
-    expect(await db().select().from(media)).toEqual([]);
-    expect(await s3().listKeys(`u/${user.id}/`)).toEqual([]);
+    const [file] = await sessionFiles(user, id);
+    expect(file).toMatchObject({ state: "ready", reason: null });
+    const link = await mediaRedirect(user, file!.mediaId!, "?download=1");
+    expect(link.status).toBe(302);
+    expect(await readSigned(link.location!)).toEqual(bytes);
   }, 30_000);
+
+  test("потерянный ответ PUT не заменяет снимок изменившимся файлом", async () => {
+    const user = await createUser();
+    const { id } = await createSessionAs(user);
+    const path = "out/final.mp4";
+    const bytes = new TextEncoder().encode("исходные кадры");
+    await fakeSandbox.seed(id, { [path]: bytes });
+    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
+    const storage = new Storage(loadConfig());
+    const put = storage.putStream.bind(storage);
+    vi.spyOn(storage, "putStream").mockImplementationOnce(async (...args) => {
+      await put(...args);
+      await fakeSandbox.files.write(id, path, new TextEncoder().encode("новые кадры"));
+      throw new Error("ответ PUT потерян");
+    });
+
+    await captureMessageFiles({
+      appSessionId: id, messageId: "turn_0:0",
+      links: parseSandboxLinks(`[файл](${path})`),
+      maxBytes: 1024, storage, getSandbox: async () => sandbox,
+    });
+
+    const [file] = await sessionFiles(user, id);
+    expect(file).toMatchObject({ state: "ready" });
+    const link = await mediaRedirect(user, file!.mediaId!, "?download=1");
+    expect(link.status).toBe(302);
+    expect(await readSigned(link.location!)).toEqual(bytes);
+  });
 
   test("несколько блоков одного шага делят предел в 20 ссылок", async () => {
     const user = await createUser();
@@ -187,21 +361,20 @@ describe("строки файлов сообщения", () => {
     expect(rows.filter((row) => row.reason === "outside_workspace")).toHaveLength(20);
   }, 30_000);
 
-  test("зависшая copying старше 15 минут копируется заново", async () => {
+  test("повтор принимает завершённый объект S3 после сбоя перед записью media", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
-    await fakeSandbox.seed(id, { "out/final.mp4": new TextEncoder().encode("кадры") });
-    const sandbox = sandboxSessionFrom(await fakeMachineFor(id));
-    const stale = new Date(Date.now() - COPYING_STALE_MS - 60_000);
-
-    await db().insert(messageFiles).values({
+    const [pending] = await db().insert(messageFiles).values({
       appSessionId: id,
       messageId: "turn_0:0",
       sandboxPath: "/workspace/out/final.mp4",
       state: "copying",
-      createdAt: stale,
-      updatedAt: stale,
+    }).returning();
+    const key = mediaObjectKey({
+      userId: user.id, appSessionId: id, kind: "message_file", name: "final.mp4", objectId: pending!.id,
     });
+    const bytes = new TextEncoder().encode("сохранённый ролик");
+    await s3().put(key, bytes, "video/mp4");
 
     await captureMessageFiles({
       appSessionId: id,
@@ -209,19 +382,22 @@ describe("строки файлов сообщения", () => {
       links: [{ kind: "file", path: "/workspace/out/final.mp4" }],
       maxBytes: 1024 * 1024,
       userId: user.id,
-      getSandbox: async () => sandbox,
+      getSandbox: async () => {
+        throw new Error("объект уже загружен, песочница не нужна");
+      },
     });
 
     const [row] = await db().select().from(messageFiles);
     expect(row?.state).toBe("ready");
     expect(row?.mediaId).not.toBeNull();
     expect(await db().select().from(media)).toHaveLength(1);
+    expect(await s3().getBytes(key)).toEqual(bytes);
   }, 30_000);
 
-  test("зависшая copying старше 15 минут отдаётся как missing/copy_failed", async () => {
+  test("даже старая copying остаётся copying; чтение не открывает песочницу", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
-    const stale = new Date(Date.now() - COPYING_STALE_MS - 60_000);
+    const stale = new Date(Date.now() - 24 * 60 * 60 * 1000);
     await db().insert(messageFiles).values({
       appSessionId: id,
       messageId: "turn_0:0",
@@ -238,7 +414,8 @@ describe("строки файлов сообщения", () => {
       files: Array<{ state: string; reason: string | null }>;
     };
     expect(body.files).toEqual([
-      expect.objectContaining({ state: "missing", reason: "copy_failed" }),
+      expect.objectContaining({ state: "copying", reason: null }),
     ]);
+    expect(await fakeSandbox.calls(id)).toEqual([]);
   });
 });

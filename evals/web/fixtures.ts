@@ -17,7 +17,7 @@ export function page(url: string, title: string, content: string, lang = "ru") {
     url, finalUrl: url, title, host: new URL(url).hostname,
     byline: null, siteName: new URL(url).hostname, publishedTime: null, lang,
     contentType: "text/markdown", extraction: "raw", content,
-    offset: 0, nextOffset: null, totalChars: content.length,
+    offset: 0, nextOffset: null, totalChars: content.length, sourceTruncated: false,
   };
 }
 

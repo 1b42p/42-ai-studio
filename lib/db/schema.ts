@@ -239,6 +239,15 @@ export const sessionDeletions = pgTable("session_deletions", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("session_deletions_user_idx").on(table.userId, table.createdAt)]);
+
+/** Только область S3 и сроки; очередь переживает каскад сессии и аккаунта. */
+export const lateUploadCleanups = pgTable("late_upload_cleanups", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull(),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, precision: 3 }).notNull(),
+  finalSweepAt: timestamp("final_sweep_at", { withTimezone: true }).notNull(),
+}, (table) => [index("late_upload_cleanups_due_idx").on(table.nextAttemptAt, table.id)]);
+
 export type NewAppSession = typeof appSessions.$inferInsert;
 export type SessionEvent = typeof sessionEvents.$inferSelect;
 
@@ -363,6 +372,17 @@ export type Sandbox = typeof sandboxes.$inferSelect;
 export type NewSandbox = typeof sandboxes.$inferInsert;
 export type SandboxState = (typeof sandboxState.enumValues)[number];
 export type SandboxLaunch = (typeof sandboxLaunch.enumValues)[number];
+
+/** Идентичность машины не исчезает при перепривязке строки sandboxes. */
+export const sandboxErasureTargets = pgTable("sandbox_erasure_targets", {
+  appSessionId: uuid("app_session_id").notNull().references(() => appSessions.id, { onDelete: "cascade" }),
+  daytonaKeyId: uuid("daytona_key_id").notNull().references(() => daytonaKeys.id),
+  /** Пустая строка: create отправлен, ID ещё нет; искать по имени сессии. */
+  daytonaSandboxId: text("daytona_sandbox_id").notNull(),
+}, (table) => [
+  uniqueIndex("sandbox_erasure_targets_identity_idx").on(table.appSessionId, table.daytonaKeyId, table.daytonaSandboxId),
+  index("sandbox_erasure_targets_machine_idx").on(table.daytonaKeyId, table.daytonaSandboxId),
+]);
 
 export const queueReason = pgEnum("queue_reason", ["capacity", "own_session_busy"]);
 

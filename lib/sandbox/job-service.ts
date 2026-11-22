@@ -3,16 +3,16 @@
  * или свежий разбор каталога в живой песочнице. Остановленную песочницу не
  * будим — задание без завершения становится `interrupted`.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists, gte, isNull, sql } from "drizzle-orm";
 
 import { daytonaBackend, type DaytonaMachine } from "@/agent/lib/daytona-backend";
 import { loadConfig } from "@/lib/config";
 import { getDb } from "@/lib/db/client";
-import { bashJobs, daytonaKeys, sandboxes, type BashJob, type Sandbox } from "@/lib/db/schema";
+import { appSessions, bashJobs, daytonaKeys, sandboxes, type BashJob, type Sandbox } from "@/lib/db/schema";
 import { decryptSecret, DAYTONA_KEY_PURPOSE } from "@/lib/secrets";
 import { sleep } from "@/lib/sleep";
 import { savedJobResponse } from "./bash-jobs";
-import { decodeTail, jobStatus, type JobDirectoryReading } from "./job-directory";
+import { BASH_JOB_KEEPALIVE_MS, decodeTail, jobStatus, type JobDirectoryReading } from "./job-directory";
 import { errorStatus, isMissingSandbox } from "./errors";
 import type { BashJobResponse } from "./job-types";
 
@@ -27,7 +27,10 @@ const CACHE_MAX_ENTRIES = 500;
 const LOOKUP_ATTEMPTS = 3;
 const LOOKUP_DELAY_MS = 200;
 const ACTIVE_TOUCH_MS = 60_000;
-const ACTIVE_WINDOW_MS = 6 * 60 * 60 * 1000;
+const OBSERVER_REQUEST_TIMEOUT_MS = 5_000;
+const KEEPALIVE_REQUEST_TIMEOUT_MS = 2_000;
+const PROBE_BATCH_SIZE = 128;
+const PROBE_BUDGET_MS = 8_000;
 
 /** Состояния, в которых песочницу уже не разбудить: задание прервано. */
 const LOST_STATES: ReadonlySet<string> = new Set([
@@ -54,7 +57,8 @@ export async function readBashJob(
     }
   }
 
-  const entry = { expiresAt: now + CACHE_TTL_MS, result: loadBashJob(appSessionId, jobId) };
+  // Чтение Daytona может занять больше TTL: до окончания промис общий.
+  const entry = { expiresAt: Infinity, result: loadBashJob(appSessionId, jobId) };
   cache.set(key, entry);
   let result: BashJobResult;
   try {
@@ -95,11 +99,31 @@ async function findJobForPoll(appSessionId: string, jobId: string): Promise<Bash
   return null;
 }
 
-async function saveInterrupted(job: BashJob): Promise<BashJobResult> {
+type JobSnapshot = Pick<BashJob, "id" | "appSessionId" | "jobId" | "createdAt" | "stdoutBytes" | "stderrBytes">;
+
+function sameMachine(sandbox: Sandbox) {
+  return and(
+    eq(sandboxes.id, sandbox.id), eq(sandboxes.daytonaSandboxId, sandbox.daytonaSandboxId),
+    eq(sandboxes.daytonaKeyId, sandbox.daytonaKeyId), eq(sandboxes.state, sandbox.state),
+    sql`${sandboxes.runningSince} is not distinct from ${sandbox.runningSince?.toISOString() ?? null}::timestamptz`,
+  );
+}
+
+function currentMachine(sandbox: Sandbox, withoutMaintenance = false) {
+  return getDb().select({ id: sandboxes.id }).from(sandboxes)
+    .innerJoin(appSessions, eq(appSessions.id, sandboxes.appSessionId))
+    .innerJoin(daytonaKeys, eq(daytonaKeys.id, sandboxes.daytonaKeyId))
+    .where(and(
+      sameMachine(sandbox), isNull(appSessions.deletedAt), isNull(daytonaKeys.deletedAt),
+      withoutMaintenance ? sql`(${sandboxes.maintenanceUntil} is null or ${sandboxes.maintenanceUntil} <= now())` : undefined,
+    ));
+}
+
+async function saveInterrupted(job: JobSnapshot, sandbox: Sandbox): Promise<BashJobResult> {
   const [updated] = await getDb()
     .update(bashJobs)
     .set({ status: "interrupted", updatedAt: new Date() })
-    .where(and(eq(bashJobs.id, job.id), eq(bashJobs.status, "running")))
+    .where(and(eq(bashJobs.id, job.id), eq(bashJobs.status, "running"), exists(currentMachine(sandbox))))
     .returning();
   if (updated !== undefined) return { kind: "ok", body: savedJobResponse(updated) };
   // Задание успело завершиться или строку удалили, пока мы шли к песочнице.
@@ -118,41 +142,85 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
     .where(eq(sandboxes.appSessionId, appSessionId))
     .limit(1);
   if (sandbox === undefined) return { kind: "not_found" };
-  if (sandbox.state === "gone") return { kind: "unavailable" };
+  return observeBashJob(job, sandbox);
+}
 
-  const [key] = await getDb()
-    .select()
+async function getJobMachine(sandbox: Sandbox, requestTimeoutMs: number): Promise<DaytonaMachine | null> {
+  const [key] = await getDb().select({ id: daytonaKeys.id, encrypted: daytonaKeys.apiKeyEncrypted })
     .from(daytonaKeys)
-    .where(eq(daytonaKeys.id, sandbox.daytonaKeyId))
+    .where(and(eq(daytonaKeys.id, sandbox.daytonaKeyId), exists(currentMachine(sandbox))))
     .limit(1);
-  if (key === undefined || key.deletedAt !== null) return { kind: "unavailable" };
+  if (!key) return null;
+  return daytonaBackend(
+    key.id,
+    decryptSecret(key.encrypted, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
+    { requestTimeoutMs },
+  ).get(sandbox.daytonaSandboxId);
+}
 
-  let machine: DaytonaMachine;
+/** Единственное продление на машину: сначала живость, без чтения хвостов. */
+export async function keepBashJobsAlive(
+  sandbox: Sandbox,
+  jobIds: readonly string[],
+  stillLeased: () => boolean,
+): Promise<void> {
+  if (sandbox.state !== "started" || !stillLeased()) return;
+  const machine = await getJobMachine(sandbox, KEEPALIVE_REQUEST_TIMEOUT_MS);
+  if (!machine || machine.state !== "started") return;
+
+  const deadline = performance.now() + PROBE_BUDGET_MS;
+  for (let offset = 0; offset < jobIds.length && stillLeased() && performance.now() < deadline; offset += PROBE_BATCH_SIZE) {
+    const liveJobId = await machine.findLiveJob(jobIds.slice(offset, offset + PROBE_BATCH_SIZE));
+    if (liveJobId === null) continue;
+    // Не посылаем запоздалое продление после удаления, замены, начала
+    // остановки или сохранения результата. Уже отправленный запрос Daytona
+    // не меняет состояние машины и не мешает её удалению.
+    const [eligible] = await getDb().select({ id: bashJobs.id }).from(bashJobs)
+      .where(and(
+        eq(bashJobs.appSessionId, sandbox.appSessionId), eq(bashJobs.jobId, liveJobId),
+        eq(bashJobs.status, "running"), gte(bashJobs.createdAt, new Date(Date.now() - BASH_JOB_KEEPALIVE_MS)),
+        exists(currentMachine(sandbox, true)),
+      ))
+      .limit(1);
+    if (eligible && stillLeased()) {
+      await machine.refreshActivity({ activityOnly: true });
+      return;
+    }
+  }
+}
+
+/** Общий путь записи для маршрута и фонового наблюдателя; не будит машину. */
+export async function observeBashJob(
+  job: JobSnapshot,
+  sandbox: Sandbox,
+): Promise<BashJobResult> {
+  if (sandbox.state === "gone") return { kind: "unavailable" };
+  if (!sandbox.daytonaSandboxId) return { kind: "unavailable" };
+
+  let machine: DaytonaMachine | null;
   try {
-    machine = await daytonaBackend(
-      key.id,
-      decryptSecret(key.apiKeyEncrypted, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
-    ).get(sandbox.daytonaSandboxId);
+    machine = await getJobMachine(sandbox, OBSERVER_REQUEST_TIMEOUT_MS);
   } catch (error) {
-    if (isMissingSandbox(error)) return saveInterrupted(job);
+    if (isMissingSandbox(error)) return saveInterrupted(job, sandbox);
     console.error("[jobs] не удалось получить песочницу", errorStatus(error));
     return { kind: "unavailable" };
   }
+  if (!machine) return { kind: "unavailable" };
 
   // Не будим остановленную песочницу ради точного кода выхода. Пока машина
   // стартует или восстанавливается, это временная ошибка, а не прерывание.
   if (machine.state !== "started") {
-    return LOST_STATES.has(machine.state ?? "") ? saveInterrupted(job) : { kind: "unavailable" };
+    return LOST_STATES.has(machine.state ?? "") ? saveInterrupted(job, sandbox) : { kind: "unavailable" };
   }
 
   let reading: JobDirectoryReading;
   try {
-    reading = await machine.readJobDirectory(jobId);
+    reading = await machine.readJobDirectory(job.jobId);
   } catch (error) {
     console.error("[jobs] не удалось прочитать каталог задания", errorStatus(error));
     return { kind: "unavailable" };
   }
-  if (!reading.found) return saveInterrupted(job);
+  if (!reading.found) return saveInterrupted(job, sandbox);
 
   const status = jobStatus(reading);
   const stdout = decodeTail(reading.stdoutTail, reading.stdoutBytes);
@@ -162,15 +230,20 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
     .set({
       status,
       exitCode: reading.exitCode,
-      stdoutTail: stdout.text,
-      stderrTail: stderr.text,
+      stdoutTail: stdout.text.replaceAll("\0", ""),
+      stderrTail: stderr.text.replaceAll("\0", ""),
       stdoutBytes: reading.stdoutBytes,
       stderrBytes: reading.stderrBytes,
       updatedAt: new Date(),
     })
-    .where(eq(bashJobs.id, job.id))
+    // Запоздавшее чтение не может вернуть завершённому заданию `running`
+    // или затереть окончательный вывод/код выхода.
+    .where(and(eq(bashJobs.id, job.id), eq(bashJobs.status, "running"), exists(currentMachine(sandbox))))
     .returning();
-  if (updated === undefined) return { kind: "not_found" };
+  if (updated === undefined) {
+    const current = await findJob(job.appSessionId, job.jobId);
+    return current === null ? { kind: "not_found" } : { kind: "ok", body: savedJobResponse(current) };
+  }
 
   await touchSandbox(sandbox, job, reading, status);
   return {
@@ -185,23 +258,22 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
 
 /**
  * Продлевает занятость сессии, только пока задание живо и не дольше шести
- * часов с создания песочницы: вечный сервер с `&` не держит #24 навсегда.
+ * часов с начала задания: вечный сервер с `&` не держит #24 навсегда.
  */
 async function touchSandbox(
   sandbox: Sandbox,
-  previous: BashJob,
+  previous: JobSnapshot,
   reading: { readonly stdoutBytes: number; readonly stderrBytes: number },
   status: ReturnType<typeof jobStatus>,
 ): Promise<void> {
   if (status !== "running") return;
   const now = Date.now();
-  if (now - sandbox.createdAt.getTime() > ACTIVE_WINDOW_MS) return;
+  if (now - previous.createdAt.getTime() > BASH_JOB_KEEPALIVE_MS) return;
   const changed = reading.stdoutBytes !== previous.stdoutBytes || reading.stderrBytes !== previous.stderrBytes;
   const stale = now - sandbox.lastActiveAt.getTime() >= ACTIVE_TOUCH_MS;
   if (!changed && !stale) return;
   await getDb()
     .update(sandboxes)
     .set({ lastActiveAt: new Date(now) })
-    .where(eq(sandboxes.id, sandbox.id));
+    .where(and(sameMachine(sandbox), exists(currentMachine(sandbox))));
 }
-
