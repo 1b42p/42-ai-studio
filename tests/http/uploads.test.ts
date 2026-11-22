@@ -51,6 +51,8 @@ describe("маршрут загрузки", () => {
 
     expect(ticket.method).toBe("PUT");
     expect(ticket.headers["Content-Type"]).toBe("text/csv");
+    expect(new URL(ticket.uploadUrl).searchParams.get("X-Amz-SignedHeaders")?.split(";"))
+      .toContain("content-length");
     expect(ticket.fileUrl).toBe(`${loadConfig().appUrl}/api/media/${ticket.id}`);
     const expiresIn = new Date(ticket.expiresAt).getTime() - Date.now();
     expect(expiresIn).toBeGreaterThan(14 * 60 * 1000);

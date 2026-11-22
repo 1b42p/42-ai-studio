@@ -111,11 +111,38 @@ export class Storage {
     await upload.done();
   }
 
-  /** Чтение объекта целиком. */
-  async getObject(key: string): Promise<Uint8Array> {
+  /** Чтение объекта целиком, с точным пределом, если размер известен. */
+  async getObject(key: string, expectedSize?: number): Promise<Uint8Array> {
     const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-    const bytes = await response.Body?.transformToByteArray();
-    return bytes ?? new Uint8Array();
+    if (expectedSize === undefined) {
+      return (await response.Body?.transformToByteArray()) ?? new Uint8Array();
+    }
+    if (!response.Body) throw new StorageObjectSizeMismatch();
+
+    const reader = response.Body.transformToWebStream().getReader();
+    let completed = false;
+    try {
+      if (response.ContentLength !== undefined && response.ContentLength !== expectedSize) {
+        throw new StorageObjectSizeMismatch();
+      }
+      const bytes = new Uint8Array(expectedSize);
+      let offset = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          completed = true;
+          break;
+        }
+        if (value.byteLength > expectedSize - offset) throw new StorageObjectSizeMismatch();
+        bytes.set(value, offset);
+        offset += value.byteLength;
+      }
+      if (offset !== expectedSize) throw new StorageObjectSizeMismatch();
+      return bytes;
+    } finally {
+      if (!completed) await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
   }
 
   /** Проверка существования объекта. */
@@ -218,23 +245,22 @@ export class Storage {
     return getSignedUrl(this.client, command, { expiresIn: options.expiresIn ?? 3600 });
   }
 
-  /**
-   * Подписанная ссылка на загрузку. Тип содержимого входит в подпись:
-   * `PUT` с другим `Content-Type` получает `403 SignatureDoesNotMatch`.
-   */
+  /** Подписанная ссылка на загрузку конкретного типа и размера. */
   async presignUpload(
     key: string,
     contentType: string,
+    sizeBytes: number,
     options: PresignUploadOptions = {},
   ): Promise<string> {
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,
       ContentType: contentType,
+      ContentLength: sizeBytes,
     });
     return getSignedUrl(this.client, command, {
       expiresIn: options.expiresIn ?? 3600,
-      signableHeaders: new Set(["content-type"]),
+      signableHeaders: new Set(["content-type", "content-length"]),
     });
   }
 }
@@ -244,6 +270,12 @@ export class StorageDeletionError extends Error {
   constructor(readonly failures: ReadonlyArray<{ key: string; code: string }>) {
     super(`S3 could not delete objects: ${failures.map(({ key, code }) => `${key} (${code})`).join(", ")}`);
     this.name = "StorageDeletionError";
+  }
+}
+
+export class StorageObjectSizeMismatch extends Error {
+  constructor() {
+    super("S3 object size did not match the expected size");
   }
 }
 

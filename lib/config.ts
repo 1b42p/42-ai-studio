@@ -433,6 +433,9 @@ export function parseConfig(env: EnvRecord): AppConfig {
     }
 
     if (production) {
+      if (!data.APP_URL.startsWith("https://")) {
+        addIssue("APP_URL", "рабочий адрес должен использовать https://");
+      }
       if (data.TELEGRAM_CLIENT_ID === undefined) {
         addIssue("TELEGRAM_CLIENT_ID", "обязательна при NODE_ENV=production");
       }

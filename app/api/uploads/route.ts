@@ -2,8 +2,7 @@
  * POST /api/uploads — строка `media` и подписанная ссылка на загрузку (#9).
  *
  * Браузер кладёт файл прямо в S3 по `uploadUrl`; через сервер приложения
- * проходят только поля. Ссылка живёт 15 минут, `Content-Type` входит в
- * подпись, поэтому другой заголовок хранилище отвергает.
+ * проходят только поля. Ссылка на 15 минут подписывает тип и размер файла.
  */
 import { randomUUID } from "node:crypto";
 import type { NextRequest } from "next/server";
@@ -63,7 +62,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   const id = randomUUID();
   const objectKey = uploadObjectKey({ userId: user.id, appSessionId, uploadId: id, name });
   const expiresAt = new Date(Date.now() + UPLOAD_URL_TTL_SECONDS * 1000).toISOString();
-  const uploadUrl = await getStorage().presignUpload(objectKey, contentType, {
+  const uploadUrl = await getStorage().presignUpload(objectKey, contentType, sizeBytes, {
     expiresIn: UPLOAD_URL_TTL_SECONDS,
   });
 
