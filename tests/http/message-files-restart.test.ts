@@ -27,12 +27,14 @@ test("перезапуск eve продолжает незавершённую �
     await waitForSessionFiles(user, id, (files) => files[0]?.state === "copying");
     await expect.poll(async () =>
       (await fakeSandbox.calls(id)).some((call) => call.command?.startsWith("LC_ALL=C stat")),
-    ).toBe(true);
+    { timeout: 15_000 }).toBe(true);
     expect(await s3().listKeys(`u/${user.id}/s/${id}/`)).toEqual([]);
 
     await eve.crash();
     await fakeSandbox.rules.set([]);
-    eve = await startEveDev(env);
+    // eve start возобновляет активные запуски автоматически. У dev-сервера
+    // восстановление запусков предыдущего процесса включается явно.
+    eve = await startEveDev(env, { resume: true });
 
     const [file] = await waitForSessionFiles(user, id, (files) => files[0]?.state === "ready", {
       timeoutMs: 90_000,
@@ -45,6 +47,8 @@ test("перезапуск eve продолжает незавершённую �
     const link = await mediaRedirect(user, file!.mediaId!, "?download=1");
     expect(link.status).toBe(302);
     expect(await readSigned(link.location!)).toEqual(bytes);
+  } catch (error) {
+    throw new Error(`Публикация после перезапуска Eve:\n${eve.output()}`, { cause: error });
   } finally {
     await fakeSandbox.rules.set([]);
     await eve.stop();

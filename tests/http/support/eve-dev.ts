@@ -27,12 +27,14 @@ export interface EveDevServer {
  */
 export async function startEveDev(
   env: Record<string, string>,
-  options: { timeoutMs?: number } = {},
+  options: { timeoutMs?: number; resume?: boolean } = {},
 ): Promise<EveDevServer> {
   const timeoutMs = options.timeoutMs ?? 240_000;
+  const args = [path.join(projectRoot, "node_modules", "eve", "bin", "eve.js"), "dev", "--no-ui", "--port", "0"];
+  if (options.resume) args.push("--resume");
   const child: ChildProcess = spawn(
     process.execPath,
-    [path.join(projectRoot, "node_modules", "eve", "bin", "eve.js"), "dev", "--no-ui", "--port", "0"],
+    args,
     {
       cwd: projectRoot,
       detached: true,
