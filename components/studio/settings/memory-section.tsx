@@ -34,7 +34,7 @@ export function MemorySection({ settings, save }: SettingsSectionProps) {
         <FieldContent className="min-w-0">
           <FieldLabel id={`${id}-label`} htmlFor={id}>Запоминать мои предпочтения</FieldLabel>
           <FieldDescription id={`${id}-description`}>
-            Изменение действует со следующего сообщения.
+            Изменение действует со следующего запроса после завершения текущего ответа.
           </FieldDescription>
         </FieldContent>
         <Switch
