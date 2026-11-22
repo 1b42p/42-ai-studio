@@ -609,6 +609,15 @@ export function localEveStateDirectory(options?: { optional: true }): string | n
   return resolve(devStateDir || ".eve");
 }
 
+/** Only the default, co-located Nitro build can explain the bundled World marker. */
+export function bundledProductionEveServerDirectory(dataDir: string): string | null {
+  if (process.env.NODE_ENV !== "production") return null;
+  const stateDir = localEveStateDirectory({ optional: true });
+  if (stateDir === null || process.env.WORKFLOW_LOCAL_DATA_DIR ||
+      dataDir !== resolve(stateDir, ".workflow-data")) return null;
+  return resolve(".output", "server");
+}
+
 export interface EvalJudgeConfig {
   readonly model: string | undefined;
   readonly baseUrl: string | undefined;

@@ -103,6 +103,60 @@ test("the local inventory reports a running child and refuses an unknown storage
   }
 });
 
+test("the Nitro marker permits erasure only in the bundled production World with the bound root", async () => {
+  const projectDir = await mkdtemp(path.join(tmpdir(), "studio-workflow-nitro-"));
+  const stateDir = path.join(projectDir, ".eve");
+  const dataDir = path.join(stateDir, ".workflow-data");
+  const runsDir = path.join(dataDir, "runs");
+  const serverDir = path.join(projectDir, ".output", "server");
+  const manifest = path.join(serverDir, "package.json");
+  const runFile = path.join(runsDir, `${root}.json`);
+  const cwd = vi.spyOn(process, "cwd").mockReturnValue(projectDir);
+  const erase = (dir = stateDir) => eraseStudioWorkflowData({
+    stateDir: dir, owner: { appSessionId, userId, eveSessionIds: [root] },
+    signal: new AbortController().signal,
+    resetSession: async () => { throw new Error("Unexpected reset"); },
+  });
+  try {
+    await mkdir(runsDir, { recursive: true });
+    await mkdir(serverDir, { recursive: true });
+    await writeFile(path.join(dataDir, "version.txt"), "traced-node-modules@1.0.0");
+    await writeFile(manifest, JSON.stringify({ name: "traced-node-modules", version: "1.0.0" }));
+    const initial = run(root, "workflowEntry", [[1], { kind: 2, serializedContext: 3 }, "initial", {}]);
+    const original = JSON.stringify({ ...initial, status: "completed" });
+    await writeFile(runFile, original);
+
+    vi.stubEnv("NODE_ENV", "development");
+    await expect(erase()).rejects.toThrow("Unsupported local Workflow storage version");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("WORKFLOW_TARGET_WORLD", "custom-world");
+    await expect(erase()).rejects.toThrow("Unsupported local Workflow storage version");
+    vi.stubEnv("WORKFLOW_TARGET_WORLD", undefined);
+    const otherStateDir = path.join(projectDir, "other");
+    await cp(stateDir, otherStateDir, { recursive: true });
+    await expect(erase(otherStateDir)).rejects.toThrow("Unsupported local Workflow storage version");
+    vi.stubEnv("WORKFLOW_LOCAL_DATA_DIR", path.join(otherStateDir, ".workflow-data"));
+    await expect(erase()).rejects.toThrow("Unsupported local Workflow storage version");
+    vi.stubEnv("WORKFLOW_LOCAL_DATA_DIR", undefined);
+    await writeFile(manifest, JSON.stringify({ name: "traced-node-modules", version: "2.0.0" }));
+    await expect(erase()).rejects.toThrow("Unsupported local Workflow storage version");
+    await expect(readFile(runFile, "utf8")).resolves.toBe(original);
+
+    await writeFile(manifest, JSON.stringify({ name: "traced-node-modules", version: "1.0.0" }));
+    await unlink(runFile);
+    await expect(erase()).rejects.toThrow("Missing bound Eve root");
+    await writeFile(runFile, original);
+    await expect(erase()).resolves.toBeUndefined();
+    expect(JSON.parse(await readFile(runFile, "utf8"))).not.toHaveProperty("input");
+    await expect(readFile(path.join(dataDir, "version.txt"), "utf8"))
+      .resolves.toBe("traced-node-modules@1.0.0");
+  } finally {
+    vi.unstubAllEnvs();
+    cwd.mockRestore();
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
 test("run-keyed erasure preserves the neighbouring session and is safe to retry", async () => {
   const dataDir = await mkdtemp(path.join(tmpdir(), "studio-workflow-erasure-"));
   const paths = [

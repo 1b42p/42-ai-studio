@@ -1,17 +1,42 @@
-import { lstat, open, readdir } from "node:fs/promises";
+import { lstat, open, readdir, readFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
+import evePackage from "eve/package.json";
 
+import { bundledProductionEveServerDirectory } from "@/lib/config";
 import { isMissingFile } from "./durable-redaction";
 import {
   LEGACY_EVE_SESSION_WORKFLOW, readLegacyRunLineage, selectLegacySessionRuns,
 } from "./legacy-run-lineage";
 import type { ErasureRunScope } from "./local-erasure-journal";
 
-const WORLD_VERSION = "@workflow/world-local@5.1.2";
+const WORLD_NAME = "@workflow/world-local";
+const WORLD_VERSION = "5.1.2";
+const NITRO_MARKER = "traced-node-modules@1.0.0";
 const RUN_FILE = /^(wrun_[0-9A-HJKMNP-TV-Z]{26})\.json$/;
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
 const MAX_RUN_BYTES = 48 * 1024 * 1024;
+
+async function supportsWorldMarker(marker: string, dataDir: string, signal: AbortSignal): Promise<boolean> {
+  if (marker === `${WORLD_NAME}@${WORLD_VERSION}`) return true;
+  if (marker !== NITRO_MARKER || evePackage.version !== "0.83.0" ||
+      evePackage.devDependencies[WORLD_NAME] !== WORLD_VERSION) return false;
+  const serverDir = bundledProductionEveServerDirectory(dataDir);
+  if (serverDir === null) return false;
+
+  // World 5.1.2 reads ../package.json from its module. Nitro places that code
+  // in server/_libs/eve.mjs, so the marker records Nitro's manifest instead.
+  try {
+    const manifest = JSON.parse(await readFile(path.join(serverDir, "package.json"), {
+      encoding: "utf8", signal,
+    })) as { name?: unknown; version?: unknown } | null;
+    return manifest?.name === "traced-node-modules" && manifest.version === "1.0.0";
+  } catch (error) {
+    signal.throwIfAborted();
+    if (isMissingFile(error) || error instanceof SyntaxError) return false;
+    throw error;
+  }
+}
 
 export interface LocalWorkflowOwner {
   readonly appSessionId: string;
@@ -43,7 +68,9 @@ export async function inventoryOwnedLegacyRuns(
   } finally {
     await version.close();
   }
-  if (actualVersion.trim() !== WORLD_VERSION) throw new Error("Unsupported local Workflow storage version");
+  if (!(await supportsWorldMarker(actualVersion.trim(), dataDir, signal))) {
+    throw new Error("Unsupported local Workflow storage version");
+  }
 
   const runDirectory = path.join(dataDir, "runs");
   if (!(await lstat(runDirectory)).isDirectory()) throw new Error("Invalid local Workflow run directory");
