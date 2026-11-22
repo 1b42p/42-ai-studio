@@ -267,6 +267,7 @@ function failureFromOutput(
 
 function mapLimit(error: ProcessLimitError, config: DownloadConfig): DownloadToolError {
   if (error.limit === "timeout") return downloadError("download_timeout", { timeoutMs: config.downloadTimeoutMs });
+  if (error.limit === "stdout_too_large") return downloadError("download_failed", { reason: "слишком большой ответ с метаданными видео" });
   return downloadError("download_too_large", {
     actualBytes: error.bytes ?? config.downloadMaxBytes,
     limitBytes: config.downloadMaxBytes,
@@ -398,6 +399,7 @@ export async function runDownload(
             cwd: workDir,
             env,
             signal,
+            fullStdoutMaxBytes: 8 * 1024 * 1024,
           });
           if (metadata.exitCode !== 0) throw failureFromOutput(metadata.stdout, metadata.stderr, config, youtube);
           let parsed: unknown;
