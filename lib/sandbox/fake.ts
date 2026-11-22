@@ -317,7 +317,12 @@ export function getFakeBackend(directory: string, apiKey: string, resources: Fak
        if (record === undefined) throw new DaytonaNotFoundError("Fake Daytona: not found", 404);
       return new FakeMachineHandle(store, record);
     },
-    create: async ({ name, appSessionId }: { name: string; appSessionId: string }): Promise<FakeMachine> => {
+    create: async (
+      { name, appSessionId, beforeCreate }: {
+        name: string; appSessionId: string; beforeCreate?: () => Promise<void>;
+      },
+    ): Promise<FakeMachine> => {
+      await beforeCreate?.();
       const { machine, failure } = await store.create(name, appSessionId, apiKey, resources, lifecycleIntervals());
       if (failure === "quota") {
         // Та же форма, по которой провайдер узнаёт исчерпанную квоту Daytona.

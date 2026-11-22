@@ -354,11 +354,16 @@ async function provision(
   } catch (error) {
     if (!isMissingSandbox(error) && !(error instanceof SandboxSessionGoneError)) throw error;
   }
-  // Без разрешения создания не трогаем чужую/параллельно найденную машину.
-  if (!machine) await beginSandboxLaunch(wait, { createKeyId: keyId });
+  let createStarted = false;
   try {
     if (!machine) {
-      machine = await backend.create({ name, appSessionId, dockerfile: artifact.dockerfile });
+      machine = await backend.create({
+        name, appSessionId, dockerfile: artifact.dockerfile,
+        async beforeCreate() {
+          await beginSandboxLaunch(wait, { createKeyId: keyId });
+          createStarted = true;
+        },
+      });
     }
     if (machine.state === "build_failed") throw new StudioSandboxError("sandbox_create_failed");
     // No database checkpoint means no tool has used this machine yet. Reapply
@@ -368,6 +373,7 @@ async function provision(
     finally { await connection.close?.(); }
     return machine;
   } catch (error) {
+    if (!machine && !createStarted) throw error;
     if (error instanceof StudioSandboxError && error.code === "sandbox_wait_cancelled") throw error;
     let cleanupFailed = false;
     try { await (await backend.get(name)).delete(); }
