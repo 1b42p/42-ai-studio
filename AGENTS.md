@@ -53,7 +53,7 @@
 
 - Node.js 24.x
 - npm — один `package-lock.json` и один `node_modules`
-- Next.js 16.4.3
+- Next.js 16.4.x (точная версия закреплена в `package.json`)
 - React 19
 - TypeScript 5
 - eve 0.83.0
