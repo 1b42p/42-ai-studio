@@ -40,7 +40,9 @@ export interface DaytonaMachine {
 export interface DaytonaBackend {
   list(): AsyncIterable<DaytonaMachine>;
   get(idOrName: string): Promise<DaytonaMachine>;
-  create(options: { name: string; appSessionId: string; dockerfile: string }): Promise<DaytonaMachine>;
+  create(options: {
+    name: string; appSessionId: string; dockerfile: string; beforeCreate?: () => Promise<void>;
+  }): Promise<DaytonaMachine>;
 }
 
 const clients = new Map<string, Daytona>();
@@ -216,7 +218,7 @@ export function daytonaBackend(
       for await (const sandbox of daytona.list({ states })) yield wrap(sandbox);
     },
     async get(id) { return wrap(await daytona.get(id)); },
-    async create({ name, appSessionId, dockerfile }) {
+    async create({ name, appSessionId, dockerfile, beforeCreate }) {
       const directory = await mkdtemp(join(tmpdir(), "studio-daytona-"));
       let image: Image;
       try {
@@ -226,6 +228,7 @@ export function daytonaBackend(
       } finally {
         await rm(directory, { recursive: true, force: true });
       }
+      await beforeCreate?.();
       return wrap(await daytona.create({
         name, image,
         resources: { cpu: config.sandboxCpu, memory: config.sandboxMemoryGb, disk: config.sandboxDiskGb },
