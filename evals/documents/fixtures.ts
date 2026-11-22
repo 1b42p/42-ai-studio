@@ -8,7 +8,7 @@ import recordings from "./recordings.json";
 
 export { documentPaths } from "./media-fixture";
 
-const PACKAGED = ["references/formats.md", "references/charts.md", "scripts/inspect_document.py"];
+const PACKAGED = ["SKILL.md", "references/formats.md", "references/charts.md", "scripts/inspect_document.py"];
 const SKILL = "reading-documents";
 const HOME = String.raw`(?:echo\s+["']?\$HOME["']?|printenv\s+HOME|printf\s+'%s\\n'\s+"\$HOME")`;
 const LABELED_HOME = String.raw`printf\s+'HOME=%s\\n'\s+"\$HOME"`;
@@ -105,7 +105,7 @@ export async function documentSession(t: EveEvalContext, name: DocumentName) {
     ...withBootstrap(
       "document-skill-list",
       `rg\\s+--files\\s+["']?${skillDirectory}["']?`,
-      ["SKILL.md", ...PACKAGED].map((path) => `/root/.agents/skills/${SKILL}/${path}\n`).join(""),
+      PACKAGED.map((path) => `/root/.agents/skills/${SKILL}/${path}\n`).join(""),
     ),
     ...PACKAGED.map((relative, index) => bashFixture(
       `document-reference-cat-${index}`,
@@ -118,6 +118,7 @@ export async function documentSession(t: EveEvalContext, name: DocumentName) {
       `${input}\n`,
     ),
     bashFixture("document-create-output", `^\\s*${createDirectory}\\s*$`, ""),
+    bashFixture("document-cwd", String.raw`^\s*pwd\s*$`, "/workspace\n"),
     bashFixture("document-disk-space", String.raw`^\s*df\s+-h\s+/workspace\s*$`,
       "Filesystem Size Used Avail Use% Mounted on\noverlay 5.0G 120M 4.9G 3% /workspace\n"),
     bashFixture("document-output-list", `^\\s*ls(?:\\s+-[alh]+)?\\s+${shellPath(output)}\\s*$`, `${Object.keys(recording.files).join("\n")}\n`),
@@ -142,7 +143,7 @@ export function documentCases(name: DocumentName, kind: string, mediaType: strin
       const session = await documentSession(t, name);
       const turn = await session.send(
         `Хочу сделать ролик по приложенному файлу. Пока только прочитай текст и выпиши показатели по Москве и Казани. Если единицы в документе не указаны, так и скажи; ` +
-        `картинки и сам ролик пока не нужны. Сохрани исходник и файлы разбора.\nAttached file ${input} (${mediaType})`,
+        `картинки и сам ролик пока не нужны.\nAttached file ${input} (${mediaType})`,
       );
       t.succeeded();
       const optionalReads = new Set(turn.events.flatMap((event) =>
