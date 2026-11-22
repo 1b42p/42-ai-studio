@@ -10,7 +10,8 @@ import type { MessageStreamEvent } from "eve/client";
 import { media } from "../../lib/db/schema";
 import { loadConfig } from "../../lib/config";
 import { uploadObjectKey } from "../../lib/uploads/keys";
-import { startApp } from "./support/app";
+import { fetchApp, startApp } from "./support/app";
+import { loginAs } from "./support/auth";
 import { createSessionAs, sendContentAndWait, sendWithFiles } from "./support/chat";
 import { createDaytonaKey, createUser, db, resetDatabase } from "./support/db";
 import { startEveDev } from "./support/eve-dev";
@@ -121,6 +122,10 @@ describe("доставка файла агенту", () => {
     const path = `${ATTACHMENTS}/${hashPrefix(bytes)}/_2026.csv`;
     expect(await sandboxAttachments(id)).toContain(path);
     expect(new Uint8Array((await fakeSandbox.files.read(id, path))!)).toEqual(bytes);
+
+    const cookie = await loginAs(user);
+    const response = await fetchApp(`/api/sessions/${id}`, { headers: { cookie } });
+    expect(await response.json()).toMatchObject({ title: "Отчёт 2026.csv" });
   }, 30_000);
 
   test("файл 30 МиБ доходит, когда предел канала поднят", async () => {

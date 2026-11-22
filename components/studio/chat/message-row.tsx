@@ -6,7 +6,7 @@ import type {
   EveMessage,
   EveMessagePart,
 } from "eve/react";
-import { BrainIcon } from "lucide-react";
+import { BrainIcon, CircleHelpIcon } from "lucide-react";
 
 import { ChatMarkdown } from "@/components/studio/chat/chat-markdown";
 import { AuthorizationCard, type AuthorizationPart } from "./authorization-card";
@@ -186,9 +186,20 @@ function AssistantContent({
           return <AuthorizationCard key={group.id} part={group.part} allowHosts={authorizationAllowHosts} />;
         }
         if (group.kind === "question") {
+          const inputs = questionsFor(data, group.part.toolCallId);
+          if (group.part.state === "output-error" && inputs.length === 0) {
+            return (
+              <Trace key={group.id}>
+                <TraceLine status="error">
+                  <TraceIcon><CircleHelpIcon /></TraceIcon>
+                  <TraceTitle>Не удалось задать вопрос</TraceTitle>
+                </TraceLine>
+              </Trace>
+            );
+          }
           // Copies are answered through the parent's pinned prompt.
           if (!onRespond) return null;
-          return questionsFor(data, group.part.toolCallId).map((input) => (
+          return inputs.map((input) => (
             <InputPrompt key={input.request.requestId} input={input}
               disabled={inputDisabled} onRespond={onRespond} />
           ));

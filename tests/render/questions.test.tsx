@@ -111,6 +111,27 @@ test("вопрос из раннего хода рисуется у вызова
   expect(onSend).not.toHaveBeenCalled();
 });
 
+test("сбой вызова вопроса виден в ленте без сырых аргументов и ошибки", async () => {
+  const initial = questionsState([]);
+  const message = initial.messages[0]!;
+  const data = {
+    ...initial,
+    messages: [{
+      ...message,
+      parts: [message.parts[0]!, {
+        type: "dynamic-tool", toolCallId: "call_question", toolName: "ask_question",
+        state: "output-error", input: { question: "Сырые аргументы" }, errorText: "Сырая ошибка",
+      } as const, message.parts[2]!],
+    }],
+  };
+  await renderOnDesktop(view([], { agent: { data, events: [], status: "ready" } }));
+
+  await expect.element(page.getByText("Не удалось задать вопрос")).toBeVisible();
+  await expect.element(page.getByText("После вопроса")).toBeVisible();
+  await expect.element(page.getByText("Сырые аргументы")).not.toBeInTheDocument();
+  await expect.element(page.getByText("Сырая ошибка")).not.toBeInTheDocument();
+});
+
 test("вопрос копии закреплён над полем; лимит приоритетен и использует id запроса", async () => {
   const onRespond = vi.fn();
   await renderOnPhone(view([question({ taskId: "copy_task" }), sessionLimit()], { onRespond }));

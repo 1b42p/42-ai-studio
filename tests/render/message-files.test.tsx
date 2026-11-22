@@ -352,24 +352,22 @@ describe("файлы в ответе", () => {
     });
   });
 
-  test("повторная ошибка показывает карточку скачивания", async () => {
+  test.each([
+    ["final.mp4", "video/mp4"],
+    ["frame.png", "image/png"],
+    ["voice.mp3", "audio/mpeg"],
+  ])("после повторной ошибки %s явно недоступен, но его можно попробовать скачать", async (name, contentType) => {
     await commands.failMedia("**/api/media/**");
     await renderOnDesktop(
-      view("![кадр](out/final.mp4)", {
-        entries: [
-          entry("/workspace/out/final.mp4", {
-            contentType: "video/mp4",
-            name: "final.mp4",
-          }),
-        ],
+      view(`![результат](out/${name})`, {
+        entries: [entry(`/workspace/out/${name}`, { contentType, name })],
       }),
     );
 
-    // Первая ошибка оставила бы видео с адресом `?retry=1`; карточка
-    // появляется только после второй.
-    await vi.waitFor(() => {
-      expect(document.querySelector("video")).toBeNull();
-    });
+    await expect.element(page.getByText("Файл недоступен")).toBeVisible();
+    await expect.element(page.getByText(name)).toBeVisible();
     await expect.element(page.getByRole("link", { name: "Скачать" })).toBeVisible();
+    expect(document.querySelector("video, img")).toBeNull();
+    await expect.element(page.getByRole("button", { name: "Воспроизвести" })).not.toBeInTheDocument();
   });
 });
