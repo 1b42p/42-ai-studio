@@ -37,6 +37,7 @@ export interface FakeMachine {
   delete(timeout?: number, wait?: boolean, signal?: AbortSignal): Promise<void>;
   connect(callbacks: ConnectionCallbacks): SandboxConnection;
   readJobDirectory(jobId: string): Promise<JobDirectoryReading>;
+  findLiveJob(jobIds: readonly string[]): Promise<string | null>;
 }
 
 /** A process-local handle; state getters read an atomically published snapshot. */
@@ -130,6 +131,10 @@ class FakeMachineHandle implements FakeMachine {
 
   async readJobDirectory(jobId: string): Promise<JobDirectoryReading> {
     return this.store.readJobDirectory(this.id, jobId);
+  }
+
+  findLiveJob(jobIds: readonly string[]): Promise<string | null> {
+    return this.store.findLiveJob(this.id, jobIds);
   }
 
   connect(callbacks: ConnectionCallbacks): SandboxConnection {

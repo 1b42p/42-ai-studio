@@ -73,11 +73,8 @@ function quote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** Один разбор каталога; `studio-job:` — заголовок с полями, дальше base64. */
-const JOB_SCRIPT = (jobId: string) => `d=/tmp/.eve/jobs/${quote(jobId)}
-if [ ! -d "$d" ]; then printf 'studio-job:missing\\n'; exit 0; fi
-cd "$d" || { printf 'studio-job:missing\\n'; exit 0; }
-code=
+/** Общие правила живости без чтения stdout/stderr. Запускаются в каталоге задания. */
+const JOB_STATUS_SCRIPT = `code=
 if [ -s exit ]; then IFS= read -r code < exit || code=; fi
 alive=0
 if [ -z "$code" ]; then
@@ -91,7 +88,13 @@ if [ -z "$code" ]; then
     code=
     if [ -s exit ]; then IFS= read -r code < exit || code=; fi
   fi
-fi
+fi`;
+
+/** Один разбор каталога; `studio-job:` — заголовок с полями, дальше base64. */
+const JOB_SCRIPT = (jobId: string) => `d=/tmp/.eve/jobs/${quote(jobId)}
+if [ ! -d "$d" ]; then printf 'studio-job:missing\\n'; exit 0; fi
+cd "$d" || { printf 'studio-job:missing\\n'; exit 0; }
+${JOB_STATUS_SCRIPT}
 out=0; [ ! -f stdout ] || out=$(wc -c < stdout)
 err=0; [ ! -f stderr ] || err=$(wc -c < stderr)
 printf 'studio-job:%s:%s:%s:%s\\n' "$code" "$alive" "$out" "$err"
@@ -152,4 +155,25 @@ export async function readDaytonaJobDirectory(
     if (error instanceof StudioSandboxError) throw error;
     throw new StudioSandboxError("daytona_unavailable");
   }
+}
+
+/** Проверяет живость пачки на одной машине, возвращая первое живое задание. */
+export async function findLiveDaytonaJob(
+  sandbox: Sandbox,
+  jobIds: readonly string[],
+): Promise<string | null> {
+  if (!jobIds.length) return null;
+  if (!jobIds.every((id) => JOB_ID_PATTERN.test(id))) throw new Error("Некорректный идентификатор задания.");
+  const command = `for job in ${jobIds.map(quote).join(" ")}; do
+  cd "/tmp/.eve/jobs/$job" 2>/dev/null || continue
+  ${JOB_STATUS_SCRIPT}
+  if [ "$alive" -eq 1 ]; then printf '%s\\n' "$job"; break; fi
+done`;
+  // SDK 0.226.1 прибавляет 5 секунд к явно заданному таймауту процесса.
+  const response = await sandbox.process.executeCommand(command, undefined, undefined, 2);
+  if (response.exitCode !== 0) throw new StudioSandboxError("daytona_unavailable");
+  const liveJobId = response.result.trim();
+  if (liveJobId === "") return null;
+  if (!jobIds.includes(liveJobId)) throw new StudioSandboxError("daytona_unavailable");
+  return liveJobId;
 }

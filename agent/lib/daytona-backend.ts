@@ -10,7 +10,7 @@ import { Daytona, DaytonaConflictError, DaytonaNotFoundError, Image, SandboxStat
 import { SANDBOX_AGENT_ENV, type SandboxConnection } from "eve/sandbox/provider";
 import { loadConfig } from "@/lib/config";
 import { getFakeBackend } from "@/lib/sandbox/fake";
-import { readDaytonaJobDirectory, type JobDirectoryReading } from "@/lib/sandbox/job-directory";
+import { findLiveDaytonaJob, readDaytonaJobDirectory, type JobDirectoryReading } from "@/lib/sandbox/job-directory";
 import { connectDaytona } from "./daytona-connection";
 
 export interface ConnectionCallbacks {
@@ -28,13 +28,14 @@ export interface DaytonaMachine {
   start(): Promise<void>;
   stop(): Promise<void>;
   archive(): Promise<void>;
-  refreshActivity(): Promise<void>;
+  refreshActivity(options?: { activityOnly: boolean }): Promise<void>;
   configureLifecycle(): Promise<void>;
   recover(): Promise<void>;
   ready(): Promise<void>;
   delete(timeout?: number, wait?: boolean): Promise<void>;
   connect(callbacks: ConnectionCallbacks): SandboxConnection;
   readJobDirectory(jobId: string): Promise<JobDirectoryReading>;
+  findLiveJob(jobIds: readonly string[]): Promise<string | null>;
 }
 
 export interface DaytonaBackend {
@@ -99,9 +100,9 @@ function wrap(sandbox: Sandbox): DaytonaMachine {
       stoppedAt = new Date();
     },
     archive: () => sandbox.archive(),
-    refreshActivity: async () => {
+    refreshActivity: async (options) => {
       await sandbox.refreshActivity();
-      await sandbox.refreshData();
+      if (!options?.activityOnly) await sandbox.refreshData();
     },
     configureLifecycle,
     recover: async () => {
@@ -112,6 +113,7 @@ function wrap(sandbox: Sandbox): DaytonaMachine {
     delete: (timeout = 300, wait = true) => sandbox.delete(timeout, wait),
     connect: (callbacks) => connectDaytona(sandbox, callbacks),
     readJobDirectory: (jobId) => readDaytonaJobDirectory(sandbox, jobId),
+    findLiveJob: (jobIds) => findLiveDaytonaJob(sandbox, jobIds),
   };
 }
 
