@@ -5,6 +5,7 @@ import { getSqlClient } from "../../lib/db/client";
 const CASCADE_EXCEPTIONS: Readonly<Record<string, string>> = {
   "usage_records.app_session_id": "Расход остаётся после удаления сессии.",
   "pending_sandbox_usage.app_session_id": "Квитанция расхода остаётся после удаления сессии.",
+  "late_upload_cleanups.user_id": "Область S3 переживает удаление пользователя до окончания отложенной очистки.",
 };
 
 test("каждая колонка app_session_id/user_id имеет правильный ON DELETE CASCADE", async () => {

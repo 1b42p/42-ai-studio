@@ -18,6 +18,7 @@ import {
 } from "../../lib/db/schema";
 import { DELETED_KEY_MARKER, deleteKey } from "../../agent/lib/daytona-key-pool";
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
+import { daytonaBackend } from "../../agent/lib/daytona-backend";
 import { fetchApp, startApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, eveClientAs, readStreamUntil, sendAndWait } from "./support/chat";
@@ -376,6 +377,30 @@ describe("удаление всех данных сессии", () => {
     expect((await fakeSandbox.counters()).deleted).toBe(1);
   }, 90_000);
 
+  test("удаляет прежнюю машину другой организации после перепривязки, не затрагивая чужую", async () => {
+    const target = await fixture({ sandbox: true });
+    const [former] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, target.id));
+    const replacementSecret = "dtn_replacement";
+    const replacementKey = await createDaytonaKey({ apiKey: replacementSecret });
+    await fakeSandbox.setOrganization(replacementSecret, "replacement");
+    const replacementBackend = daytonaBackend(replacementKey.id, replacementSecret);
+    const replacement = await replacementBackend.create({
+      name: "replacement", appSessionId: target.id, dockerfile: "",
+    });
+    const unrelated = await replacementBackend.create({
+      name: "unrelated", appSessionId: randomUUID(), dockerfile: "",
+    });
+    await db().update(sandboxes)
+      .set({ daytonaKeyId: replacementKey.id, daytonaSandboxId: replacement.id })
+      .where(eq(sandboxes.appSessionId, target.id));
+
+    expect((await remove(target.id, target.user)).status).toBe(204);
+    await expect(daytonaBackend(target.key!.id, "dtn_test_secret_value").get(former.daytonaSandboxId))
+      .rejects.toMatchObject({ statusCode: 404 });
+    await expect(replacementBackend.get(replacement.id)).rejects.toMatchObject({ statusCode: 404 });
+    await expect(replacementBackend.get(unrelated.id)).resolves.toMatchObject({ id: unrelated.id });
+  }, 90_000);
+
   test("S3 недоступен: tombstone и gone сохраняются; основной экземпляр доделывает", async () => {
     const target = await fixture({ sandbox: true, files: true });
     const app = await startApp({ env: { S3_ENDPOINT: "http://127.0.0.1:1" } });
@@ -428,6 +453,51 @@ describe("удаление всех данных сессии", () => {
       await stub.stop();
     }
   }, 300_000);
+
+  test("отложенная очистка убирает загрузку, завершившуюся после удаления аккаунта", async () => {
+    const user = await createUser();
+    const operator = await createUser({ isOperator: true });
+    const { id } = await createSessionAs(user);
+    const signed = await fetchApp("/api/uploads", {
+      method: "POST",
+      headers: { cookie: await loginAs(user), "Content-Type": "application/json" },
+      body: JSON.stringify({ appSessionId: id, name: "late.txt", contentType: "text/plain", sizeBytes: 4 }),
+    });
+    expect(signed.status).toBe(201);
+    const { uploadUrl, headers } = await signed.json();
+    const other = `u/${operator.id}/s/${randomUUID()}/uploads/keep.txt`;
+    await s3().put(other, "keep");
+
+    expect((await fetchApp(`/api/admin/users/${user.id}`, {
+      method: "DELETE", headers: { cookie: await loginAs(operator) },
+    })).status).toBe(204);
+    expect((await fetch(uploadUrl, { method: "PUT", body: "late", headers })).ok).toBe(true);
+    const prefix = `u/${user.id}/s/${id}/uploads/`;
+    expect(await s3().listKeys(prefix)).toHaveLength(1);
+
+    const sweep = async () => {
+      const response = await fetchApp("/eve/v1/dev/schedules/late-uploads", { method: "POST" });
+      expect(response.status).toBe(200);
+    };
+    await sweep();
+    expect(await s3().listKeys(prefix)).toHaveLength(1);
+
+    // Передвигаем часы задания: сам PUT и расписание настоящие.
+    await getSqlClient()`update late_upload_cleanups
+      set next_attempt_at = now() - interval '1 minute' where id = ${id}`;
+    await sweep();
+    await expect.poll(() => s3().listKeys(prefix)).toEqual([]);
+
+    // Повторная запись моделирует PUT, который хранилище приняло до истечения
+    // URL, но завершило уже после первого прохода.
+    expect((await fetch(uploadUrl, { method: "PUT", body: "late", headers })).ok).toBe(true);
+    await getSqlClient()`update late_upload_cleanups
+      set next_attempt_at = now() - interval '1 minute', final_sweep_at = now() - interval '1 second'
+      where id = ${id}`;
+    await sweep();
+    await expect.poll(() => s3().listKeys(prefix)).toEqual([]);
+    expect(await s3().exists(other)).toBe(true);
+  });
 
   test("список добивает старые tombstones, но не свежие и не чужие", async () => {
     const user = await createUser();

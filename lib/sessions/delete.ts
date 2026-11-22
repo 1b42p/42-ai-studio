@@ -12,6 +12,8 @@ import { DAYTONA_KEY_PURPOSE, decryptSecret } from "@/lib/secrets";
 import { errorStatus, isMissingSandbox } from "@/lib/sandbox/errors";
 import { recordSandboxTransition } from "@/lib/usage/sandbox";
 import { cancellableQuery as query } from "@/lib/db/cancellable-query";
+import { enqueueLateUploadCleanup } from "./late-upload-cleanup";
+import { deleteHistoricalDaytonaMachines } from "./daytona-erasure";
 
 export interface SessionDeletionResult {
   status: "deleted" | "not_found" | "conflict" | "upstream_error";
@@ -188,30 +190,37 @@ export async function deleteSessionData(
             and p.daytona_sandbox_id = s.daytona_sandbox_id) as "pendingDeletion"
         from sandboxes s join daytona_keys k on k.id = s.daytona_key_id
         where s.app_session_id = ${appSessionId}`, stepSignal);
-      if (!sandbox || (sandbox.state === "gone" && !sandbox.pendingDeletion)) return;
-      if (!(sandbox.keyDeletedAt && sandbox.encrypted === DELETED_KEY_MARKER)) {
-        const secret = decryptSecret(sandbox.encrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE);
-        const identity = sandbox.daytonaSandboxId ||
-          (session.eveSessionId ? daytonaSandboxName(session.eveSessionId) : undefined);
-        if (!identity) throw new Error("Sandbox identity missing");
-        try {
-          await deleteDaytonaMachine(sandbox.keyId, secret, identity, {
-            signal: stepSignal, deadline: stepDeadline,
-          });
-        } catch (error) {
-          stepSignal.throwIfAborted();
-          if (!isMissingSandbox(error)) throw error;
+      let deletedId: string | undefined;
+      if (sandbox && (sandbox.state !== "gone" || sandbox.pendingDeletion)) {
+        if (!(sandbox.keyDeletedAt && sandbox.encrypted === DELETED_KEY_MARKER)) {
+          const secret = decryptSecret(sandbox.encrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE);
+          const identity = sandbox.daytonaSandboxId ||
+            (session.eveSessionId ? daytonaSandboxName(session.eveSessionId) : undefined);
+          if (!identity) throw new Error("Sandbox identity missing");
+          try {
+            await deleteDaytonaMachine(sandbox.keyId, secret, identity, {
+              signal: stepSignal, deadline: stepDeadline,
+            });
+          } catch (error) {
+            stepSignal.throwIfAborted();
+            if (!isMissingSandbox(error)) throw error;
+          }
+          deletedId = sandbox.daytonaSandboxId || undefined;
         }
+        await query(sql!`delete from pending_sandbox_deletions
+          where daytona_key_id = ${sandbox.keyId}
+            and daytona_sandbox_id = ${sandbox.daytonaSandboxId}`, stepSignal);
+        await recordSandboxTransition({
+          sandboxId: sandbox.id, newState: "gone", source: "app",
+          changes: { startingSince: null, startingKind: null, launchStartedAt: null },
+          signal: stepSignal,
+        });
       }
-      await query(sql!`delete from pending_sandbox_deletions
-        where daytona_key_id = ${sandbox.keyId}
-          and daytona_sandbox_id = ${sandbox.daytonaSandboxId}`, stepSignal);
-      stepSignal.throwIfAborted();
-      await recordSandboxTransition({
-        sandboxId: sandbox.id, newState: "gone", source: "app",
-        changes: { startingSince: null, startingKind: null, launchStartedAt: null },
-        signal: stepSignal,
-      });
+      if (session.eveSessionId || sandbox) {
+        await deleteHistoricalDaytonaMachines(sql!, appSessionId, deletedId, {
+          signal: stepSignal, deadline: stepDeadline,
+        });
+      }
       stepSignal.throwIfAborted();
     });
 
@@ -222,6 +231,7 @@ export async function deleteSessionData(
     await transactionOnReserved(sql, signal, async (tx) => {
       await query(tx`insert into session_deletions (id, user_id)
         values (${appSessionId}, ${session.userId}) on conflict (id) do nothing`, signal);
+      await enqueueLateUploadCleanup(tx, session, signal);
       await timed("database", () => query(tx`delete from app_sessions where id = ${appSessionId}`, signal));
       signal.throwIfAborted();
     });
