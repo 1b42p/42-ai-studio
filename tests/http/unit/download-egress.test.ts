@@ -56,7 +56,11 @@ test("без bwrap запуск загрузчика недоступен", asyn
 test("дочерний процесс видит только loopback и использует Unix-мост для HTTP-прокси", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "studio-egress-test-"));
   const socketPath = path.join(directory, "proxy.sock");
-  const proxy = createServer((req, res) => res.end(req.url));
+  const payload = Buffer.alloc(1024 * 1024, 0x42);
+  const proxy = createServer((req, res) => {
+    res.writeHead(200, { connection: "close", "content-length": payload.length, "x-fixture-url": req.url ?? "" });
+    res.end(payload);
+  });
   try {
     await once(proxy.listen(socketPath), "listening");
     const run = await createDownloadIsolation({ binaries: [process.execPath], runtime: "node" });
@@ -70,13 +74,17 @@ test("дочерний процесс видит только loopback и исп
           hostname: url.hostname,
           port: url.port,
           path: "http://cdn.example.com/video.mp4",
-        }, (res) => res.pipe(process.stdout));
+        }, async (res) => {
+          let bytes = 0;
+          for await (const chunk of res) bytes += chunk.length;
+          process.stdout.write(res.headers["x-fixture-url"] + "\\n" + bytes);
+        });
       `, DOWNLOAD_PROXY],
       cwd: directory,
       env: childEnv(directory),
       signal: AbortSignal.timeout(5_000),
     }, socketPath);
-    expect(result).toMatchObject({ exitCode: 0, stdout: "true\nhttp://cdn.example.com/video.mp4" });
+    expect(result).toMatchObject({ exitCode: 0, stdout: "true\nhttp://cdn.example.com/video.mp4\n1048576" });
   } finally {
     proxy.closeAllConnections();
     await new Promise<void>((resolve) => proxy.close(() => resolve()));
