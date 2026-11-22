@@ -85,6 +85,11 @@ test.each([
     kind: "stub",
     outcome: { response: { exitCode: 0, stdout: expect.stringContaining(`Результаты: ${output}\n`) } },
   });
+  const combined = String.raw`printf '%s\n' "$HOME" && python3 -c 'import pdfplumber, pptx, openpyxl, charset_normalizer' && ` + command;
+  expect(playback.call({ callId: "combined-extract", tool: "bash", input: { command: combined } })).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringMatching(/^\/root\n/u) } },
+  });
   expect(playback.call({ callId: "table", tool: "read_file", input: { filePath: `${output}/${table}` } })).toMatchObject({
     kind: "stub",
     outcome: { response: { content: expect.stringContaining(value) } },
