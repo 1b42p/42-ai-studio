@@ -8,6 +8,7 @@ import { ChatPanel, type ChatAgent } from "@/components/studio/chat/chat-panel";
 import { ChatView, type ChatViewProps } from "@/components/studio/chat/chat-view";
 
 import {
+  assistantText,
   cancelledConversation,
   completedConversation,
   failedConversation,
@@ -85,6 +86,20 @@ test("размышление свёрнуто в строку и раскрыв�
   await expect
     .element(page.getByText("Сначала выясню тему и длительность."))
     .toBeVisible();
+});
+
+test("пустой первый фрагмент не скрывает ожидание до появления ответа", async () => {
+  const waiting = [
+    ...reasoningConversation().slice(0, 3),
+    ...assistantText("turn_0", " \n").slice(0, 2),
+  ];
+  const visible = [...waiting, assistantText("turn_0", "Первый видимый текст.")[1]];
+  const screen = await renderOnDesktop(view(waiting, { status: "streaming" }));
+  await expect.element(page.getByText("Агент думает…")).toBeVisible();
+
+  await screen.rerender(view(visible, { status: "streaming" }));
+  await expect.element(page.getByText("Первый видимый текст.")).toBeVisible();
+  await expect.element(page.getByText("Агент думает…")).not.toBeInTheDocument();
 });
 
 test("вызов инструмента показан подписью без имени, входа и результата", async () => {

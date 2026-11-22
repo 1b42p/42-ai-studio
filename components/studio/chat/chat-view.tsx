@@ -18,7 +18,7 @@ import {
 } from "@/components/studio/chat/message-files";
 import { InputPrompt } from "@/components/studio/chat/input-prompt";
 import { inlineQuestionIds } from "@/components/studio/chat/input-routing";
-import { MessageRow } from "@/components/studio/chat/message-row";
+import { hasVisibleAssistantContent, MessageRow } from "@/components/studio/chat/message-row";
 import { SandboxStatusBanner } from "@/components/studio/chat/sandbox-status-banner";
 import { StudioWelcome } from "@/components/studio/chat/studio-welcome";
 import { DeleteSessionButton } from "@/components/studio/sessions/delete-session-button";
@@ -232,7 +232,8 @@ export function ChatView({
   const errorNotice = agent.error === undefined || expired ? undefined : describeAgentError(agent.error);
   const resuming = status === "resuming";
   const disabled = inputDisabled || resuming || finished;
-  const thinking = status === "submitted";
+  const thinking = status === "submitted" ||
+    (status === "streaming" && openInputs.length === 0 && !hasVisibleAssistantContent(messages.at(-1)));
   const showSessions = sessions !== undefined && messages.length === 0;
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
