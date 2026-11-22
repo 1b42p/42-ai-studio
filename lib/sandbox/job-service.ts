@@ -12,7 +12,7 @@ import { bashJobs, daytonaKeys, sandboxes, type BashJob, type Sandbox } from "@/
 import { decryptSecret, DAYTONA_KEY_PURPOSE } from "@/lib/secrets";
 import { sleep } from "@/lib/sleep";
 import { savedJobResponse } from "./bash-jobs";
-import { decodeTail, jobStatus, type JobDirectoryReading } from "./job-directory";
+import { BASH_JOB_KEEPALIVE_MS, decodeTail, jobStatus, type JobDirectoryReading } from "./job-directory";
 import { errorStatus, isMissingSandbox } from "./errors";
 import type { BashJobResponse } from "./job-types";
 
@@ -27,7 +27,7 @@ const CACHE_MAX_ENTRIES = 500;
 const LOOKUP_ATTEMPTS = 3;
 const LOOKUP_DELAY_MS = 200;
 const ACTIVE_TOUCH_MS = 60_000;
-const ACTIVE_WINDOW_MS = 6 * 60 * 60 * 1000;
+const OBSERVER_REQUEST_TIMEOUT_MS = 5_000;
 
 /** Состояния, в которых песочницу уже не разбудить: задание прервано. */
 const LOST_STATES: ReadonlySet<string> = new Set([
@@ -54,7 +54,8 @@ export async function readBashJob(
     }
   }
 
-  const entry = { expiresAt: now + CACHE_TTL_MS, result: loadBashJob(appSessionId, jobId) };
+  // Чтение Daytona может занять больше TTL: до окончания промис общий.
+  const entry = { expiresAt: Infinity, result: loadBashJob(appSessionId, jobId) };
   cache.set(key, entry);
   let result: BashJobResult;
   try {
@@ -95,7 +96,9 @@ async function findJobForPoll(appSessionId: string, jobId: string): Promise<Bash
   return null;
 }
 
-async function saveInterrupted(job: BashJob): Promise<BashJobResult> {
+type JobSnapshot = Pick<BashJob, "id" | "appSessionId" | "jobId" | "createdAt" | "stdoutBytes" | "stderrBytes">;
+
+async function saveInterrupted(job: JobSnapshot): Promise<BashJobResult> {
   const [updated] = await getDb()
     .update(bashJobs)
     .set({ status: "interrupted", updatedAt: new Date() })
@@ -118,7 +121,17 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
     .where(eq(sandboxes.appSessionId, appSessionId))
     .limit(1);
   if (sandbox === undefined) return { kind: "not_found" };
+  return observeBashJob(job, sandbox);
+}
+
+/** Общий путь записи для маршрута и фонового наблюдателя; не будит машину. */
+export async function observeBashJob(
+  job: JobSnapshot,
+  sandbox: Sandbox,
+  options: { keepAlive?: boolean } = {},
+): Promise<BashJobResult> {
   if (sandbox.state === "gone") return { kind: "unavailable" };
+  if (!sandbox.daytonaSandboxId) return { kind: "unavailable" };
 
   const [key] = await getDb()
     .select()
@@ -132,6 +145,7 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
     machine = await daytonaBackend(
       key.id,
       decryptSecret(key.apiKeyEncrypted, loadConfig().secretsEncryptionKey, DAYTONA_KEY_PURPOSE),
+      { requestTimeoutMs: OBSERVER_REQUEST_TIMEOUT_MS },
     ).get(sandbox.daytonaSandboxId);
   } catch (error) {
     if (isMissingSandbox(error)) return saveInterrupted(job);
@@ -147,7 +161,7 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
 
   let reading: JobDirectoryReading;
   try {
-    reading = await machine.readJobDirectory(jobId);
+    reading = await machine.readJobDirectory(job.jobId);
   } catch (error) {
     console.error("[jobs] не удалось прочитать каталог задания", errorStatus(error));
     return { kind: "unavailable" };
@@ -155,6 +169,10 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
   if (!reading.found) return saveInterrupted(job);
 
   const status = jobStatus(reading);
+  if (status === "running" && options.keepAlive) {
+    try { await machine.refreshActivity(); }
+    catch (error) { console.warn("[jobs] activity_failed", errorStatus(error) ?? "transport"); }
+  }
   const stdout = decodeTail(reading.stdoutTail, reading.stdoutBytes);
   const stderr = decodeTail(reading.stderrTail, reading.stderrBytes);
   const [updated] = await getDb()
@@ -162,15 +180,20 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
     .set({
       status,
       exitCode: reading.exitCode,
-      stdoutTail: stdout.text,
-      stderrTail: stderr.text,
+      stdoutTail: stdout.text.replaceAll("\0", ""),
+      stderrTail: stderr.text.replaceAll("\0", ""),
       stdoutBytes: reading.stdoutBytes,
       stderrBytes: reading.stderrBytes,
       updatedAt: new Date(),
     })
-    .where(eq(bashJobs.id, job.id))
+    // Запоздавшее чтение не может вернуть завершённому заданию `running`
+    // или затереть окончательный вывод/код выхода.
+    .where(and(eq(bashJobs.id, job.id), eq(bashJobs.status, "running")))
     .returning();
-  if (updated === undefined) return { kind: "not_found" };
+  if (updated === undefined) {
+    const current = await findJob(job.appSessionId, job.jobId);
+    return current === null ? { kind: "not_found" } : { kind: "ok", body: savedJobResponse(current) };
+  }
 
   await touchSandbox(sandbox, job, reading, status);
   return {
@@ -185,17 +208,17 @@ async function loadBashJob(appSessionId: string, jobId: string): Promise<BashJob
 
 /**
  * Продлевает занятость сессии, только пока задание живо и не дольше шести
- * часов с создания песочницы: вечный сервер с `&` не держит #24 навсегда.
+ * часов с начала задания: вечный сервер с `&` не держит #24 навсегда.
  */
 async function touchSandbox(
   sandbox: Sandbox,
-  previous: BashJob,
+  previous: JobSnapshot,
   reading: { readonly stdoutBytes: number; readonly stderrBytes: number },
   status: ReturnType<typeof jobStatus>,
 ): Promise<void> {
   if (status !== "running") return;
   const now = Date.now();
-  if (now - sandbox.createdAt.getTime() > ACTIVE_WINDOW_MS) return;
+  if (now - previous.createdAt.getTime() > BASH_JOB_KEEPALIVE_MS) return;
   const changed = reading.stdoutBytes !== previous.stdoutBytes || reading.stderrBytes !== previous.stderrBytes;
   const stale = now - sandbox.lastActiveAt.getTime() >= ACTIVE_TOUCH_MS;
   if (!changed && !stale) return;
@@ -204,4 +227,3 @@ async function touchSandbox(
     .set({ lastActiveAt: new Date(now) })
     .where(eq(sandboxes.id, sandbox.id));
 }
-

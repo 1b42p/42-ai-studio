@@ -341,7 +341,7 @@ async function seed(connection: SandboxConnection, artifact: Readonly<Artifact>)
 
 async function provision(
   backend: DaytonaBackend, name: string, appSessionId: string,
-  artifact: Readonly<Artifact>, wait: SandboxWait, previousId?: string,
+  artifact: Readonly<Artifact>, wait: SandboxWait, keyId: string, previousId?: string,
 ) {
   let machine: DaytonaMachine | undefined;
   try {
@@ -354,9 +354,10 @@ async function provision(
   } catch (error) {
     if (!isMissingSandbox(error) && !(error instanceof SandboxSessionGoneError)) throw error;
   }
+  // Без разрешения создания не трогаем чужую/параллельно найденную машину.
+  if (!machine) await beginSandboxLaunch(wait, { createKeyId: keyId });
   try {
     if (!machine) {
-      await beginSandboxLaunch(wait);
       machine = await backend.create({ name, appSessionId, dockerfile: artifact.dockerfile });
     }
     if (machine.state === "build_failed") throw new StudioSandboxError("sandbox_create_failed");
@@ -531,9 +532,10 @@ export function createDaytonaLifecycle() {
                       backend,
                       name,
                       session.id,
-                      artifact,
-                      wait,
-                      existing.daytonaSandboxId,
+                       artifact,
+                       wait,
+                       key.id,
+                       existing.daytonaSandboxId,
                     );
                     if (await checkpointMachine(session.id, key.id, machine, wait)) {
                       opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
@@ -562,7 +564,7 @@ export function createDaytonaLifecycle() {
                 if (!grant) throw new StudioSandboxError("capacity_exhausted");
                 const backend = backendForKey(grant);
                 try {
-                  created = await provision(backend, name, session.id, artifact, wait, existing?.daytonaSandboxId);
+                  created = await provision(backend, name, session.id, artifact, wait, grant.id, existing?.daytonaSandboxId);
                 } catch (error) {
                   if (isQuotaExceeded(error)) {
                     await exhaustPool(grant.id);

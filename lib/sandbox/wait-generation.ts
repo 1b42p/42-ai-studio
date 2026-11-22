@@ -59,14 +59,30 @@ export async function assertSandboxWait(wait: SandboxWait): Promise<void> {
 }
 
 /** Короткий барьер непосредственно перед отправкой create/start/recover в Daytona. */
-export async function beginSandboxLaunch(wait: SandboxWait): Promise<void> {
+export async function beginSandboxLaunch(
+  wait: SandboxWait,
+  options: { createKeyId?: string } = {},
+): Promise<void> {
   await getSqlClient().begin(async (tx) => {
     await tx`select pg_advisory_xact_lock(20261110, 24)`;
+    const keyId = options.createKeyId;
+    if (keyId !== undefined) {
+      const [session] = await tx`
+        select id from app_sessions where id = ${wait.appSessionId} and deleted_at is null
+          and sandbox_wait_generation = ${wait.generation}`;
+      if (!session) throw new StudioSandboxError("sandbox_wait_cancelled");
+      // PATCH enabled и барьер запуска сериализуются на строке ключа.
+      // Для пробуждения уже существующей машины enabled не требуется.
+      const [key] = await tx`
+        select id from daytona_keys where id = ${keyId} and enabled and deleted_at is null for update`;
+      if (!key) throw new StudioSandboxError("capacity_exhausted");
+    }
     const [row] = await tx`
       update sandboxes s set launch_started_at = now()
       from app_sessions a where s.app_session_id = ${wait.appSessionId} and a.id = s.app_session_id
          and a.deleted_at is null and a.sandbox_wait_generation = ${wait.generation} and s.wait_generation = ${wait.generation}
-        and s.state = 'starting' returning s.id`;
-    if (!row) throw new StudioSandboxError("sandbox_wait_cancelled");
+        and s.state = 'starting' ${keyId === undefined ? tx`` : tx`
+          and s.daytona_key_id = ${keyId} and s.starting_kind = 'create'`} returning s.id`;
+    if (!row) throw new StudioSandboxError(keyId === undefined ? "sandbox_wait_cancelled" : "capacity_exhausted");
   });
 }

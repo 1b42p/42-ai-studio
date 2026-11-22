@@ -190,7 +190,9 @@ export async function deleteDaytonaMachine(
   }
 }
 
-export function daytonaBackend(keyId: string, secret: string): DaytonaBackend {
+export function daytonaBackend(
+  keyId: string, secret: string, options: { requestTimeoutMs?: number } = {},
+): DaytonaBackend {
   const config = loadConfig();
   if (config.appTestMode) {
     return getFakeBackend(config.fakeSandboxDir!, secret, {
@@ -199,10 +201,10 @@ export function daytonaBackend(keyId: string, secret: string): DaytonaBackend {
       diskGb: config.sandboxDiskGb,
     });
   }
-  const cacheKey = `${keyId}:${createHash("sha256").update(secret).digest("hex")}`;
+  const cacheKey = `${keyId}:${createHash("sha256").update(secret).digest("hex")}:${options.requestTimeoutMs ?? "default"}`;
   let client = clients.get(cacheKey);
   if (client === undefined) {
-    client = new Daytona({ apiKey: secret, apiUrl: config.daytonaApiUrl });
+    client = new Daytona({ apiKey: secret, apiUrl: config.daytonaApiUrl, ...options });
     clients.set(cacheKey, client);
   }
   const daytona = client;

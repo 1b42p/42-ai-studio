@@ -3,9 +3,9 @@ import { and, asc, eq, gte, sql } from "drizzle-orm";
 import type { DaytonaMachine } from "@/agent/lib/daytona-backend";
 import { getDb, type Database } from "@/lib/db/client";
 import { agentSessions, appSessions, bashJobs, sandboxTaskCalls, sandboxWorkers, sessionEvents } from "@/lib/db/schema";
+import { BASH_JOB_KEEPALIVE_MS, jobStatus } from "./job-directory";
 
 const FRESH_EVENT_MS = 2 * 60_000;
-const MAX_JOB_AGE_MS = 6 * 60 * 60_000;
 
 type BusyDatabase = Pick<Database, "select" | "update">;
 
@@ -88,12 +88,12 @@ export async function sessionIsBusy(
   const jobs = await getDb().select({ jobId: bashJobs.jobId }).from(bashJobs).where(and(
     eq(bashJobs.appSessionId, appSessionId),
     eq(bashJobs.status, "running"),
-    gte(bashJobs.createdAt, new Date(now - MAX_JOB_AGE_MS)),
+    gte(bashJobs.createdAt, new Date(now - BASH_JOB_KEEPALIVE_MS)),
   ));
   for (const job of jobs) {
     try {
       const reading = await machine.readJobDirectory(job.jobId);
-      if (reading.found && reading.alive && reading.exitCode === null) return true;
+      if (reading.found && jobStatus(reading) === "running") return true;
     } catch {
       // Недоступность каталога не доказывает, что процесс завершился.
       return true;

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { beforeEach, expect, test } from "vitest";
 
-import { pickKey } from "../../agent/lib/daytona-key-pool";
+import { disableKey, pickKey } from "../../agent/lib/daytona-key-pool";
 import { awaitSlot } from "../../agent/lib/sandbox-queue";
 import { appSessions, queueEntries, sandboxes } from "../../lib/db/schema";
 import { removeSandboxQueueEntry } from "../../lib/sandbox/queue-state";
@@ -87,6 +87,28 @@ test("начатый запрос Daytona остаётся восстанови�
   expect(reserved.state).toBe("starting");
   expect(reserved.launchStartedAt).not.toBeNull();
   await expect(assertSandboxWait(wait)).rejects.toMatchObject({ code: "sandbox_wait_cancelled" });
+});
+
+test("отключение ключа отзывает неиспользованный резерв создания, но не пробуждение", async () => {
+  const key = await createDaytonaKey();
+  const row = await session();
+  const wait = await captureSandboxWait(row, "with-reservation");
+  const [entry] = await db().insert(queueEntries).values({
+    appSessionId: row.id, userId: row.userId, need: "create", waitGeneration: wait.generation,
+  }).returning();
+  expect(await pickKey({ cpu: 2, memoryGb: 4, diskGb: 8 }, {
+    appSessionId: row.id, queueEntryId: entry.id,
+  })).toMatchObject({ kind: "key" });
+  await disableKey(key.id);
+
+  await expect(beginSandboxLaunch(wait, { createKeyId: key.id }))
+    .rejects.toMatchObject({ code: "capacity_exhausted" });
+  const [reservation] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, row.id));
+  expect(reservation.launchStartedAt).toBeNull();
+
+  await db().update(sandboxes).set({ daytonaSandboxId: "existing", startingKind: "wake" })
+    .where(eq(sandboxes.appSessionId, row.id));
+  await expect(beginSandboxLaunch(wait)).resolves.toBeUndefined();
 });
 
 test("поздняя копия использует уже пробуждённую машину без новой квоты", async () => {
