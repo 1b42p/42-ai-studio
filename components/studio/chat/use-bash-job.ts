@@ -25,12 +25,14 @@ const SLOWEST_INTERVAL_MS = 10_000;
 const MINUTE_MS = 60_000;
 const TEN_MINUTES_MS = 10 * 60_000;
 const MAX_RETRY_MS = 30_000;
+const INITIAL_NOT_FOUND_ATTEMPTS = 4;
 
 interface Entry {
   state: BashJobPoll;
   readonly listeners: Set<(state: BashJobPoll) => void>;
   timer: ReturnType<typeof setTimeout> | null;
   failures: number;
+  initialMisses: number;
   shownAt: number;
   inflight: boolean;
   stopped: boolean;
@@ -118,6 +120,11 @@ async function poll(key: string, entry: Entry): Promise<void> {
       return;
     }
     if (response.status === 404) {
+      // Результат bash уже в потоке, а его строка может ещё не попасть в БД.
+      if (entry.state.job === null && ++entry.initialMisses < INITIAL_NOT_FOUND_ATTEMPTS) {
+        retry(key, entry);
+        return;
+      }
       update(entry, { kind: "not_found", job: entry.state.job, failures: 0 });
       stop(entry);
       return;
@@ -166,6 +173,7 @@ function subscribe(key: string, listener: (state: BashJobPoll) => void): () => v
       listeners: new Set(),
       timer: null,
       failures: 0,
+      initialMisses: 0,
       shownAt: Date.now(),
       inflight: false,
       stopped: false,

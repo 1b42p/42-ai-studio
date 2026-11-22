@@ -10,6 +10,8 @@ import { JOB_ID_PATTERN, type JobStatus } from "./job-types";
 
 /** Сколько байт хвоста каждого потока отдаёт маршрут (#11). */
 export const JOB_TAIL_BYTES = 64 * 1024;
+/** Защита фоновой команды от автостопа и вытеснения ограничена временем задания. */
+export const BASH_JOB_KEEPALIVE_MS = 6 * 60 * 60 * 1000;
 
 /** Прочитанное состояние каталога задания. */
 export interface JobDirectoryReading {
@@ -143,7 +145,7 @@ export async function readDaytonaJobDirectory(
 ): Promise<JobDirectoryReading> {
   if (!JOB_ID_PATTERN.test(jobId)) throw new Error("Некорректный идентификатор задания.");
   try {
-    const response = await sandbox.process.executeCommand(JOB_SCRIPT(jobId), undefined, undefined, 30);
+    const response = await sandbox.process.executeCommand(JOB_SCRIPT(jobId), undefined, undefined, 5);
     if (response.exitCode !== 0) throw new StudioSandboxError("daytona_unavailable");
     return parseJobDirectory(response.result);
   } catch (error) {

@@ -7,10 +7,11 @@ import type { MessageStreamEvent } from "eve/client";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { loadConfig } from "../../lib/config";
+import { getLockSqlClient } from "../../lib/db/client";
 import { daytonaKeys, sandboxes } from "../../lib/db/schema";
 import { appOutput, fetchApp } from "./support/app";
 import { loginAs } from "./support/auth";
-import { createSessionAs, sendAndWait } from "./support/chat";
+import { createSessionAs, eveClientAs, readStreamUntil, sendAndWait } from "./support/chat";
 import { createUser, db, resetDatabase } from "./support/db";
 import { fakeSandbox } from "./support/fake-sandbox";
 import { uploadBytes } from "./support/uploads";
@@ -265,6 +266,43 @@ describe("список", () => {
 });
 
 describe("операции", () => {
+  test("отключение после выдачи места переводит создание на другой ключ", async () => {
+    const operator = await createUser({ isOperator: true });
+    const user = await createUser();
+    const first = await jsonOf(await api("/api/admin/keys", {
+      user: operator, method: "POST", body: { label: "A", apiKey: SECRET },
+    }));
+    const second = await jsonOf(await api("/api/admin/keys", {
+      user: operator, method: "POST", body: { label: "B", apiKey: OTHER },
+    }));
+    const { id } = await createSessionAs(user);
+    await fakeSandbox.seed(id, { "/workspace/notes.txt": "файл после смены ключа" });
+    const client = await eveClientAs(user, id);
+
+    const lock = await getLockSqlClient().reserve();
+    await lock`select pg_advisory_lock(1, hashtext(${id}::text))`;
+    const turn = client.sessions.create({ message: READ_FILE })
+      .then(({ response }) => readStreamUntil(response, "session.waiting", { timeoutMs: 60_000 }));
+    // Наблюдаем рано отклонённый поток, пока тест удерживает блокировку.
+    void turn.catch(() => {});
+    try {
+      await expect.poll(async () => {
+        const [row] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, id));
+        return row;
+      }, { timeout: 30_000 }).toMatchObject({ daytonaKeyId: first.id, state: "starting" });
+      expect((await api(`/api/admin/keys/${first.id}`, {
+        user: operator, method: "PATCH", body: { enabled: false },
+      })).status).toBe(200);
+    } finally {
+      try { await lock`select pg_advisory_unlock(1, hashtext(${id}::text))`; }
+      finally { lock.release(); }
+    }
+    expectRead(await turn, "файл после смены ключа");
+    const [machine] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, id));
+    expect(machine.daytonaKeyId).toBe(second.id);
+    expect(await fakeSandbox.creationLog(id)).toHaveLength(1);
+  }, 90_000);
+
   test("отключение уводит новые сессии, включение возвращает ключ", async () => {
     const operator = await createUser({ isOperator: true });
     const user = await createUser();
