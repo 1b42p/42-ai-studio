@@ -3,9 +3,10 @@ import { defineEval, type EveEvalContext, type ToolStub } from "eve/evals";
 import { satisfies } from "eve/evals/expect";
 
 import { blockedRead, emptySearch, webSession } from "../web/fixtures";
+import { documentImages, documentPaths, type DocumentName } from "./media-fixture";
 import recordings from "./recordings.json";
 
-type DocumentName = keyof typeof recordings;
+export { documentPaths } from "./media-fixture";
 
 const PACKAGED = ["references/formats.md", "references/charts.md", "scripts/inspect_document.py"];
 const SKILL = "reading-documents";
@@ -16,12 +17,6 @@ const NEXT_COMMAND = "\\s*(?:&&|;|\\n)\\s*";
 
 function escapePattern(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function documentPaths(name: DocumentName) {
-  const input = `/workspace/.eve/attachments/ab12/${name}`;
-  const output = `/workspace/source/${name.replace(".", "-")}`;
-  return { input, output };
 }
 
 function pathForms(path: string) {
@@ -70,7 +65,9 @@ export async function documentSession(t: EveEvalContext, name: DocumentName) {
   const { input, output } = documentPaths(name);
   const recording = recordings[name];
   const skillDirectory = `(?:(?:/root|~|\\$HOME|\\$\\{HOME\\})/\\.agents/)?skills/${SKILL}`;
-  const extract = `python3?\\s+["']?${skillDirectory}/scripts/inspect_document\\.py["']?\\s+${shellPath(input)}` +
+  const createDirectory = `mkdir\\s+-p\\s+${shellPath(output)}`;
+  const extract = `(?:${createDirectory}${NEXT_COMMAND})?` +
+    `python3?\\s+["']?${skillDirectory}/scripts/inspect_document\\.py["']?\\s+${shellPath(input)}` +
     `(?:\\s+--out(?:=|\\s+)${shellPath(output)})?`;
   const references: ToolStub[] = PACKAGED.map((relative, index) => ({
     id: `document-package-${index}`,
@@ -86,10 +83,20 @@ export async function documentSession(t: EveEvalContext, name: DocumentName) {
     match: { filePath: { enum: pathForms(`${output}/${relative}`) } },
     outcome: { response: readResponse(`${output}/${relative}`, content) },
   }));
+  const images: ToolStub[] = documentImages(name).map(({ path, size, width, height }, index) => ({
+    id: `document-image-${index}`,
+    tool: "read_file",
+    match: { filePath: { enum: pathForms(path) } },
+    outcome: { response: {
+      path, content: `Image ${width}x${height}`, totalLines: 1, truncated: false,
+      file: { mediaType: "image/png", size, width, height },
+    } },
+  }));
 
   return webSession(t, [
     ...references,
     ...files,
+    ...images,
     { id: "document-other-files", tool: "read_file", outcome: { throw: { message: "Файл не найден или не является текстовым." } } },
     ...withBootstrap("document-commands", extract, recording.stdout.replace("{output}", output)),
     bashFixture("document-home", `^\\s*${HOME}\\s*$`, "/root\n"),
@@ -105,11 +112,12 @@ export async function documentSession(t: EveEvalContext, name: DocumentName) {
       `^\\s*cat\\s+["']?${skillDirectory}/${escapePattern(relative)}["']?\\s*$`,
       readFileSync(`agent/skills/${SKILL}/${relative}`, "utf8"),
     )),
-    bashFixture(
+    ...withBootstrap(
       "document-input-list",
-      `^\\s*ls(?:\\s+-[alh]+)?\\s+${shellPath(input)}(?:\\s+${shellPath("/workspace/.eve/attachments/ab12")})?\\s*$`,
+      `ls(?:\\s+-[alh]+)?\\s+${shellPath(input)}(?:\\s+${shellPath("/workspace/.eve/attachments/ab12")})?`,
       `${input}\n`,
     ),
+    bashFixture("document-create-output", `^\\s*${createDirectory}\\s*$`, ""),
     bashFixture("document-output-list", `^\\s*ls(?:\\s+-[alh]+)?\\s+${shellPath(output)}\\s*$`, `${Object.keys(recording.files).join("\n")}\n`),
     { id: "document-other-commands", tool: "bash", outcome: { throw: { message: "Для этапа чтения эта команда не предусмотрена." } } },
     blockedRead,
@@ -128,7 +136,7 @@ export function documentCases(name: DocumentName, kind: string, mediaType: strin
     async test(t) {
       const session = await documentSession(t, name);
       const turn = await session.send(
-        `Хочу сделать ролик по приложенному файлу. Пока только прочитай текст, выпиши показатели по Москве и Казани с единицами; ` +
+        `Хочу сделать ролик по приложенному файлу. Пока только прочитай текст и выпиши показатели по Москве и Казани. Если единицы в документе не указаны, так и скажи; ` +
         `картинки и сам ролик пока не нужны.\nAttached file ${input} (${mediaType})`,
       );
       t.succeeded();

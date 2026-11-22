@@ -90,6 +90,11 @@ test.each([
     kind: "stub",
     outcome: { response: { exitCode: 0, stdout: expect.stringMatching(/^\/root\n/u) } },
   });
+  expect(playback.call({
+    callId: "prepare-output",
+    tool: "bash",
+    input: { command: `mkdir -p ${output} && ${command}` },
+  })).toMatchObject({ kind: "stub", outcome: { response: { exitCode: 0 } } });
   expect(playback.call({ callId: "table", tool: "read_file", input: { filePath: `${output}/${table}` } })).toMatchObject({
     kind: "stub",
     outcome: { response: { content: expect.stringContaining(value) } },
@@ -101,6 +106,16 @@ test.each([
   })).toMatchObject({ kind: "stub", outcome: { throw: expect.any(Object) } });
   expect(playback.call({ callId: "bad-output", tool: "bash", input: { command: `${command}-other` } })).toMatchObject({
     kind: "stub", outcome: { throw: expect.any(Object) },
+  });
+});
+
+test("PPTX возвращает настоящую иллюстрацию из разбора", async () => {
+  const playback = new StubPlayback(parseToolStubs(await capture((t) => documentSession(t, "deck.pptx"))));
+  const { output } = documentPaths("deck.pptx");
+  const path = `${output}/images/s1-1.png`;
+  expect(playback.call({ callId: "drawing", tool: "read_file", input: { filePath: path } })).toMatchObject({
+    kind: "stub",
+    outcome: { response: { path, file: { mediaType: "image/png", width: expect.any(Number), height: expect.any(Number) } } },
   });
 });
 

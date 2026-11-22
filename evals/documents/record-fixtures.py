@@ -9,8 +9,10 @@
 # ///
 
 import json
+from base64 import b64encode
 from pathlib import Path
 from shutil import copyfile
+from struct import unpack
 from subprocess import run
 from sys import executable
 from tempfile import TemporaryDirectory
@@ -26,6 +28,19 @@ sources = {
 }
 
 recordings = {}
+
+
+def png_record(path):
+    data = path.read_bytes()
+    width, height = unpack(">II", data[16:24])
+    return {
+        "base64": b64encode(data).decode("ascii"),
+        "size": len(data),
+        "width": width,
+        "height": height,
+    }
+
+
 with TemporaryDirectory(prefix="studio-document-fixtures-") as temporary:
     inputs = Path(temporary) / "inputs"
     inputs.mkdir()
@@ -46,6 +61,10 @@ with TemporaryDirectory(prefix="studio-document-fixtures-") as temporary:
                 file.relative_to(output).as_posix(): file.read_text(encoding="utf-8")
                 for file in sorted(output.rglob("*"))
                 if file.suffix in {".md", ".csv"}
+            },
+            "images": {
+                file.relative_to(output).as_posix(): png_record(file)
+                for file in sorted(output.glob("images/*.png"))
             },
         }
 
