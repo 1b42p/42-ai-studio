@@ -373,6 +373,17 @@ export type NewSandbox = typeof sandboxes.$inferInsert;
 export type SandboxState = (typeof sandboxState.enumValues)[number];
 export type SandboxLaunch = (typeof sandboxLaunch.enumValues)[number];
 
+/** Идентичность машины не исчезает при перепривязке строки sandboxes. */
+export const sandboxErasureTargets = pgTable("sandbox_erasure_targets", {
+  appSessionId: uuid("app_session_id").notNull().references(() => appSessions.id, { onDelete: "cascade" }),
+  daytonaKeyId: uuid("daytona_key_id").notNull().references(() => daytonaKeys.id),
+  /** Пустая строка: create отправлен, ID ещё нет; искать по имени сессии. */
+  daytonaSandboxId: text("daytona_sandbox_id").notNull(),
+}, (table) => [
+  uniqueIndex("sandbox_erasure_targets_identity_idx").on(table.appSessionId, table.daytonaKeyId, table.daytonaSandboxId),
+  index("sandbox_erasure_targets_machine_idx").on(table.daytonaKeyId, table.daytonaSandboxId),
+]);
+
 export const queueReason = pgEnum("queue_reason", ["capacity", "own_session_busy"]);
 
 export const queueEntries = pgTable("queue_entries", {

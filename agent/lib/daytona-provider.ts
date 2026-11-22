@@ -237,10 +237,10 @@ async function checkpointMachine(
  * сразу попадает в pending, чтобы повторный `deleteKey` её нашёл, даже если
  * удаление сейчас сорвётся.
  */
-async function discardMachine(keyId: string, machine: DaytonaMachine): Promise<void> {
-  await rememberPendingDeletion(keyId, machine.id);
+async function discardMachine(keyId: string, machine: DaytonaMachine, appSessionId: string): Promise<void> {
+  await rememberPendingDeletion(keyId, machine.id, appSessionId);
   try {
-    await machine.delete();
+    await machine.delete(undefined, true);
     await forgetPendingDeletion(keyId, machine.id);
   } catch (error) {
     console.error("[sandbox] cleanup_pending", errorStatus(error) ?? "transport");
@@ -522,7 +522,7 @@ export function createDaytonaLifecycle() {
                   const found = await backend.get(name);
                   if (deleted) {
                     // Машину удалённого ключа не будим и не сеем: сразу в очистку.
-                    await discardMachine(key.id, found);
+                    await discardMachine(key.id, found, session.id);
                   } else {
                     if (found.state !== "started" && !grant) {
                       throw new StudioSandboxError("capacity_exhausted");
@@ -539,7 +539,7 @@ export function createDaytonaLifecycle() {
                       opened = { machine, state: { keyId: key.id, sandboxId: machine.id } };
                     } else {
                       await assertSandboxWait(wait);
-                      await discardMachine(key.id, machine);
+                      await discardMachine(key.id, machine, session.id);
                     }
                   }
                 } catch (error) {
@@ -579,7 +579,7 @@ export function createDaytonaLifecycle() {
                   created = undefined;
                 } else {
                   await assertSandboxWait(wait);
-                  await discardMachine(grant.id, created);
+                  await discardMachine(grant.id, created, session.id);
                   created = undefined;
                   throw new StudioSandboxError("capacity_exhausted");
                 }

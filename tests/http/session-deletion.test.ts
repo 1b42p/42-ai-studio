@@ -18,7 +18,7 @@ import {
 } from "../../lib/db/schema";
 import { DELETED_KEY_MARKER, deleteKey } from "../../agent/lib/daytona-key-pool";
 import { createDaytonaLifecycle } from "../../agent/lib/daytona-provider";
-import { daytonaBackend } from "../../agent/lib/daytona-backend";
+import { daytonaBackend, daytonaSandboxName } from "../../agent/lib/daytona-backend";
 import { fetchApp, startApp } from "./support/app";
 import { loginAs } from "./support/auth";
 import { createSessionAs, eveClientAs, readStreamUntil, sendAndWait } from "./support/chat";
@@ -41,12 +41,13 @@ async function row(id: string) {
   return (await db().select().from(appSessions).where(eq(appSessions.id, id)))[0];
 }
 
-async function fixture(options: { sandbox?: boolean; files?: boolean } = {}) {
+async function fixture(options: { sandbox?: boolean; files?: boolean; organization?: string } = {}) {
   const user = await createUser();
   const { id } = await createSessionAs(user);
   let key;
   if (options.sandbox) {
     key = await createDaytonaKey();
+    if (options.organization) await fakeSandbox.setOrganization("dtn_test_secret_value", options.organization);
     await fakeSandbox.seed(id, { "/workspace/keep.txt": "Удаляемый файл" });
     await sendAndWait(user, id, '/tool read_file {"filePath":"/workspace/keep.txt"}');
   } else {
@@ -320,6 +321,52 @@ describe("удаление всех данных сессии", () => {
     expect((await fakeSandbox.counters()).deleted).toBe(1);
   }, 90_000);
 
+  test("отказ чужой организации не блокирует удаление беседы без песочницы", async () => {
+    const target = await fixture({ files: true });
+    const secret = "dtn_unrelated_outage";
+    await createDaytonaKey({ apiKey: secret });
+    await fakeSandbox.rejectKey(secret, "unavailable");
+    expect((await remove(target.id, target.user)).status).toBe(204);
+    expect(await s3().listKeys(target.prefix)).toEqual([]);
+  });
+
+  test("удаляет машину после прерванного создания, когда осталась только отметка запуска", async () => {
+    const target = await fixture();
+    const secret = "dtn_create_interrupted";
+    const key = await createDaytonaKey({ apiKey: secret });
+    await db().insert(sandboxes).values({
+      appSessionId: target.id, daytonaKeyId: key.id, daytonaSandboxId: "",
+      state: "starting", startingKind: "create", launchStartedAt: new Date(),
+    });
+    const backend = daytonaBackend(key.id, secret);
+    const machine = await backend.create({
+      appSessionId: target.id, name: daytonaSandboxName(target.eveId), dockerfile: "",
+    });
+
+    expect((await remove(target.id, target.user)).status).toBe(204);
+    await expect(backend.get(machine.id)).rejects.toMatchObject({ statusCode: 404 });
+  }, 90_000);
+
+  for (const rejection of ["unauthorized", "forbidden"] as const) {
+    test(`отказ ${rejection} исходного ключа не мешает удалению с ключом той же организации`, async () => {
+      const organizationId = "shared-erasure";
+      const target = await fixture({ sandbox: true, organization: organizationId });
+      const [machine] = await db().select().from(sandboxes).where(eq(sandboxes.appSessionId, target.id));
+      const secret = "dtn_same_org";
+      const offline = "dtn_same_org_offline";
+      await createDaytonaKey({ apiKey: offline, usage: { organizationId } });
+      await fakeSandbox.setOrganization(offline, organizationId);
+      await fakeSandbox.rejectKey(offline, "unavailable");
+      const alternate = await createDaytonaKey({ apiKey: secret, usage: { organizationId }, enabled: false });
+      await fakeSandbox.setOrganization(secret, organizationId);
+      await fakeSandbox.rejectKey("dtn_test_secret_value", rejection);
+
+      expect((await remove(target.id, target.user)).status).toBe(204);
+      await expect(daytonaBackend(alternate.id, secret).get(machine.daytonaSandboxId))
+        .rejects.toMatchObject({ statusCode: 404 });
+    }, 90_000);
+  }
+
   for (const retry of [false, true]) {
     test(`gone после отказа удаления ключа: машина удаляется${retry ? " при повторе" : ""}`, async () => {
       const target = await fixture({ sandbox: true, files: true });
@@ -393,6 +440,14 @@ describe("удаление всех данных сессии", () => {
     await db().update(sandboxes)
       .set({ daytonaKeyId: replacementKey.id, daytonaSandboxId: replacement.id })
       .where(eq(sandboxes.appSessionId, target.id));
+
+    const unrelatedSecret = "dtn_unrelated_outage";
+    await createDaytonaKey({ apiKey: unrelatedSecret });
+    await fakeSandbox.rejectKey(unrelatedSecret, "unavailable");
+    await fakeSandbox.rejectKey("dtn_test_secret_value", "unavailable");
+    expect((await remove(target.id, target.user)).status).toBe(502);
+    await expectHidden(target.id, target.user);
+    await fakeSandbox.rejectKey("dtn_test_secret_value", null);
 
     expect((await remove(target.id, target.user)).status).toBe(204);
     await expect(daytonaBackend(target.key!.id, "dtn_test_secret_value").get(former.daytonaSandboxId))

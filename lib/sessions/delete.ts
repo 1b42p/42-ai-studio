@@ -3,17 +3,14 @@ import { setTimeout as delay } from "node:timers/promises";
 import postgres from "postgres";
 import { Client } from "eve/client";
 
-import { deleteDaytonaMachine, daytonaSandboxName } from "@/agent/lib/daytona-backend";
-import { DELETED_KEY_MARKER } from "@/agent/lib/daytona-key-pool";
 import { signInternalToken } from "@/lib/auth/internal-tokens";
 import { loadConfig } from "@/lib/config";
 import { getStorage } from "@/lib/s3";
-import { DAYTONA_KEY_PURPOSE, decryptSecret } from "@/lib/secrets";
-import { errorStatus, isMissingSandbox } from "@/lib/sandbox/errors";
+import { errorStatus } from "@/lib/sandbox/errors";
 import { recordSandboxTransition } from "@/lib/usage/sandbox";
 import { cancellableQuery as query } from "@/lib/db/cancellable-query";
 import { enqueueLateUploadCleanup } from "./late-upload-cleanup";
-import { deleteHistoricalDaytonaMachines } from "./daytona-erasure";
+import { deleteSessionDaytonaMachines } from "./daytona-erasure";
 
 export interface SessionDeletionResult {
   status: "deleted" | "not_found" | "conflict" | "upstream_error";
@@ -179,46 +176,14 @@ export async function deleteSessionData(
         });
         if (!maintenanceClaimed) await delay(100, undefined, { signal: stepSignal });
       }
-      const [sandbox] = await query(sql!<{
-        id: string; daytonaSandboxId: string; state: string;
-        keyId: string; encrypted: string; keyDeletedAt: Date | null;
-        pendingDeletion: boolean;
-      }[]>`select s.id, s.daytona_sandbox_id as "daytonaSandboxId", s.state,
-        k.id as "keyId", k.api_key_encrypted as encrypted, k.deleted_at as "keyDeletedAt",
-        exists (select 1 from pending_sandbox_deletions p
-          where p.daytona_key_id = s.daytona_key_id
-            and p.daytona_sandbox_id = s.daytona_sandbox_id) as "pendingDeletion"
-        from sandboxes s join daytona_keys k on k.id = s.daytona_key_id
-        where s.app_session_id = ${appSessionId}`, stepSignal);
-      let deletedId: string | undefined;
-      if (sandbox && (sandbox.state !== "gone" || sandbox.pendingDeletion)) {
-        if (!(sandbox.keyDeletedAt && sandbox.encrypted === DELETED_KEY_MARKER)) {
-          const secret = decryptSecret(sandbox.encrypted, config.secretsEncryptionKey, DAYTONA_KEY_PURPOSE);
-          const identity = sandbox.daytonaSandboxId ||
-            (session.eveSessionId ? daytonaSandboxName(session.eveSessionId) : undefined);
-          if (!identity) throw new Error("Sandbox identity missing");
-          try {
-            await deleteDaytonaMachine(sandbox.keyId, secret, identity, {
-              signal: stepSignal, deadline: stepDeadline,
-            });
-          } catch (error) {
-            stepSignal.throwIfAborted();
-            if (!isMissingSandbox(error)) throw error;
-          }
-          deletedId = sandbox.daytonaSandboxId || undefined;
-        }
-        await query(sql!`delete from pending_sandbox_deletions
-          where daytona_key_id = ${sandbox.keyId}
-            and daytona_sandbox_id = ${sandbox.daytonaSandboxId}`, stepSignal);
+      await deleteSessionDaytonaMachines(sql!, session, { signal: stepSignal, deadline: stepDeadline });
+      const [sandbox] = await query(sql!<{ id: string }[]>`
+        select id from sandboxes where app_session_id = ${appSessionId} and state <> 'gone'`, stepSignal);
+      if (sandbox) {
         await recordSandboxTransition({
           sandboxId: sandbox.id, newState: "gone", source: "app",
           changes: { startingSince: null, startingKind: null, launchStartedAt: null },
           signal: stepSignal,
-        });
-      }
-      if (session.eveSessionId || sandbox) {
-        await deleteHistoricalDaytonaMachines(sql!, appSessionId, deletedId, {
-          signal: stepSignal, deadline: stepDeadline,
         });
       }
       stepSignal.throwIfAborted();

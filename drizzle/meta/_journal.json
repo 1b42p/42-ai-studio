@@ -183,6 +183,13 @@
       "when": 1795365890907,
       "tag": "0025_late_upload_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795367006262,
+      "tag": "0026_sandbox_erasure_targets",
+      "breakpoints": true
     }
   ]
 }

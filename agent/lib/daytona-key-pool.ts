@@ -14,6 +14,7 @@ import { getDb, getSqlClient } from "@/lib/db/client";
 import {
   daytonaKeys,
   pendingSandboxDeletions,
+  sandboxErasureTargets,
   sandboxes,
   type DaytonaKey,
   type SandboxLaunch,
@@ -413,21 +414,29 @@ export interface DeleteKeyOptions {
 }
 
 /** Запоминает машину до сетевого удаления; повторная запись безопасна. */
-export async function rememberPendingDeletion(keyId: string, sandboxId: string): Promise<void> {
-  await getDb()
-    .insert(pendingSandboxDeletions)
-    .values({ daytonaKeyId: keyId, daytonaSandboxId: sandboxId })
-    .onConflictDoNothing();
+export async function rememberPendingDeletion(keyId: string, sandboxId: string, appSessionId?: string): Promise<void> {
+  await getDb().transaction(async (tx) => {
+    await tx.insert(pendingSandboxDeletions)
+      .values({ daytonaKeyId: keyId, daytonaSandboxId: sandboxId })
+      .onConflictDoNothing();
+    if (appSessionId) await tx.insert(sandboxErasureTargets)
+      .values({ appSessionId, daytonaKeyId: keyId, daytonaSandboxId: sandboxId })
+      .onConflictDoNothing();
+  });
 }
 
 /** Убирает машину из очереди после подтверждённого удаления или 404. */
 export async function forgetPendingDeletion(keyId: string, sandboxId: string): Promise<void> {
-  await getDb()
-    .delete(pendingSandboxDeletions)
-    .where(and(
+  await getDb().transaction(async (tx) => {
+    await tx.delete(pendingSandboxDeletions).where(and(
       eq(pendingSandboxDeletions.daytonaKeyId, keyId),
       eq(pendingSandboxDeletions.daytonaSandboxId, sandboxId),
     ));
+    await tx.delete(sandboxErasureTargets).where(and(
+      eq(sandboxErasureTargets.daytonaKeyId, keyId),
+      eq(sandboxErasureTargets.daytonaSandboxId, sandboxId),
+    ));
+  });
 }
 
 /**
@@ -541,7 +550,7 @@ export async function deleteKey(
         });
       } else {
         const machine = await backend.get(sandboxId);
-        await machine.delete();
+        await machine.delete(undefined, true);
       }
       await forgetPendingDeletion(keyId, sandboxId);
       await markGone(rowIds, sandboxId);

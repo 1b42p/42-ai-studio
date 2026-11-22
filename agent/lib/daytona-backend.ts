@@ -120,22 +120,11 @@ const ERASURE_WORKER = String.raw`
 const { parentPort, workerData } = require("node:worker_threads");
 (async () => {
   try {
-    const { Daytona, SandboxState } = require(workerData.modulePath);
+    const { Daytona } = require(workerData.modulePath);
     const client = new Daytona({
       apiKey: workerData.secret, apiUrl: workerData.apiUrl,
       requestTimeoutMs: Math.max(1, workerData.deadline - Date.now())
     });
-    if (workerData.operation === "list") {
-      const ids = [];
-      const states = Object.values(SandboxState).filter((state) =>
-        state !== SandboxState.DESTROYED && state !== SandboxState.UNKNOWN_DEFAULT_OPEN_API,
-      );
-      for await (const sandbox of client.list({ labels: { studio_session: workerData.appSessionId }, states })) {
-        if (sandbox.labels?.studio_session === workerData.appSessionId) ids.push(sandbox.id);
-      }
-      parentPort.postMessage({ ok: true, data: ids });
-      return;
-    }
     const sandbox = await client.get(workerData.sandboxId);
     if (workerData.expectedSessionId && sandbox.labels?.studio_session !== workerData.expectedSessionId) {
       parentPort.postMessage({ ok: false, status: 409 });
@@ -176,37 +165,16 @@ export async function deleteDaytonaMachine(
     signal.throwIfAborted();
     return;
   }
-  await runErasureWorker<void>(secret, {
-    operation: "delete", sandboxId, expectedSessionId: options.expectedSessionId,
+  await runErasureWorker(secret, {
+    sandboxId, expectedSessionId: options.expectedSessionId,
   }, options);
 }
 
-/** Возвращает только машины с точной меткой сессии, включая архивные. */
-export async function findDaytonaMachinesForSession(
-  keyId: string,
+async function runErasureWorker(
   secret: string,
-  appSessionId: string,
-  options: ErasureOptions,
-): Promise<string[]> {
-  options.signal.throwIfAborted();
-  if (loadConfig().appTestMode) {
-    const ids: string[] = [];
-    for await (const machine of daytonaBackend(keyId, secret).list()) {
-      options.signal.throwIfAborted();
-      if (machine.labels.studio_session === appSessionId) ids.push(machine.id);
-    }
-    options.signal.throwIfAborted();
-    return ids;
-  }
-  return runErasureWorker<string[]>(secret, { operation: "list", appSessionId }, options);
-}
-
-async function runErasureWorker<T>(
-  secret: string,
-  request: { operation: "delete"; sandboxId: string; expectedSessionId?: string } |
-    { operation: "list"; appSessionId: string },
+  request: { sandboxId: string; expectedSessionId?: string },
   { deadline, signal }: ErasureOptions,
-): Promise<T> {
+): Promise<void> {
   signal.throwIfAborted();
   const require = createRequire(resolve("package.json"));
   const worker = new Worker(ERASURE_WORKER, {
@@ -222,13 +190,13 @@ async function runErasureWorker<T>(
   worker.stderr.resume();
   let abort: (() => void) | undefined;
   try {
-    const data = await new Promise<T>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       abort = () => reject(signal.reason);
       signal.addEventListener("abort", abort, { once: true });
       worker.once("error", () => reject(new Error("Daytona erasure worker failed")));
       worker.once("exit", () => reject(new Error("Daytona erasure worker exited")));
-      worker.once("message", (result: { ok: true; data: T } | { ok: false; status?: number }) => {
-        if (result.ok) resolve(result.data);
+      worker.once("message", (result: { ok: true } | { ok: false; status?: number }) => {
+        if (result.ok) resolve();
         else if (result.status === 404) reject(new DaytonaNotFoundError("Sandbox not found", 404));
         else if (result.status === 409) reject(new DaytonaConflictError("Sandbox state change in progress", 409));
         else reject(Object.assign(new Error("Daytona erasure request failed"), { status: result.status }));
@@ -236,7 +204,6 @@ async function runErasureWorker<T>(
       if (signal.aborted) abort();
     });
     signal.throwIfAborted();
-    return data;
   } finally {
     if (abort) signal.removeEventListener("abort", abort);
     await worker.terminate();
