@@ -1,15 +1,14 @@
 import { diffLines } from "diff";
 
-import { contentLineCount } from "./line-counts";
-
 /** Строк контекста вокруг каждого фрагмента изменений. */
 export const DIFF_CONTEXT_LINES = 3;
 
 /** Сколько строк diff показывать до кнопки «Показать все». */
 export const DIFF_PREVIEW_LINES = 200;
 
-/** Порог: при большем числе строк файла diff не рисуем. */
-export const DIFF_TOO_LARGE_LINES = 4000;
+/** Предел строк в раскрытом diff, включая контекст и пропуски. */
+const DIFF_MAX_ROWS = 4000;
+const DIFF_TIMEOUT_MS = 50;
 
 export type DiffRow =
   | {
@@ -23,81 +22,62 @@ export type DiffRow =
       readonly skipped: number;
     };
 
-interface FlatLine {
-  readonly kind: "context" | "added" | "removed";
-  readonly text: string;
-  readonly oldLine: number | null;
-  readonly newLine: number | null;
-}
-
-function splitChangeLines(value: string): string[] {
-  if (value.length === 0) return [];
-  const parts = value.split("\n");
-  if (value.endsWith("\n")) parts.pop();
-  return parts.map((line, index, list) =>
-    index < list.length - 1 || value.endsWith("\n") ? `${line}\n` : line,
-  );
-}
-
-/** Полный построчный diff без сжатия контекста. */
-export function flattenDiffLines(oldContent: string, newContent: string): FlatLine[] {
-  const rows: FlatLine[] = [];
-  let oldLine = 1;
-  let newLine = 1;
-  for (const change of diffLines(oldContent, newContent)) {
-    const lines = splitChangeLines(change.value);
-    for (const text of lines) {
-      if (change.added) {
-        rows.push({ kind: "added", text, oldLine: null, newLine: newLine++ });
-      } else if (change.removed) {
-        rows.push({ kind: "removed", text, oldLine: oldLine++, newLine: null });
-      } else {
-        rows.push({ kind: "context", text, oldLine: oldLine++, newLine: newLine++ });
-      }
-    }
+function tailOffset(value: string, lines: number): number {
+  let offset = value.length - (value.endsWith("\n") ? 1 : 0);
+  for (let line = 0; line < lines; line += 1) {
+    offset = value.lastIndexOf("\n", offset - 1);
   }
-  return rows;
+  return offset + 1;
 }
 
 /**
- * Diff с тремя строками контекста и маркерами «⋯ N строк без изменений»
- * между далёкими фрагментами.
+ * Diff с тремя строками контекста. Длинные неизменённые участки не
+ * разворачиваются в строки; null означает, что исчерпан лимит показа.
  */
-export function buildDiffRows(oldContent: string, newContent: string): DiffRow[] {
-  const flat = flattenDiffLines(oldContent, newContent);
-  if (flat.length === 0) return [];
-
-  const changed = new Set<number>();
-  for (let index = 0; index < flat.length; index += 1) {
-    if (flat[index]!.kind !== "context") changed.add(index);
-  }
-  if (changed.size === 0) {
-    return flat.map((row) => ({ ...row }));
-  }
-
-  const keep = new Array<boolean>(flat.length).fill(false);
-  for (const index of changed) {
-    const from = Math.max(0, index - DIFF_CONTEXT_LINES);
-    const to = Math.min(flat.length - 1, index + DIFF_CONTEXT_LINES);
-    for (let cursor = from; cursor <= to; cursor += 1) keep[cursor] = true;
-  }
+export function buildDiffRows(oldContent: string, newContent: string): DiffRow[] | null {
+  const changes = diffLines(oldContent, newContent, {
+    maxEditLength: DIFF_MAX_ROWS,
+    timeout: DIFF_TIMEOUT_MS,
+  });
+  if (!changes) return null;
 
   const rows: DiffRow[] = [];
-  let index = 0;
-  while (index < flat.length) {
-    if (keep[index]) {
-      rows.push({ ...flat[index]! });
-      index += 1;
-      continue;
+  let oldLine = 1;
+  let newLine = 1;
+  for (const [index, { added, removed, count, value }] of changes.entries()) {
+    const kind = added ? "added" : removed ? "removed" : "context";
+    let head = count;
+    let tail = 0;
+    if (kind === "context" && changes.length > 1) {
+      head = index > 0 ? Math.min(count, DIFF_CONTEXT_LINES) : 0;
+      tail = index < changes.length - 1 ? Math.min(count - head, DIFF_CONTEXT_LINES) : 0;
     }
-    let end = index;
-    while (end < flat.length && !keep[end]) end += 1;
-    rows.push({ kind: "skip", skipped: end - index });
-    index = end;
+    const skipped = count - head - tail;
+    if (rows.length + head + tail + Number(skipped > 0) > DIFF_MAX_ROWS) return null;
+
+    function appendLines(from: number, length: number) {
+      let offset = from;
+      for (let line = 0; line < length; line += 1) {
+        const newline = value.indexOf("\n", offset);
+        const end = newline === -1 ? value.length : newline + 1;
+        rows.push({
+          kind,
+          text: value.slice(offset, end),
+          oldLine: added ? null : oldLine++,
+          newLine: removed ? null : newLine++,
+        });
+        offset = end;
+      }
+      return offset;
+    }
+
+    const headEnd = appendLines(0, head);
+    if (skipped > 0) {
+      rows.push({ kind: "skip", skipped });
+      oldLine += skipped;
+      newLine += skipped;
+    }
+    if (tail > 0) appendLines(skipped > 0 ? tailOffset(value, tail) : headEnd, tail);
   }
   return rows;
-}
-
-export function isDiffTooLarge(oldContent: string, newContent: string): boolean {
-  return Math.max(contentLineCount(oldContent), contentLineCount(newContent)) > DIFF_TOO_LARGE_LINES;
 }

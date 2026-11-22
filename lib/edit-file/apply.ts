@@ -103,9 +103,8 @@ export function applyEditFile(
     throw new EditFileError("ambiguous", path, occurrences);
   }
 
-  const newContent = replaceAll
-    ? existing.replaceAll(oldString, newString)
-    : existing.replace(oldString, newString);
+  // A replacement callback inserts its return value without interpreting $ sequences.
+  const newContent = existing.replaceAll(oldString, () => newString);
 
   if (utf8ByteLength(newContent) > EDIT_FILE_MAX_BYTES) {
     throw new EditFileError("too_large", path);

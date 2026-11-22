@@ -11,7 +11,7 @@ import {
 import { EditFileError, editFileErrorMessage } from "../../lib/edit-file/errors";
 import { assertEditFilePath } from "../../lib/edit-file/path";
 import { contentLineCount, countLineChanges } from "../../lib/edit-file/line-counts";
-import { buildDiffRows, isDiffTooLarge } from "../../lib/edit-file/diff-view";
+import { buildDiffRows } from "../../lib/edit-file/diff-view";
 
 describe("countLineChanges", () => {
   test.each([
@@ -31,13 +31,6 @@ describe("countLineChanges", () => {
 describe("contentLineCount", () => {
   test("пустой текст — 0 строк", () => {
     expect(contentLineCount("")).toBe(0);
-  });
-
-  test("четыре тысячи одна строка превышает порог показа", () => {
-    const text = `${"x\n".repeat(4001)}`;
-    expect(contentLineCount(text)).toBe(4001);
-    expect(isDiffTooLarge(text, text)).toBe(true);
-    expect(isDiffTooLarge("a\n".repeat(4000), "a\n".repeat(4000))).toBe(false);
   });
 });
 
@@ -94,6 +87,29 @@ describe("applyEditFile", () => {
     });
     expect(result.replacements).toBe(3);
     expect(result.newContent).toBe("y y y");
+  });
+
+  test.each([
+    {
+      replaceAll: false,
+      existing: "before x after",
+      expected: "before $& $$ $` $' after",
+      replacements: 1,
+    },
+    {
+      replaceAll: true,
+      existing: "before x x after",
+      expected: "before $& $$ $` $' $& $$ $` $' after",
+      replacements: 2,
+    },
+  ])("вставляет $-последовательности буквально (replaceAll=$replaceAll)", ({
+    replaceAll, existing, expected, replacements,
+  }) => {
+    expect(applyEditFile("/workspace/a.txt", existing, {
+      oldString: "x",
+      newString: "$& $$ $` $'",
+      replaceAll,
+    })).toMatchObject({ newContent: expected, replacements });
   });
 
   test("создание нового файла", () => {
@@ -182,8 +198,26 @@ describe("buildDiffRows", () => {
     const oldContent = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"].join("\n") + "\n";
     const newContent = ["a", "B", "c", "d", "e", "f", "g", "h", "i", "J", "k"].join("\n") + "\n";
     const rows = buildDiffRows(oldContent, newContent);
-    expect(rows.some((row) => row.kind === "skip")).toBe(true);
-    const skip = rows.find((row) => row.kind === "skip");
+    const skip = rows?.find((row) => row.kind === "skip");
     expect(skip && skip.kind === "skip" ? skip.skipped : 0).toBeGreaterThan(0);
+  });
+
+  test("проверяет предел по строкам diff, а не по размеру файлов", () => {
+    expect(buildDiffRows("", "a\n".repeat(4000))).toHaveLength(4000);
+    expect(buildDiffRows("", "a\n".repeat(4001))).toBeNull();
+  });
+
+  test("сохраняет номера строк после пропуска и вставки", () => {
+    const prefix = "начало\n".repeat(4001);
+    const middle = "середина\n".repeat(10);
+    const rows = buildDiffRows(
+      `${prefix}a\n${middle}old`,
+      `${prefix}a\ninserted\n${middle}new`,
+    );
+    expect(rows).toHaveLength(14);
+    expect(rows).toContainEqual({ kind: "skip", skipped: 3999 });
+    expect(rows).toContainEqual({ kind: "added", text: "inserted\n", oldLine: null, newLine: 4003 });
+    expect(rows).toContainEqual({ kind: "removed", text: "old", oldLine: 4013, newLine: null });
+    expect(rows).toContainEqual({ kind: "added", text: "new", oldLine: null, newLine: 4014 });
   });
 });
