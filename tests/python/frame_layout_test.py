@@ -54,6 +54,31 @@ class CheckLayoutTest(unittest.TestCase):
         for expected in ("28.667", "кегль 76", "слева 112", "кегль 46", "снизу 52"):
             self.assertTrue(any(expected in error for error in errors), errors)
 
+    def test_overlaps_only_when_both_boxes_can_be_visible(self):
+        draft = layout()
+        draft["text"][0].update(group="scene-2", width=1100)
+        draft["protected"] = [
+            {
+                "label": "Фигура",
+                "group": "scene-2",
+                "x": 1140,
+                "y": 180,
+                "width": 560,
+                "height": 490,
+            },
+            {
+                "label": "Другая сцена",
+                "group": "scene-3",
+                "x": 300,
+                "y": 200,
+                "width": 300,
+                "height": 300,
+            },
+        ]
+        self.assertEqual(CHECK(draft)["errors"], ["Заголовок перекрывает «Фигура»"])
+        draft["text"][0]["width"] = 980
+        self.assertEqual(CHECK(draft)["errors"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

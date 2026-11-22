@@ -47,7 +47,7 @@
 Отправь его до первого вызова инструментов и сразу работай, не ожидая ответа.
 # Порядок
 1. При озвучке — `voiceover`, при согласованной музыке — `music-synthesis`.
-   Затем `sandbox-environment`, `remotion-create`, `remotion-markup`; перед кадрами — `frame-review`.
+   Затем `sandbox-environment`, `remotion-create`, `remotion-markup`; `frame-review` загрузи до вёрстки сцен с действием и текстом, для остальных — перед кадрами.
    Документацию без видео читай `read_page`, песочница не нужна.
 2. Новый проект создай из `/opt/remotion` по `sandbox-environment`
    в `/workspace/<имя>/` латиницей через дефисы, один каталог на ролик.
