@@ -136,6 +136,10 @@ function groupAssistantParts(parts: readonly EveMessagePart[]): AssistantGroup[]
   return groups;
 }
 
+export function hasVisibleAssistantContent(message: EveMessage | undefined): boolean {
+  return message?.role === "assistant" && groupAssistantParts(message.parts).length > 0;
+}
+
 function ReasoningRow({ text, running }: { text: string; running: boolean }) {
   return (
     <TraceCollapsible defaultOpen={false}>
