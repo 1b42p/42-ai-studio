@@ -18,7 +18,12 @@ test("перезапуск eve продолжает незавершённую �
   await fakeSandbox.seed(id, { [filePath]: bytes });
   await fakeSandbox.rules.set([{ match: "^LC_ALL=C stat .*final\\.mp4", stdout: "regular file|1\n", delayMs: 120_000 }]);
 
-  const env = { EVE_DEV_STATE_DIR: `.tmp/eve-media-restart-${randomUUID()}` };
+  const env = {
+    EVE_DEV_STATE_DIR: `.tmp/eve-media-restart-${randomUUID()}`,
+    // После SIGKILL новый процесс ждёт истечения аренды шага Workflow.
+    // Оставляем механизм включённым, но не ждём штатные 860 секунд в тесте.
+    WORKFLOW_INLINE_OWNERSHIP_LEASE_SECONDS: "10",
+  };
   let eve = await startEveDev(env);
   try {
     const client = await eveClientAs(user, id, { baseUrl: eve.url });
