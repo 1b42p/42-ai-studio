@@ -48,7 +48,7 @@ export function AddKeyDialog({
       }}
       open={open}
     >
-      <DialogContent className="max-w-[calc(100%-2rem)]">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Добавить ключ</DialogTitle>
           <DialogDescription>

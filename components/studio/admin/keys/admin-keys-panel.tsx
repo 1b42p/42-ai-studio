@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { KeyRoundIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -12,11 +12,13 @@ import {
 } from "@/components/ui/collapsible";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import type { AdminKeyView, AdminKeysPage } from "@/lib/admin/key-view";
 import { remainingSandboxesWarning } from "@/lib/admin/key-view";
 import { AddKeyDialog } from "./add-key-dialog";
 import { KeyActionDialog, type KeyAction } from "./key-action-dialog";
 import { KeyCard } from "./key-card";
+import { AdminHeading } from "../admin-heading";
 
 const STALE_MS = 60_000;
 const REFRESH_LIMIT = 5;
@@ -97,6 +99,10 @@ export function AdminKeysPanel({
   const [loading, setLoading] = useState(false);
   const [mountedNow, setMountedNow] = useState<Date | null>(now ?? null);
   const [refreshing, setRefreshing] = useState<ReadonlySet<string>>(new Set());
+  const [refreshErrors, setRefreshErrors] = useState<ReadonlySet<string>>(new Set());
+  const [batchPending, setBatchPending] = useState(false);
+  const batchActive = useRef(false);
+  const activeRefreshes = useRef(new Map<string, Promise<void>>());
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [label, setLabel] = useState("");
@@ -112,29 +118,65 @@ export function AdminKeysPanel({
   const [deletedError, setDeletedError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (now === undefined) setMountedNow(new Date());
+    if (now !== undefined) {
+      setMountedNow(now);
+      return;
+    }
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const sync = () => {
+      clearInterval(timer);
+      if (document.visibilityState === "hidden") return;
+      setMountedNow(new Date());
+      timer = setInterval(() => setMountedNow(new Date()), 60_000);
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", sync);
+    };
   }, [now]);
 
-  async function refreshOne(id: string): Promise<void> {
+  function refreshOne(id: string): Promise<void> {
+    const active = activeRefreshes.current.get(id);
+    if (active) return active;
     const request = refreshRequest ?? ((keyId: string) => api<AdminKeyView>(`/api/admin/keys/${keyId}/refresh`, { method: "POST" }));
     setRefreshing((current) => new Set(current).add(id));
-    try {
-      const item = await request(id);
+    setRefreshErrors((current) => {
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+    const pending = Promise.resolve().then(() => request(id)).then((item) => {
       setPage((current) => ({
         ...current,
         items: current.items.map((existing) => existing.id === item.id ? item : existing),
       }));
-    } finally {
+      setMountedNow(now ?? new Date());
+    }).catch(() => {
+      setRefreshErrors((current) => new Set(current).add(id));
+    }).finally(() => {
+      activeRefreshes.current.delete(id);
       setRefreshing((current) => {
         const next = new Set(current);
         next.delete(id);
         return next;
       });
-    }
+    });
+    activeRefreshes.current.set(id, pending);
+    return pending;
   }
 
   async function refreshMany(ids: readonly string[]): Promise<void> {
-    await mapLimited(ids, REFRESH_LIMIT, (id) => refreshOne(id));
+    if (batchActive.current || ids.length === 0) return;
+    batchActive.current = true;
+    setBatchPending(true);
+    try {
+      await mapLimited(ids, REFRESH_LIMIT, (id) => refreshOne(id));
+    } finally {
+      batchActive.current = false;
+      setBatchPending(false);
+    }
   }
 
   useEffect(() => {
@@ -258,26 +300,26 @@ export function AdminKeysPanel({
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Ключи Daytona</h2>
-        <div className="flex gap-2">
+      <AdminHeading
+        title="Ключи Daytona"
+        description="Песочницы создаются на ключах по порядку: когда на первом нет места, берётся следующий. Отключённый ключ не получает новых песочниц, а запущенные на нём продолжают работать."
+        actions={<>
           <Button onClick={openAdd}>
             <PlusIcon data-icon="inline-start" />
             Добавить ключ
           </Button>
           <Button
             aria-label="Обновить"
+            aria-busy={batchPending}
+            disabled={batchPending || page.items.length === 0}
             onClick={() => void refreshMany(page.items.map((item) => item.id))}
             variant="outline"
           >
-            <RefreshCwIcon data-icon="inline-start" />
-            Обновить
+            {batchPending ? <Spinner aria-label="Обновление ключей" data-icon="inline-start" /> : <RefreshCwIcon data-icon="inline-start" />}
+            {batchPending ? "Обновление…" : "Обновить"}
           </Button>
-        </div>
-      </div>
-      <p className="text-sm text-muted-foreground">
-        Песочницы создаются на ключах по порядку: когда на первом нет места, берётся следующий. Отключённый ключ не получает новых песочниц, а запущенные на нём продолжают работать.
-      </p>
+        </>}
+      />
       {noEnabled(page.items) ? (
         <Alert>
           <AlertDescription>Нет включённых ключей: новые сессии не смогут запустить песочницу.</AlertDescription>
@@ -316,7 +358,7 @@ export function AdminKeysPanel({
           </EmptyContent>
         </Empty>
       ) : null}
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
         {page.items.map((item) => (
           <KeyCard
             defaults={page.defaults}
@@ -329,15 +371,16 @@ export function AdminKeysPanel({
             onEnable={() => ask("enable", item)}
             onRefresh={() => void refreshOne(item.id)}
             refreshing={refreshing.has(item.id)}
+            refreshError={refreshErrors.has(item.id)}
             timeZone={timeZone}
           />
         ))}
       </div>
       <Collapsible onOpenChange={(open) => void loadDeleted(open)} open={deletedOpen}>
-        <CollapsibleTrigger className="text-sm font-medium" render={<Button variant="ghost" />}>
+        <CollapsibleTrigger render={<Button variant="ghost" />}>
           Удалённые ключи ({deleted?.length ?? "…"})
         </CollapsibleTrigger>
-        <CollapsibleContent className="flex flex-col gap-2 pt-2">
+        <CollapsibleContent className="flex flex-col gap-2">
           {deletedError !== null ? <p className="text-sm text-destructive">{deletedError}</p> : null}
           {deleted?.map((item) => (
             <div className="flex min-w-0 flex-col gap-1" key={item.id}>

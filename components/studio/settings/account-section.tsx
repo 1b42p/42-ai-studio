@@ -19,7 +19,7 @@ export function AccountSection() {
 
   return (
     <FieldGroup>
-      <Item className="min-w-0 p-0">
+      <Item variant="muted" className="min-w-0">
         <ItemMedia>
           <Avatar size="lg">
             {user.photoUrl !== null ? <AvatarImage src={user.photoUrl} alt="" /> : null}

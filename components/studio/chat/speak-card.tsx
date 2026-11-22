@@ -88,7 +88,7 @@ function ReadyCard({ view }: { view: SpeakView }) {
           <TraceDescription className="min-w-0 shrink truncate">{description}</TraceDescription>
         </TraceLine>
       </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent className="flex min-w-0 flex-col gap-2">
+      <TraceCollapsibleContent className="flex min-w-0 flex-col gap-4">
         <SpokenText text={view.text} />
         {missing ? (
           <p>Файл озвучки не найден</p>

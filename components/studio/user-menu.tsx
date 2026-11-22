@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOutIcon } from "lucide-react";
+import { ChevronsUpDownIcon, LogOutIcon } from "lucide-react";
 
 import { navIcons, type NavItem } from "@/components/studio/nav";
 import { useLogout } from "@/components/studio/use-logout";
@@ -56,6 +56,7 @@ export function UserMenu({ user, onLogout, items = [] }: UserMenuProps) {
             </span>
           ) : null}
         </span>
+        <ChevronsUpDownIcon className="text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="w-56">
         <DropdownMenuGroup>

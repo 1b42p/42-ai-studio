@@ -1,0 +1,217 @@
+{
+  "text": "Хорошее утро начинается с кофе. А второй кофе — в подарок. По будням до одиннадцати, в кофейне на углу. Возьмите кофе для того, с кем хочется разделить утро.",
+  "voice": "ru-RU-DmitryNeural",
+  "captions": [
+    {
+      "text": "Хорошее",
+      "startMs": 50,
+      "endMs": 747.375,
+      "timestampMs": 50,
+      "confidence": null
+    },
+    {
+      "text": " утро",
+      "startMs": 747.375,
+      "endMs": 1155.25,
+      "timestampMs": 747.375,
+      "confidence": null
+    },
+    {
+      "text": " начинается",
+      "startMs": 1155.25,
+      "endMs": 1826.291,
+      "timestampMs": 1155.25,
+      "confidence": null
+    },
+    {
+      "text": " с",
+      "startMs": 1826.333,
+      "endMs": 1905.249,
+      "timestampMs": 1826.333,
+      "confidence": null
+    },
+    {
+      "text": " кофе",
+      "startMs": 1905.25,
+      "endMs": 2431.583,
+      "timestampMs": 1905.25,
+      "confidence": null
+    },
+    {
+      "text": " А",
+      "startMs": 3392.125,
+      "endMs": 3589.458,
+      "timestampMs": 3392.125,
+      "confidence": null
+    },
+    {
+      "text": " второй",
+      "startMs": 3589.458,
+      "endMs": 4023.666,
+      "timestampMs": 3589.458,
+      "confidence": null
+    },
+    {
+      "text": " кофе",
+      "startMs": 4023.666,
+      "endMs": 4405.249,
+      "timestampMs": 4023.666,
+      "confidence": null
+    },
+    {
+      "text": " в",
+      "startMs": 4628.958,
+      "endMs": 4707.874,
+      "timestampMs": 4628.958,
+      "confidence": null
+    },
+    {
+      "text": " подарок",
+      "startMs": 4707.875,
+      "endMs": 5326.291,
+      "timestampMs": 4707.875,
+      "confidence": null
+    },
+    {
+      "text": " По",
+      "startMs": 6221.041,
+      "endMs": 6431.582,
+      "timestampMs": 6221.041,
+      "confidence": null
+    },
+    {
+      "text": " будням",
+      "startMs": 6431.583,
+      "endMs": 6839.458,
+      "timestampMs": 6431.583,
+      "confidence": null
+    },
+    {
+      "text": " до",
+      "startMs": 6839.458,
+      "endMs": 6944.708,
+      "timestampMs": 6839.458,
+      "confidence": null
+    },
+    {
+      "text": " одиннадцати",
+      "startMs": 6944.75,
+      "endMs": 7576.333,
+      "timestampMs": 6944.75,
+      "confidence": null
+    },
+    {
+      "text": " в",
+      "startMs": 7786.833,
+      "endMs": 7852.624,
+      "timestampMs": 7786.833,
+      "confidence": null
+    },
+    {
+      "text": " кофейне",
+      "startMs": 7852.625,
+      "endMs": 8405.25,
+      "timestampMs": 7852.625,
+      "confidence": null
+    },
+    {
+      "text": " на",
+      "startMs": 8405.25,
+      "endMs": 8523.666,
+      "timestampMs": 8405.25,
+      "confidence": null
+    },
+    {
+      "text": " углу",
+      "startMs": 8523.666,
+      "endMs": 9023.666,
+      "timestampMs": 8523.666,
+      "confidence": null
+    },
+    {
+      "text": " Возьмите",
+      "startMs": 9997.375,
+      "endMs": 10694.75,
+      "timestampMs": 9997.375,
+      "confidence": null
+    },
+    {
+      "text": " кофе",
+      "startMs": 10694.75,
+      "endMs": 11023.666,
+      "timestampMs": 10694.75,
+      "confidence": null
+    },
+    {
+      "text": " для",
+      "startMs": 11023.666,
+      "endMs": 11181.541,
+      "timestampMs": 11023.666,
+      "confidence": null
+    },
+    {
+      "text": " того",
+      "startMs": 11181.583,
+      "endMs": 11484.208,
+      "timestampMs": 11181.583,
+      "confidence": null
+    },
+    {
+      "text": " с",
+      "startMs": 11786.833,
+      "endMs": 11878.958,
+      "timestampMs": 11786.833,
+      "confidence": null
+    },
+    {
+      "text": " кем",
+      "startMs": 11878.958,
+      "endMs": 12102.624,
+      "timestampMs": 11878.958,
+      "confidence": null
+    },
+    {
+      "text": " хочется",
+      "startMs": 12102.625,
+      "endMs": 12602.625,
+      "timestampMs": 12102.625,
+      "confidence": null
+    },
+    {
+      "text": " разделить",
+      "startMs": 12602.625,
+      "endMs": 13115.791,
+      "timestampMs": 12602.625,
+      "confidence": null
+    },
+    {
+      "text": " утро",
+      "startMs": 13115.791,
+      "endMs": 13615.791,
+      "timestampMs": 13115.791,
+      "confidence": null
+    }
+  ],
+  "sentences": [
+    {
+      "text": "Хорошее утро начинается с кофе.",
+      "startMs": 50,
+      "endMs": 3392.1053
+    },
+    {
+      "text": "А второй кофе — в подарок.",
+      "startMs": 3392.1053,
+      "endMs": 6221.0527
+    },
+    {
+      "text": "По будням до одиннадцати, в кофейне на углу.",
+      "startMs": 6221.0527,
+      "endMs": 9997.3685
+    },
+    {
+      "text": "Возьмите кофе для того, с кем хочется разделить утро.",
+      "startMs": 9997.3685,
+      "endMs": 14576.3159
+    }
+  ]
+}

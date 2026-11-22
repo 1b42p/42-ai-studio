@@ -37,7 +37,7 @@ function MessageAttachment({ part }: { part: FilePart }) {
       {mediaId === null ? null : (
         <AttachmentTrigger
           aria-label={`Скачать ${title}`}
-          render={<a href={`/api/media/${mediaId}?download=1`} />}
+          render={<a href={`/api/media/${mediaId}?download=1`} download />}
         />
       )}
     </Attachment>

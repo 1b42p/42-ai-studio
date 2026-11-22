@@ -205,7 +205,7 @@ describe("файлы в ответе", () => {
 
     await expect.element(page.getByText("report.pdf")).toBeVisible();
     await expect.element(page.getByText("2 КБ")).toBeVisible();
-    const download = page.getByRole("button", { name: "Скачать" }).element();
+    const download = page.getByRole("link", { name: "Скачать" }).element();
     const href =
       download.getAttribute("href") ?? download.closest("a")?.getAttribute("href");
     expect(href).toBe(`/api/media/${MEDIA_ID}?download=1`);
@@ -354,6 +354,6 @@ describe("файлы в ответе", () => {
     await vi.waitFor(() => {
       expect(document.querySelector("video")).toBeNull();
     });
-    await expect.element(page.getByRole("button", { name: "Скачать" })).toBeVisible();
+    await expect.element(page.getByRole("link", { name: "Скачать" })).toBeVisible();
   });
 });

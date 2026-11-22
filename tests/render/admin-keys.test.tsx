@@ -82,8 +82,40 @@ async function expectBars(root: HTMLElement) {
   expect(cpu?.getAttribute("data-level")).toBe("ok");
   expect(memory?.getAttribute("data-level")).toBe("warning");
   expect(disk?.getAttribute("data-level")).toBe("destructive");
-  expect(memory?.querySelector("[data-slot='progress-indicator']")?.className).toContain("bg-warning");
-  expect(disk?.querySelector("[data-slot='progress-indicator']")?.className).toContain("bg-destructive");
+  expect(cpu?.querySelector("[data-slot='badge']")).toBeNull();
+  await expect.element(page.elementLocator(memory!).getByText("Квота заканчивается", { exact: true })).toBeVisible();
+  await expect.element(page.elementLocator(disk!).getByText("Квота почти исчерпана", { exact: true })).toBeVisible();
+  for (const [bar, max] of [[cpu, 10], [memory, 10], [disk, 30]] as const) {
+    expect(bar).toHaveAttribute("role", "progressbar");
+    expect(bar).toHaveAttribute("aria-valuemax", String(max));
+    await expect.element(bar!.querySelector<HTMLElement>("[data-slot='progress-indicator']")!).toBeVisible();
+  }
+}
+
+for (const [viewport, render] of [["телефон", renderOnPhone], ["компьютер", renderOnDesktop]] as const) {
+  for (const [used, level, warning] of [
+    [69, "ok", null],
+    [70, "warning", "Квота заканчивается"],
+    [89, "warning", "Квота заканчивается"],
+    [90, "destructive", "Квота почти исчерпана"],
+  ] as const) {
+    test(`${viewport}: предупреждение квоты на границе ${used}%`, async () => {
+      const usage = key().usage!;
+      const screen = await render(panel([key({ usage: { ...usage, memoryGb: { used, quota: 100 } } })]));
+      const bar = page.getByRole("progressbar", { name: `Память: ${used} из 100 ГиБ`, exact: true });
+      await expect.element(bar).toBeVisible();
+      await expect.element(bar).toHaveAttribute("aria-valuenow", String(used));
+      await expect.element(bar).toHaveAttribute("aria-valuemax", "100");
+      await expect.element(bar).toHaveAttribute("data-level", level);
+      if (warning === null) {
+        expect(bar.element().querySelector("[data-slot='badge']")).toBeNull();
+      } else {
+        await expect.element(bar.getByText(warning, { exact: true })).toBeVisible();
+      }
+      expectNoHorizontalScroll();
+      await screen.unmount();
+    });
+  }
 }
 
 test("компьютер: карточка, пороги и подтверждения", async () => {

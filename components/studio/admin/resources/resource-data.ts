@@ -5,6 +5,9 @@ export interface UsageQuery {
   to: string;
   tz: string;
   userId?: string;
+  q?: string;
+  metric?: "sandboxes" | "tokens";
+  page?: number;
 }
 
 async function readReport<T>(url: string, signal?: AbortSignal): Promise<T> {
@@ -19,7 +22,9 @@ export function fetchAdminSandboxes(signal?: AbortSignal) {
 
 export function fetchAdminUsage(query: UsageQuery, signal?: AbortSignal) {
   return readReport<AdminUsageResponse>(
-    `/api/admin/usage?${new URLSearchParams({ ...query })}`,
+    `/api/admin/usage?${new URLSearchParams(
+      Object.entries(query).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]),
+    )}`,
     signal,
   );
 }

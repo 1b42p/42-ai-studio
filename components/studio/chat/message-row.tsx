@@ -127,7 +127,7 @@ function ReasoningRow({ text, running }: { text: string; running: boolean }) {
           <TraceTitle>Размышление</TraceTitle>
         </TraceLine>
       </TraceCollapsibleTrigger>
-      <TraceCollapsibleContent className="whitespace-pre-wrap">{text}</TraceCollapsibleContent>
+      <TraceCollapsibleContent className="whitespace-pre-wrap text-xs leading-6">{text}</TraceCollapsibleContent>
     </TraceCollapsible>
   );
 }
@@ -156,7 +156,7 @@ function AssistantContent({
   const groups = groupAssistantParts(parts);
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-3">
+    <div className="flex w-full min-w-0 flex-col gap-5">
       {groups.map((group) => {
         if (group.kind === "authorization") {
           return <AuthorizationCard key={group.id} part={group.part} allowHosts={authorizationAllowHosts} />;
@@ -234,12 +234,12 @@ export function MessageRow({ message, data, files, appSessionId, onCopyPanelChan
   const text = textOfUserMessage(message);
 
   return (
-    <Message align={align}>
+    <Message align={align} className="min-w-0">
       <MessageContent>
         {message.role === "user" ? (
           <>
             {text.trim().length === 0 ? null : (
-              <Bubble align="end" variant="muted">
+              <Bubble align="end" variant="secondary">
                 <BubbleContent className="whitespace-pre-wrap">{text}</BubbleContent>
               </Bubble>
             )}

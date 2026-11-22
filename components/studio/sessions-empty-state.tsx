@@ -1,4 +1,4 @@
-import { MessagesSquareIcon } from "lucide-react";
+import { ClapperboardIcon } from "lucide-react";
 
 import {
   Empty,
@@ -11,10 +11,10 @@ import {
 /** Пустой список на странице нового чата. */
 export function SessionsEmptyState() {
   return (
-    <Empty className="flex-1 border border-dashed">
+    <Empty className="min-h-64 md:min-h-72">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <MessagesSquareIcon />
+          <ClapperboardIcon />
         </EmptyMedia>
         <EmptyTitle>Сессий пока нет</EmptyTitle>
         <EmptyDescription>

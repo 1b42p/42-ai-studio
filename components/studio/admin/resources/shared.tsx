@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
@@ -52,16 +53,17 @@ export function ResourceUser({
   );
 }
 
-export function ResourceCounter({ title, value, description }: {
+export function ResourceCounter({ title, value, description, emphasis = false }: {
   title: string;
   value: ReactNode;
   description?: ReactNode;
+  emphasis?: boolean;
 }) {
   return (
     <Card size="sm" className="min-w-0">
       <CardHeader>
-        <CardDescription>{title}</CardDescription>
-        <CardTitle className="tabular-nums">{value}</CardTitle>
+        <CardDescription className="wrap-anywhere">{title}</CardDescription>
+        <CardTitle className="tabular-nums">{emphasis ? <Badge>{value}</Badge> : value}</CardTitle>
       </CardHeader>
       {description ? <CardContent>{description}</CardContent> : null}
     </Card>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CheckCircleIcon, GlobeIcon, LogOutIcon, PlusIcon, RefreshCwIcon, Trash2Icon, UnplugIcon } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -8,12 +8,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Empty, EmptyDescription, EmptyHeader } from "@/components/ui/empty";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia } from "@/components/ui/empty";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Spinner } from "@/components/ui/spinner";
 
 import { useMcpContext, type McpCheck, type McpState } from "./mcp-context";
 
@@ -41,6 +42,36 @@ export function McpSectionView({ state }: { state: McpState }) {
   const [headers, setHeaders] = useState([{ name: "", value: "" }]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rowPending, setRowPending] = useState<Record<string, "check" | "toggle">>({});
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const activeRows = useRef(new Set<string>());
+  const runRow = async (id: string, kind: "check" | "toggle", operation: () => Promise<void>) => {
+    if (activeRows.current.has(id) || state.checking?.[id]) return;
+    activeRows.current.add(id);
+    setRowPending((current) => ({ ...current, [id]: kind }));
+    setRowErrors((current) => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    try {
+      await operation();
+    } catch {
+      setRowErrors((current) => ({
+        ...current,
+        [id]: kind === "check"
+          ? "Не удалось проверить сервер. Проверьте соединение и попробуйте ещё раз."
+          : "Не удалось изменить состояние сервера. Попробуйте ещё раз.",
+      }));
+    } finally {
+      activeRows.current.delete(id);
+      setRowPending((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }
+  };
   const run = async (operation: () => Promise<void>) => {
     setError("");
     setBusy(true);
@@ -61,9 +92,12 @@ export function McpSectionView({ state }: { state: McpState }) {
       </Button>
       {error && !open && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {state.servers.length === 0 ? (
-        <Empty><EmptyHeader><EmptyDescription>Серверов пока нет</EmptyDescription></EmptyHeader></Empty>
-      ) : <ItemGroup>{state.servers.map((server) => (
-        <Item className="min-w-0" role="listitem" key={server.id}>
+        <Empty><EmptyHeader><EmptyMedia variant="icon"><UnplugIcon /></EmptyMedia><EmptyDescription>Серверов пока нет</EmptyDescription></EmptyHeader></Empty>
+      ) : <ItemGroup>{state.servers.map((server) => {
+        const checking = state.checking?.[server.id] || rowPending[server.id] === "check";
+        const rowBusy = checking || rowPending[server.id] !== undefined;
+        return (
+        <Item variant="outline" className="min-w-0 items-start" role="listitem" key={server.id}>
             <ItemContent className="min-w-0">
               <ItemTitle className="max-w-full truncate">{server.name}</ItemTitle>
               <ItemDescription className="truncate">{server.url}</ItemDescription>
@@ -76,16 +110,27 @@ export function McpSectionView({ state }: { state: McpState }) {
                 {server.connected ? "Подключён" : "Не подключён"}
               </Badge>}
             </ItemContent>
-            <ItemActions>
-             <Switch aria-label={`Включён: ${server.name}`} checked={server.enabled} onCheckedChange={(enabled) => void run(() => state.toggle(server.id, enabled))} />
-             <Button size="icon" variant="ghost" aria-label={`Проверить ${server.name}`} onClick={() => void state.check(server.id)}><RefreshCwIcon /></Button>
-             <Button size="icon" variant="ghost" aria-label={`Удалить ${server.name}`} onClick={() => setDeleting(server.id)}><Trash2Icon /></Button>
-             {server.authKind === "oauth" && <Button size="icon" variant="ghost" disabled={busy || !server.connected}
+             <ItemActions className="flex-wrap">
+              <Switch aria-label={`Включён: ${server.name}`} checked={server.enabled} disabled={rowBusy}
+                aria-busy={rowPending[server.id] === "toggle"}
+                onCheckedChange={(enabled) => void runRow(server.id, "toggle", () => state.toggle(server.id, enabled))} />
+              <Button size="icon" variant="ghost" disabled={rowBusy} aria-busy={checking}
+                aria-label={`Проверить ${server.name}`} onClick={() => void runRow(server.id, "check", () => state.check(server.id))}>
+                {checking ? <Spinner /> : <RefreshCwIcon />}
+              </Button>
+              <Button size="icon" variant="ghost" disabled={rowBusy} aria-label={`Удалить ${server.name}`} onClick={() => setDeleting(server.id)}><Trash2Icon /></Button>
+              {server.authKind === "oauth" && <Button size="icon" variant="ghost" disabled={busy || rowBusy || !server.connected}
                aria-label={`Сбросить вход: ${server.name}`} onClick={() => setSigningOut(server.id)}><LogOutIcon /></Button>}
             </ItemActions>
-            {state.checks[server.id] && <ItemFooter><ItemDescription>{checkMessage(state.checks[server.id]!)}</ItemDescription></ItemFooter>}
-        </Item>
-      ))}</ItemGroup>}
+             {checking ? (
+               <ItemFooter role="status"><ItemDescription>Проверяем подключение…</ItemDescription></ItemFooter>
+             ) : rowErrors[server.id] ? (
+               <ItemFooter><Alert variant="destructive"><AlertDescription>{rowErrors[server.id]}</AlertDescription></Alert></ItemFooter>
+             ) : state.checks[server.id] ? (
+               <ItemFooter role="status"><ItemDescription>{checkMessage(state.checks[server.id]!)}</ItemDescription></ItemFooter>
+             ) : null}
+         </Item>
+      ); })}</ItemGroup>}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Добавить MCP-сервер</DialogTitle><DialogDescription>Укажите адрес и способ авторизации.</DialogDescription></DialogHeader>

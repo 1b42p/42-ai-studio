@@ -5,7 +5,7 @@ import { PowerIcon, PowerOffIcon, RefreshCwIcon, Trash2Icon } from "lucide-react
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress, ProgressLabel } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -17,6 +17,7 @@ export interface KeyCardProps {
   readonly item: AdminKeyView;
   readonly defaults: AdminKeyDefaults;
   readonly refreshing: boolean;
+  readonly refreshError?: boolean;
   readonly highlighted: boolean;
   readonly now: Date | null;
   readonly timeZone: string;
@@ -24,12 +25,6 @@ export interface KeyCardProps {
   readonly onDisable: () => void;
   readonly onEnable: () => void;
   readonly onDelete: () => void;
-}
-
-function barClass(level: "ok" | "warning" | "destructive"): string | undefined {
-  if (level === "destructive") return "bg-destructive";
-  if (level === "warning") return "bg-warning";
-  return undefined;
 }
 
 function UsageBar({
@@ -46,11 +41,15 @@ function UsageBar({
     <Progress
       aria-label={label}
       data-level={level}
-      indicatorClassName={barClass(level)}
       max={quota}
       value={used}
     >
       <ProgressLabel>{label}</ProgressLabel>
+      {level !== "ok" ? (
+        <Badge variant={level === "destructive" ? "destructive" : "secondary"}>
+          {level === "destructive" ? "Квота почти исчерпана" : "Квота заканчивается"}
+        </Badge>
+      ) : null}
     </Progress>
   );
 }
@@ -60,6 +59,7 @@ export function KeyCard({
   item,
   defaults,
   refreshing,
+  refreshError = false,
   highlighted,
   now,
   timeZone,
@@ -77,11 +77,11 @@ export function KeyCard({
 
   return (
     <Card
-      className="min-w-0 data-highlighted:ring-2 data-highlighted:ring-primary"
+      className="min-w-0"
       data-highlighted={highlighted ? "" : undefined}
       data-key-id={item.id}
     >
-      <CardHeader className="gap-2">
+      <CardHeader>
         <div className="flex min-w-0 items-start justify-between gap-2">
           <CardTitle className="min-w-0 truncate">{item.label}</CardTitle>
           <Button
@@ -95,6 +95,7 @@ export function KeyCard({
           </Button>
         </div>
         <div className="flex flex-wrap gap-1">
+          {highlighted ? <Badge variant="outline">Добавлен</Badge> : null}
           <Badge variant={item.enabled ? "default" : "secondary"}>
             {item.enabled ? "Включён" : "Отключён"}
           </Badge>
@@ -106,14 +107,30 @@ export function KeyCard({
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="flex flex-col gap-4">
+        {refreshError ? (
+          <Alert variant="destructive">
+            <AlertDescription className="flex flex-col items-start gap-2">
+              Не удалось обновить квоты. Показаны последние полученные данные.
+              <Button
+                aria-label={`Повторить обновление ${item.label}`}
+                onClick={onRefresh}
+                disabled={refreshing}
+                size="sm"
+                variant="outline"
+              >
+                Повторить
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
         {item.warning !== null ? (
           <Alert>
             <AlertDescription>{item.warning}</AlertDescription>
           </Alert>
         ) : null}
         {numbers && usage?.cpu && usage.memoryGb && usage.diskGb ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-4 tabular-nums">
             <UsageBar label={amountLabel("vCPU", usage.cpu.used, usage.cpu.quota, "")} quota={usage.cpu.quota} used={usage.cpu.used} />
             <UsageBar
               label={amountLabel("Память", usage.memoryGb.used, usage.memoryGb.quota, "ГиБ")}
@@ -142,7 +159,9 @@ export function KeyCard({
           </Alert>
         ) : null}
         {item.fits !== null ? (
-          <p className="text-sm">{fitsLabel(item.fits, defaults)}</p>
+          <Alert>
+            <AlertDescription>{fitsLabel(item.fits, defaults)}</AlertDescription>
+          </Alert>
         ) : null}
         <p className="text-sm">{sandboxesLabel(item)}</p>
         {usage?.maxPerSandbox != null ? (
@@ -165,24 +184,24 @@ export function KeyCard({
             <AlertDescription>{remainingSandboxesWarning(item.remainingSandboxes)}</AlertDescription>
           </Alert>
         ) : null}
-        <div className="flex flex-wrap gap-2">
-          {item.enabled ? (
-            <Button aria-label={`Отключить ${item.label}`} onClick={onDisable} variant="outline">
-              <PowerOffIcon data-icon="inline-start" />
-              Отключить
-            </Button>
-          ) : (
-            <Button aria-label={`Включить ${item.label}`} onClick={onEnable} variant="outline">
-              <PowerIcon data-icon="inline-start" />
-              Включить
-            </Button>
-          )}
-          <Button aria-label={`Удалить ${item.label}`} onClick={onDelete} variant="destructive">
-            <Trash2Icon data-icon="inline-start" />
-            Удалить
-          </Button>
-        </div>
       </CardContent>
+      <CardFooter className="flex-wrap justify-between gap-2">
+        {item.enabled ? (
+          <Button aria-label={`Отключить ${item.label}`} onClick={onDisable} variant="outline">
+            <PowerOffIcon data-icon="inline-start" />
+            Отключить
+          </Button>
+        ) : (
+          <Button aria-label={`Включить ${item.label}`} onClick={onEnable} variant="outline">
+            <PowerIcon data-icon="inline-start" />
+            Включить
+          </Button>
+        )}
+        <Button aria-label={`Удалить ${item.label}`} onClick={onDelete} variant="destructive">
+          <Trash2Icon data-icon="inline-start" />
+          Удалить
+        </Button>
+      </CardFooter>
     </Card>
   );
 }

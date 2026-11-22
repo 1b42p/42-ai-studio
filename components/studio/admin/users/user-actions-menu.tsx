@@ -6,6 +6,7 @@ import {
   EllipsisVerticalIcon,
   Trash2Icon,
 } from "lucide-react";
+import { useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +14,7 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -22,21 +24,6 @@ import type { UserActionKind } from "./use-user-actions";
 const OPERATOR_HINT = "Оператора нельзя заблокировать или удалить";
 const DELETING_HINT = "Пользователь удаляется, разблокировать нельзя.";
 
-function DisabledItem({
-  reason,
-  children,
-}: {
-  reason: string;
-  children: React.ReactNode;
-}) {
-  return (
-    // У отключённого пункта меню нет наведения: подсказка живёт на обёртке.
-    <span className="block" title={reason}>
-      <DropdownMenuItem disabled>{children}</DropdownMenuItem>
-    </span>
-  );
-}
-
 export function UserActionsMenu({
   user,
   onAction,
@@ -44,6 +31,7 @@ export function UserActionsMenu({
   user: AdminUserItem;
   onAction: (kind: UserActionKind, user: AdminUserItem) => void;
 }) {
+  const reasonId = useId();
   const blockKind: UserActionKind = user.isBlocked ? "unblock" : "block";
   const blockLabel = user.isBlocked ? "Разблокировать" : "Заблокировать";
   const blockReason = user.isOperator
@@ -53,6 +41,7 @@ export function UserActionsMenu({
       : null;
   const deleteLabel = user.deletionRequestedAt !== null ? "Продолжить удаление" : "Удалить";
   const deleteReason = user.isOperator ? OPERATOR_HINT : null;
+  const reason = blockReason ?? deleteReason;
 
   return (
     <DropdownMenu>
@@ -68,18 +57,23 @@ export function UserActionsMenu({
           </Button>
         }
       />
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="w-72 max-w-[calc(100vw-2rem)]" aria-describedby={reason ? reasonId : undefined}>
         <DropdownMenuGroup>
+          {reason ? (
+            <DropdownMenuLabel id={reasonId} className="max-w-64 whitespace-normal">
+              {reason}
+            </DropdownMenuLabel>
+          ) : null}
           {blockReason === null ? (
             <DropdownMenuItem onClick={() => onAction(blockKind, user)}>
               {user.isBlocked ? <CircleCheckIcon /> : <BanIcon />}
               {blockLabel}
             </DropdownMenuItem>
           ) : (
-            <DisabledItem reason={blockReason}>
+            <DropdownMenuItem disabled aria-describedby={reasonId}>
               {user.isBlocked ? <CircleCheckIcon /> : <BanIcon />}
               {blockLabel}
-            </DisabledItem>
+            </DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
           {deleteReason === null ? (
@@ -91,10 +85,10 @@ export function UserActionsMenu({
               {deleteLabel}
             </DropdownMenuItem>
           ) : (
-            <DisabledItem reason={deleteReason}>
+            <DropdownMenuItem disabled aria-describedby={reasonId}>
               <Trash2Icon />
               {deleteLabel}
-            </DisabledItem>
+            </DropdownMenuItem>
           )}
         </DropdownMenuGroup>
       </DropdownMenuContent>

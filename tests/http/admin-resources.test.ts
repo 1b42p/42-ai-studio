@@ -57,6 +57,8 @@ describe("отчёты ресурсов: доступ и период", () => {
       "from=", "to=", "from=2026-02-30", "from=0000-01-01", "from=2026-1-01",
       "from=2026-01-02&to=2026-01-01",
       "from=2025-01-01&to=2026-01-02", "tz=Not/AZone", "tz=", "userId=no", "userId=",
+      "page=0", "page=-1", "page=1.5", "page=1e2", "page=", "page=1000000000",
+      "page=1%3Bselect", "metric=money", "metric=", `q=${"я".repeat(65)}`,
     ]) {
       const response = await api(`/api/admin/usage?${query}`, operator);
       expect(response.status, query).toBe(400);
@@ -157,7 +159,7 @@ describe("расход по дням и пользователям", () => {
     ]);
   });
 
-  test("первые 100 пользователей не обрезают общие итоги; othersCount считает остальных", async () => {
+  test("серверные страницы доступны целиком и не обрезают общие итоги", async () => {
     const operator = await createUser({ isOperator: true });
     await getSqlClient()`
       with inserted as (
@@ -174,6 +176,61 @@ describe("расход по дням и пользователям", () => {
     expect(report.totals.sandboxSeconds).toBe(5253);
     expect(report.byUser[0].sandboxSeconds).toBe(102);
     expect(report.byUser[99].sandboxSeconds).toBe(3);
+    expect(report.usersPage).toEqual({ page: 1, pageSize: 100, total: 102 });
+    const second = await usage(operator, "?from=2026-01-01&to=2026-01-10&page=2");
+    expect(second.byUser.map((row) => row.sandboxSeconds)).toEqual([2, 1]);
+    expect(second.usersPage).toEqual({ page: 2, pageSize: 100, total: 102 });
+    expect(second.othersCount).toBe(0);
+    expect(second.totals).toEqual(report.totals);
+    expect(second.byDay).toEqual(report.byDay);
+    expect(new Set([...report.byUser, ...second.byUser].map((row) => row.user.id)).size).toBe(102);
+    const beyond = await usage(operator, "?from=2026-01-01&to=2026-01-10&page=999999999");
+    expect(beyond.byUser).toEqual(second.byUser);
+    expect(beyond.usersPage.page).toBe(2);
+    // Лидер по токенам находится за границей первой страницы времени.
+    const last = second.byUser[1].user;
+    await getSqlClient()`insert into usage_records (user_id, kind, amount, source_key, recorded_at)
+      values (${last.id}, 'model_output_tokens', 999, ${randomUUID()}, '2026-01-05T12:00:00Z')`;
+    const tokens = await usage(operator, "?from=2026-01-01&to=2026-01-10&metric=tokens");
+    expect(tokens.byUser[0].user.id).toBe(last.id);
+    expect(tokens.byUser[0].outputTokens).toBe(999);
+    const tiedIds = tokens.byUser.slice(1).map((row) => row.user.id);
+    expect(tiedIds).toEqual([...tiedIds].sort());
+    const tokens2 = await usage(operator, "?from=2026-01-01&to=2026-01-10&metric=tokens&page=2");
+    expect(new Set([...tokens.byUser, ...tokens2.byUser].map((row) => row.user.id)).size).toBe(102);
+  });
+
+  test("поиск имени, @username и Telegram ID фильтрует только список и сохраняет userId/период/tz", async () => {
+    const operator = await createUser({ isOperator: true });
+    const alice = await createUser({ name: "АЛИСА", username: "Alice_100" });
+    const bob = await createUser({ name: "Борис" });
+    await record(alice, "model_input_tokens", 100, "2026-01-01T23:30:00Z");
+    await record(bob, "sandbox_seconds", 50, "2026-01-01T23:30:00Z");
+    await record(alice, "model_input_tokens", 999, "2026-01-02T23:30:00Z");
+    const query = "?from=2026-01-02&to=2026-01-02&tz=Asia/Tokyo";
+    const report = await usage(operator, query);
+    for (const q of ["алиса", "@ALICE_100", String(alice.telegramId)]) {
+      const filtered = await usage(operator, `${query}&q=${encodeURIComponent(q)}&page=2&metric=tokens`);
+      expect(filtered.byUser.map((row) => row.user.id)).toEqual([alice.id]);
+      expect(filtered.byUser[0].inputTokens).toBe(100);
+      expect(filtered.usersPage).toEqual({ page: 1, pageSize: 100, total: 1 });
+      expect(filtered.totals).toEqual(report.totals);
+      expect(filtered.byDay).toEqual(report.byDay);
+      expect(filtered.period).toEqual(report.period);
+    }
+    for (const q of ["%", "' OR true --", "несуществующий"]) {
+      const empty = await usage(operator, `${query}&q=${encodeURIComponent(q)}`);
+      expect(empty.byUser).toEqual([]);
+      expect(empty.usersPage).toEqual({ page: 1, pageSize: 100, total: 0 });
+      expect(empty.totals).toEqual(report.totals);
+    }
+    const underscore = await usage(operator, `${query}&q=_`);
+    expect(underscore.byUser.map((row) => row.user.id)).toEqual([alice.id]);
+    const one = await usage(operator, `${query}&userId=${alice.id}&q=Борис`);
+    expect(one.byUser).toEqual([]);
+    expect(one.totals).toEqual({
+      sandboxSeconds: 0, openSandboxSeconds: 0, inputTokens: 100, outputTokens: 0,
+    });
   });
 });
 
@@ -211,6 +268,68 @@ async function sandboxReport(operator: User): Promise<AdminSandboxesResponse> {
 }
 
 describe("песочницы и открытые интервалы", () => {
+  test("десять одновременных отчётов читают busy на своих соединениях без истощения пула", async () => {
+    const operator = await createUser({ isOperator: true });
+    const user = await createUser();
+    const key = await createDaytonaKey();
+    const session = await seedMachine(user, key.id, { runningSince: new Date(Date.now() - 120_000) });
+    await db().insert(sessionEvents).values({
+      appSessionId: session.id, seq: 0, payload: { type: "session.waiting", data: {} },
+    });
+    // Проходим все чтения общего helper, включая завершающую проверку bash_jobs.
+    await db().insert(bashJobs).values({
+      appSessionId: session.id, jobId: "deadbeef", status: "running",
+    });
+    await record(user, "sandbox_seconds", 42, new Date().toISOString());
+    const cookie = await loginAs(operator);
+    // Прогреваем маршрут и завершаем сверку до установки барьера.
+    await usage(operator);
+    const pending: Promise<AdminUsageResponse>[] = [];
+    try {
+      await getSqlClient().begin(async (barrier) => {
+        await barrier`lock table sandbox_workers in access exclusive mode`;
+        for (let index = 0; index < 12; index += 1) {
+          const report = fetchApp("/api/admin/usage", {
+            headers: { cookie }, signal: AbortSignal.timeout(20_000),
+          }).then(async (response) => {
+            expect(response.status).toBe(200);
+            expect(response.headers.get("cache-control")).toBe("no-store");
+            return response.json() as Promise<AdminUsageResponse>;
+          });
+          // Обработчик установлен до ожидания барьера: нет unhandled rejection
+          // при таймауте или падении самого утверждения.
+          void report.catch(() => {});
+          pending.push(report);
+        }
+        // Отдельный процесс теста наблюдает пул приложения. Все десять
+        // транзакций должны дойти до первого SELECT helper на своих соединениях.
+        // При старой ошибке они удержат BEGIN, а SELECT навсегда останется в очереди.
+        await expect.poll(async () => {
+          const [row] = await getSqlClient()<{ count: string }[]>`
+            select count(*)::text as count from pg_stat_activity
+            where datname = current_database() and pid <> pg_backend_pid()
+              and state = 'active' and wait_event_type = 'Lock'
+              and query like '%sandbox_workers%'
+              and xact_start is not null`;
+          return Number(row.count);
+        }, { timeout: 10_000, interval: 50 }).toBeGreaterThanOrEqual(10);
+        // COMMIT снимает барьер: дальнейшие чтения не требуют свободного
+        // соединения, а два ожидающих запроса получают освободившиеся места.
+      });
+      const reports = await Promise.all(pending);
+      expect(reports).toHaveLength(12);
+      for (const report of reports) {
+        expect(report.totals.sandboxSeconds).toBe(42);
+        expect(report.totals.openSandboxSeconds).toBeGreaterThanOrEqual(120);
+        expect(report.byUser[0].openSandboxSeconds).toBe(report.totals.openSandboxSeconds);
+        expect(report.usersPage.total).toBe(1);
+      }
+      expect((await usage(operator)).totals.sandboxSeconds).toBe(42);
+    } finally {
+      await Promise.allSettled(pending);
+    }
+  });
+
   test("идущий настоящий ход /slow виден оператору как занятый", async () => {
     const operator = await createUser({ isOperator: true });
     const user = await createUser();
@@ -310,6 +429,31 @@ describe("песочницы и открытые интервалы", () => {
     expect(report.byDay.reduce((sum, day) => sum + day.sandboxSeconds, 0)).toBe(42);
     const historical = await usage(operator, "?from=2000-01-01&to=2000-01-01");
     expect(historical.totals.openSandboxSeconds).toBe(0);
+  });
+
+  test("пользователь только с открытым временем участвует в сортировке и поиске, но не в дневном расходе", async () => {
+    const operator = await createUser({ isOperator: true });
+    const running = await createUser({ name: "Открытая песочница" });
+    const closed = await createUser({ name: "Закрытый расход" });
+    const key = await createDaytonaKey();
+    const session = await seedMachine(running, key.id, { runningSince: new Date(Date.now() - 1_200_000) });
+    await db().insert(sessionEvents).values({
+      appSessionId: session.id, seq: 0, payload: { type: "turn.started", data: { turnId: "busy" } },
+    });
+    await record(closed, "sandbox_seconds", 600, new Date().toISOString());
+    await record(closed, "model_output_tokens", 42, new Date().toISOString());
+    const report = await usage(operator);
+    expect(report.byUser.map((row) => row.user.id)).toEqual([running.id, closed.id]);
+    expect(report.byUser[0].sandboxSeconds).toBe(0);
+    expect(report.byUser[0].openSandboxSeconds).toBeGreaterThanOrEqual(1200);
+    expect(report.byDay.reduce((sum, day) => sum + day.sandboxSeconds, 0)).toBe(600);
+    const tokens = await usage(operator, "?metric=tokens");
+    expect(tokens.byUser.map((row) => row.user.id)).toEqual([closed.id, running.id]);
+    const searched = await usage(operator, "?q=Открытая");
+    expect(searched.byUser.map((row) => row.user.id)).toEqual([running.id]);
+    expect(searched.totals.sandboxSeconds).toBe(report.totals.sandboxSeconds);
+    expect(searched.totals.outputTokens).toBe(42);
+    expect(searched.byDay).toEqual(report.byDay);
   });
 
   test("очередь имеет тот же порядок и позиции, что у владельца, исключает протухшие и удалённые сессии", async () => {

@@ -9,9 +9,9 @@ import type { AdminUsageResponse } from "@/lib/admin/resource-types";
 import { formatHours, formatTokens } from "./shared";
 
 const config = {
-  sandboxSeconds: { label: "Песочницы, ч", color: "var(--chart-1)" },
-  inputTokens: { label: "Входные", color: "var(--chart-1)" },
-  outputTokens: { label: "Выходные", color: "var(--chart-2)" },
+  sandboxSeconds: { label: "Песочницы, ч", color: "var(--foreground)" },
+  inputTokens: { label: "Входные", color: "var(--foreground)" },
+  outputTokens: { label: "Выходные", color: "var(--muted-foreground)" },
 } satisfies ChartConfig;
 
 function formatDay(date: string) {

@@ -153,7 +153,7 @@ export function AgentCopyCard({ part, data, appSessionId, onCopyPanelChange, aut
       </SheetTrigger>
       <SheetContent overlay={mobile} size="panel" className="overflow-hidden">
         <div className="flex flex-col gap-2">
-          <SheetHeader className="gap-1">
+          <SheetHeader>
             <SheetTitle>Копия агента</SheetTitle>
             <SheetDescription>{copyStatusText(copy)}</SheetDescription>
           </SheetHeader>
@@ -163,7 +163,7 @@ export function AgentCopyCard({ part, data, appSessionId, onCopyPanelChange, aut
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-4">
           {copy.task.trim().length === 0 ? null : (
             <ItemGroup className="shrink-0">
-              <Item className="flex-col items-start" size="sm" variant="muted">
+              <Item size="sm" variant="muted">
                 <ItemContent>
                   <ItemTitle>Задача</ItemTitle>
                   <ItemDescription>{copy.task}</ItemDescription>

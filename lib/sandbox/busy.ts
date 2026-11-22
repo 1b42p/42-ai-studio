@@ -1,11 +1,13 @@
 import { and, asc, eq, gte, sql } from "drizzle-orm";
 
 import type { DaytonaMachine } from "@/agent/lib/daytona-backend";
-import { getDb } from "@/lib/db/client";
+import { getDb, type Database } from "@/lib/db/client";
 import { agentSessions, appSessions, bashJobs, sandboxTaskCalls, sandboxWorkers, sessionEvents } from "@/lib/db/schema";
 
 const FRESH_EVENT_MS = 2 * 60_000;
 const MAX_JOB_AGE_MS = 6 * 60 * 60_000;
+
+type BusyDatabase = Pick<Database, "select" | "update">;
 
 interface BusyEvent {
   readonly payload: unknown;
@@ -100,13 +102,17 @@ export async function sessionIsBusy(
   return false;
 }
 
-/** Отчёт читает только базу: toolbox-запрос сбрасывал бы автостоп Daytona. */
+/**
+ * Отчёт читает только базу: toolbox-запрос сбрасывал бы автостоп Daytona.
+ * Внутри транзакции передавать её как db, не занимая второе соединение пула.
+ */
 export async function sessionIsBusyForAdmin(
   appSessionId: string,
   now = Date.now(),
+  db: BusyDatabase = getDb(),
 ): Promise<boolean> {
-  if (await sessionTurnIsBusy(appSessionId, now, true)) return true;
-  const [job] = await getDb().select({ id: bashJobs.id }).from(bashJobs)
+  if (await sessionTurnIsBusy(appSessionId, now, true, db)) return true;
+  const [job] = await db.select({ id: bashJobs.id }).from(bashJobs)
     .where(and(eq(bashJobs.appSessionId, appSessionId), eq(bashJobs.status, "running")))
     .limit(1);
   return job !== undefined;
@@ -116,18 +122,19 @@ async function sessionTurnIsBusy(
   appSessionId: string,
   now: number,
   readOnly: boolean,
+  db: BusyDatabase = getDb(),
 ): Promise<boolean> {
-  const [activeCopy] = await getDb().select({ id: sandboxWorkers.id }).from(sandboxWorkers)
+  const [activeCopy] = await db.select({ id: sandboxWorkers.id }).from(sandboxWorkers)
     .where(and(eq(sandboxWorkers.appSessionId, appSessionId), eq(sandboxWorkers.state, "active")))
     .limit(1);
   if (activeCopy) return true;
 
-  const [session] = await getDb().select({
+  const [session] = await db.select({
     state: appSessions.sandboxWorkState, eventId: appSessions.sandboxWorkEventId,
     turnId: appSessions.sandboxWorkTurnId,
   }).from(appSessions)
     .where(eq(appSessions.id, appSessionId));
-  const events = await getDb()
+  const events = await db
     .select({
       payload: sql`jsonb_build_object('type', ${sessionEvents.payload}->>'type',
         'data', jsonb_build_object('turnId', ${sessionEvents.payload}->'data'->>'turnId',
@@ -149,7 +156,7 @@ async function sessionTurnIsBusy(
   // Только известные незавершённые вызовы агентов текущего хода,
   // каждый из которых действительно припаркован на вводе. LEFT JOIN
   // сохраняет неизвестную копию в результате, не принимая её за свободную.
-  const tasks = session?.turnId ? await getDb().select({
+  const tasks = session?.turnId ? await db.select({
     kind: sandboxTaskCalls.kind, workerState: sandboxWorkers.state,
   }).from(sandboxTaskCalls)
     .leftJoin(agentSessions, and(
@@ -170,7 +177,7 @@ async function sessionTurnIsBusy(
   );
   if (turnIsBusy(events, now, { allowWaitingTasks })) return true;
   if (!readOnly && session?.state === "active" && session.eventId) {
-    const [released] = await getDb().update(appSessions).set({ sandboxWorkState: "idle" })
+    const [released] = await db.update(appSessions).set({ sandboxWorkState: "idle" })
       .where(and(eq(appSessions.id, appSessionId), eq(appSessions.sandboxWorkState, "active"),
         eq(appSessions.sandboxWorkEventId, session.eventId))).returning({ id: appSessions.id });
     // Новый шаг мог уже сменить отметку после чтения истории.
