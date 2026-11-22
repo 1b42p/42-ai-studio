@@ -45,6 +45,11 @@ export const VOICEOVER_REQUEST = [
   "Готовый файл сохрани в out/calm-morning.mp4. Дополнительных пожеланий нет.",
 ].join("\n");
 
+export const VOICEOVER_CATALOG_FAILURE_REQUEST = VOICEOVER_REQUEST
+  .replace(`Нужна русская озвучка Светланой (${VOICE}), обычная скорость, без музыки.`,
+    "Нужна русская озвучка, обычная скорость, без музыки. Голос выбери из каталога.")
+  .replace("Если Светлана недоступна,", "Если серверная озвучка недоступна,");
+
 const REFERENCE_FILES = [
   "voiceover/references/remotion.md",
   "voiceover/references/piper.md",
@@ -261,7 +266,11 @@ export async function voiceoverSession(t: EveEvalContext, fallback: boolean) {
     {
       id: "voices",
       tool: "list_voices",
-      outcome: {
+      outcome: fallback ? {
+        throw: {
+          message: "voices_unavailable: Список недоступен. Для русского или английского вызовите speak с language: ru или en без voice; список не нужен.",
+        },
+      } : {
         response: {
           voices: [
             {

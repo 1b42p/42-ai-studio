@@ -12,6 +12,8 @@ export type EdgeTtsMode =
   | "rate_limit"
   | "fail"
   | "no_boundaries"
+  | "skipped_word"
+  | "voices_failed"
   | "close_1007"
   | "forbidden";
 
@@ -118,8 +120,9 @@ function audioFrame(body: Uint8Array): Buffer {
   return frame;
 }
 
-function metadataFor(text: string): string {
-  const words = text.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? [];
+function metadataFor(text: string, mode: EdgeTtsMode): string {
+  const allWords = text.match(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu) ?? [];
+  const words = mode === "skipped_word" ? allWords.filter((_, index) => index !== 1) : allWords;
   const metadata = [
     ...words.map((word, index) => ({
       Type: "WordBoundary",
@@ -167,7 +170,7 @@ function speak(socket: WebSocket, mode: EdgeTtsMode, text: string): void {
     return;
   }
   socket.send(textFrame("turn.start"));
-  if (mode !== "no_boundaries") socket.send(textFrame("audio.metadata", metadataFor(text)));
+  if (mode !== "no_boundaries") socket.send(textFrame("audio.metadata", metadataFor(text, mode)));
   socket.send(audioFrame(SAMPLE_MP3));
   socket.send(textFrame("turn.end"));
 }
@@ -185,7 +188,11 @@ export function startEdgeTtsServer(port = EDGE_TTS_PORT): Promise<EdgeTtsServer>
     }
     if (request.method === "GET" && url.pathname === "/voices") {
       state.voiceRequests += 1;
-      sendJson(response, 200, VOICES);
+      if (state.mode === "voices_failed") {
+        sendJson(response, 503, { error: "Catalog unavailable" });
+      } else {
+        sendJson(response, 200, VOICES);
+      }
       return;
     }
     if (request.method === "GET" && url.pathname === "/__calls") {

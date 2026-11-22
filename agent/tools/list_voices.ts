@@ -14,7 +14,7 @@ export default defineTool({
   description:
     "Список голосов Edge TTS для языка. language — язык (ru, en) или локаль (ru-RU). " +
     "gender необязателен: Female или Male. Если голосов нет, voices пуст и есть availableLocales. " +
-    "Вызывай перед speak, когда нужен не голос по умолчанию.",
+    "Если список пуст или недоступен, speak с language: ru или en без voice использует стандартный голос без каталога.",
   inputSchema: z.object({
     language: z.string().min(1).describe("Язык (ru, en, de) или локаль (ru-RU)"),
     gender: z.enum(["Female", "Male"]).optional().describe("Female или Male"),
