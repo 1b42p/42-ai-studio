@@ -1123,9 +1123,11 @@ Postgres `pg_try_advisory_lock(4, hashtext(<uuid>::text))`, пометка
 | `npm run test:render` | тесты отрисовки в настоящем Chromium |
 
 `npm run build` секретов не требует: проверка переменных окружения
-пропускается на фазе сборки. При `npm start` сначала выполняйте
-`npm run build` — он делает `eve build`, и eve при этом слушает порт `4274`
-(`EVE_NEXT_PRODUCTION_PORT`).
+пропускается на фазе сборки. При `npm start` Eve по умолчанию слушает
+локальный порт `4274`. Если задаёте `EVE_NEXT_PRODUCTION_PORT`, передайте
+одно и то же значение в `npm run build` и `npm start`: Next.js записывает
+порт во внутренний маршрут при сборке. После выкладки проверьте оба
+маршрута: `/api/health` и `/eve/v1/health`.
 
 ## Тесты
 
