@@ -17,7 +17,7 @@ export function messageFileKey(messageId: string, path: string): string {
 
 /** Разрешение файлов для всех сообщений беседы. */
 export interface FileLookup {
-  resolve(messageId: string | undefined): SandboxFileResolver;
+  resolve(messageId: string | undefined, stepId?: string): SandboxFileResolver;
 }
 
 /** Индекс строк по паре «сообщение, путь»; неизвестный путь — заглушка. */
@@ -29,27 +29,36 @@ export function buildFileLookup(state: MessageFilesState | undefined): FileLooku
   const index = new Map(
     (state?.entries ?? []).map((entry) => [messageFileKey(entry.messageId, entry.path), entry]),
   );
+  const versionedSteps = new Set(
+    (state?.entries ?? []).flatMap(({ messageId }) => {
+      const match = /^(.*):[a-f0-9]{64}$/.exec(messageId);
+      return match ? [match[1]!] : [];
+    }),
+  );
   const pending = new Set(state?.pendingMessageIds ?? []);
   // Один и тот же объект для сообщения: стабильное значение контекста не
   // заставляет компоненты ссылок перерисовываться без причины.
   const cache = new Map<string, SandboxFileResolver>();
 
   return {
-    resolve(messageId) {
-      if (state === undefined || messageId === undefined) return { kind: "unavailable" };
-      const cached = cache.get(messageId);
+    resolve(messageId, stepId) {
+      const key = messageId ?? (stepId === undefined ? undefined : `${stepId}:streaming`);
+      if (state === undefined || key === undefined) return { kind: "unavailable" };
+      const cached = cache.get(key);
       if (cached !== undefined) return cached;
 
       const resolver: SandboxFileResolver = {
         kind: "lookup",
         status(path): SandboxFileStatus {
-          const entry = index.get(messageFileKey(messageId, path));
+          const entry = messageId === undefined ? undefined :
+            index.get(messageFileKey(messageId, path)) ??
+            (stepId !== undefined && !versionedSteps.has(stepId) ? index.get(messageFileKey(stepId, path)) : undefined);
           if (entry !== undefined) return { kind: "entry", entry };
-          if (pending.has(messageId)) return { kind: "pending" };
+          if (pending.has(stepId ?? key)) return { kind: "pending" };
           return { kind: "unknown" };
         },
       };
-      cache.set(messageId, resolver);
+      cache.set(key, resolver);
       return resolver;
     },
   };
