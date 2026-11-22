@@ -130,6 +130,20 @@ test("PPTX возвращает настоящую иллюстрацию из �
   });
 });
 
+test("PPTX: чтение исходника не подменяет копирование вложения", async () => {
+  const playback = new StubPlayback(parseToolStubs(await capture((t) => documentSession(t, "deck.pptx"))));
+  const { input, output } = documentPaths("deck.pptx");
+  const command = `python3 "$HOME/.agents/skills/reading-documents/scripts/inspect_document.py" "${input}"`;
+  const run = (callId: string, command: string) => playback.call({ callId, tool: "bash", input: { command } });
+
+  expect(run("copy-then-read", `cp "${input}" /workspace/source/deck.pptx && ${command}`))
+    .toMatchObject({ kind: "stub", outcome: { throw: expect.any(Object) } });
+  expect(run("read-original", command)).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringContaining(`Результаты: ${output}\n`) } },
+  });
+});
+
 test.each([[30, false], [120, true], [120, false]] as const)("native playback %s, draft=%s: полный причинный путь, не эмуляция изменяемой FS", async (seconds, draft) => {
   const playback = new StubPlayback(parseToolStubs(await capture(t => previewSession(t, seconds))));
   const events: EveEvalStreamEvent[] = [];
