@@ -4,7 +4,7 @@ import { videoLinks } from "../video/observations";
 import { assertVoiceoverAssembly } from "./assertions";
 import { piperScenes } from "./observations";
 import {
-  VOICEOVER_REQUEST,
+  VOICEOVER_CATALOG_FAILURE_REQUEST,
   VOICEOVER_TIMEOUT_MS,
   voiceoverSession,
 } from "./fixtures";
@@ -12,14 +12,23 @@ import {
 export default Array.from({ length: 3 }, () =>
   defineEval({
     description:
-      "При speak_unavailable агент использует Piper и сообщает о другом запасном голосе.",
+      "При отказе каталога агент пробует стандартный speak, а при отказе синтеза озвучивает все сцены через Piper.",
     tags: ["voiceover", "voiceover-fallback"],
     timeoutMs: VOICEOVER_TIMEOUT_MS,
     async test(t) {
       const session = await voiceoverSession(t, true);
-      const turn = await session.send(VOICEOVER_REQUEST);
+      const turn = await session.send(VOICEOVER_CATALOG_FAILURE_REQUEST);
       t.succeeded();
       t.loadedSkill("voiceover");
+      turn.calledTool("list_voices", { status: "failed", count: 1 });
+      const catalogFailedAt = turn.events.findIndex(event => event.type === "action.result" &&
+        event.data.status === "failed" && event.data.result.kind === "tool-result" &&
+        event.data.result.toolName === "list_voices");
+      const defaultSpeechAt = turn.events.findIndex(event => event.type === "actions.requested" &&
+        event.data.actions.some(action => action.kind === "tool-call" && action.toolName === "speak" &&
+          action.input.voice === undefined && [undefined, "ru", "ru-RU"].includes(action.input.language as string | undefined)));
+      t.check(catalogFailedAt >= 0 && defaultSpeechAt > catalogFailedAt,
+        satisfies(Boolean, "стандартный русский speak вызван после отказа каталога"));
       // Ожидаемый throw — часть сценария, поэтому noFailedActions здесь неприменим.
       t.calledTool("speak", {
         status: "failed",
@@ -50,7 +59,7 @@ export default Array.from({ length: 3 }, () =>
       );
       t.judge(
         "Итоговый ответ сообщает пользователю, что озвучка выполнена запасным способом " +
-          "из-за недоступности основного сервиса и голос отличается от выбранной Светланы. " +
+           "из-за недоступности основного сервиса и называет фактически использованный голос. " +
           "Недостаточно обещания попробовать запасной способ, предложения пользователю сделать это самому " +
           "или сообщения, что озвучки нет. Техническое название Piper необязательно.",
         { on: turn.message ?? "" },

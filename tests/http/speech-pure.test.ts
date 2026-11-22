@@ -148,12 +148,17 @@ describe("голоса и повтор", () => {
     expect(empty.availableLocales).toEqual(["de-AT", "de-DE"]);
   });
 
-  test("доля букв и отсутствие границ", () => {
+  test("текст без границ и неполное покрытие отклоняются", () => {
     expect(textCoverage("Привет", ["Привет"])).toBe("ok");
     expect(textCoverage("Привет мир", ["Привет"])).toBe("unreadable");
     expect(textCoverage("Привет мир", ["123"])).toBe("unreadable");
-    expect(textCoverage("2026", ["2026"])).toBe("skipped");
+    expect(textCoverage("2026", ["2026"])).toBe("ok");
     expect(textCoverage("2026", [])).toBe("unreadable");
+  });
+
+  test("проверка покрытия не пропускает потерянное отрицание и принимает разбиение дефиса", () => {
+    expect(textCoverage("Дверь не открывается.", ["Дверь", "открывается"])).toBe("unreadable");
+    expect(textCoverage("Всё-таки дверь открывается.", ["Все", "таки", "дверь", "открывается"])).toBe("ok");
   });
 
   test("повтор только для 429, 5xx, таймаута и обрыва", async () => {
