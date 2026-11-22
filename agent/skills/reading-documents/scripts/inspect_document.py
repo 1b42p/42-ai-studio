@@ -6,12 +6,14 @@ import codecs
 import csv
 import datetime as dt
 import itertools
+import operator
 import re
 import sys
 import xml.etree.ElementTree as ET
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -24,6 +26,19 @@ NUMBER = re.compile(
     r"(?P<decimal>[.,]\d+)?\s*(?P<unit>[%₽$€])?$"
 )
 DATE = re.compile(r"^(\d{2})[./](\d{2})[./](\d{4})$")
+EXCEL_FORMAT_TOKEN = re.compile(r'"[^"]*"|[\\_*].|\[[^\]]*\]|.')
+EXCEL_CONDITION = re.compile(
+    r"\[(<=|>=|<>|<|>|=)([+-]?\d+(?:\.\d+)?(?:[Ee][+-]?\d+)?)\]"
+)
+EXCEL_COMPARE = {
+    "<=": operator.le,
+    ">=": operator.ge,
+    "<>": operator.ne,
+    "<": operator.lt,
+    ">": operator.gt,
+    "=": operator.eq,
+}
+CELL_UNITS = frozenset("%₽$€")
 
 
 class DocumentError(Exception):
@@ -157,7 +172,7 @@ class Output:
     def warn(self, text):
         self.warnings.append(text)
 
-    def table(self, name, rows_factory):
+    def table(self, name, rows_factory, *, preserve_units=False):
         """Два потоковых прохода; в памяти только типы столбцов и 30 строк."""
         columns = []
         count = 0
@@ -170,20 +185,52 @@ class Output:
                     for col, value in zip(columns, row):
                         col.observe(value)
         preview = []
-        with self.path(name).open("w", encoding="utf-8", newline="") as stream:
-            writer = csv.writer(stream)
+        units_name = f"units/{Path(name).name}"
+        units_writer = None
+        with ExitStack() as stack:
+            writer = csv.writer(
+                stack.enter_context(
+                    self.path(name).open("w", encoding="utf-8", newline="")
+                )
+            )
             with closing(rows_factory()) as rows:
                 for index, row in enumerate(rows):
                     values = [scalar(v) if index == 0 else col.convert(v)
                               for col, v in zip(columns, row)]
                     values.extend([""] * (len(columns) - len(values)))
                     writer.writerow(values)
+                    if preserve_units and index:
+                        for c, (col, value) in enumerate(zip(columns, row)):
+                            if (
+                                not isinstance(value, str)
+                                or value.rstrip()[-1:] not in CELL_UNITS
+                            ):
+                                continue
+                            parsed = number(value)
+                            if not parsed or not parsed[1]:
+                                continue
+                            unit = parsed[1]
+                            if units_writer is None:
+                                stream = stack.enter_context(
+                                    self.path(units_name).open(
+                                        "w", encoding="utf-8", newline=""
+                                    )
+                                )
+                                units_writer = csv.writer(stream)
+                                units_writer.writerow(["row", "column", "unit"])
+                            units_writer.writerow([index + 1, c + 1, unit])
+                            if index < 30 and col.kind == "число":
+                                values[c] += unit if unit == "%" else f" {unit}"
                     if index < 30:
                         preview.append(values)
         self.write(f"Таблица: `{name}`; строк с заголовком: {count}, столбцов: {len(columns)}.")
         self.write(markdown(preview))
         if count > 30:
             self.write("Показаны первые 30 строк; CSV содержит таблицу целиком.")
+        if units_writer is not None:
+            self.write(
+                f"Единицы отдельных ячеек: `{units_name}` (строка и столбец с 1, включая заголовок)."
+            )
         for i, col in enumerate(columns, 1):
             if col.numeric and col.units:
                 self.write(f"Столбец {i}: убраны суффиксы {', '.join(sorted(col.units))}; "
@@ -406,6 +453,72 @@ def xlsx_raw_numbers(path, sheet_path):
                     sheet_data.clear()
 
 
+@lru_cache(maxsize=256)
+def xlsx_number_format(code):
+    """Разбираем только секции, условия и маркеры единиц, не имитируем округление Excel."""
+    sections = []
+    condition, percent, unit = None, 0, ""
+    for token in itertools.chain(EXCEL_FORMAT_TOKEN.findall(code), (";",)):
+        if token == ";":
+            sections.append((condition, percent, unit))
+            condition, percent, unit = None, 0, ""
+        elif token == "%":
+            percent += 1
+        elif match := EXCEL_CONDITION.fullmatch(token):
+            condition = (EXCEL_COMPARE[match[1]], Decimal(match[2]))
+        else:
+            # "$" самого блока [$…] — начало кода, не символ валюты.
+            if token.startswith("[$"):
+                literal = token[2:-1].split("-", 1)[0]
+            elif token.startswith('"'):
+                literal = token[1:-1].strip()
+            elif token.startswith("\\"):
+                literal = token[1:]
+            else:
+                literal = token
+            if literal in CELL_UNITS:
+                unit = literal
+    return tuple(sections[:3])
+
+
+def xlsx_formatted_number(raw, code):
+    # Некорректный стиль не должен раздувать нормализованное число.
+    if len(code) > 1024:
+        return raw
+    sections = xlsx_number_format(code)
+    if not any(percent or unit for _, percent, unit in sections):
+        return raw
+    value = Decimal(raw)
+    if any(condition for condition, _, _ in sections):
+        # Первые две секции могут иметь условия, третья — запасная.
+        selected = next(
+            (
+                section
+                for section in sections
+                if section[0] is None or section[0][0](value, section[0][1])
+            ),
+            None,
+        )
+        if selected is None:
+            return raw
+    else:
+        index = (
+            1
+            if value < 0 and len(sections) >= 2
+            else 2
+            if value == 0 and len(sections) == 3
+            else 0
+        )
+        selected = sections[index]
+    _, percent, unit = selected
+    if percent:
+        sign, digits, exponent = value.as_tuple()
+        # Сдвиг десятичной точки без округления текущим контекстом Decimal.
+        raw = format(Decimal((sign, digits, exponent + 2 * percent)), "f")
+        return raw + "%"
+    return raw + unit
+
+
 def xlsx_rows(path, sheet):
     # openpyxl отвечает за типы/даты/пустоты, сырой числовой XML — за точность.
     # _worksheet_path — путь части архива в openpyxl 3.1.5, не данные листа в памяти.
@@ -415,9 +528,14 @@ def xlsx_rows(path, sheet):
             while raw and raw[0] < index:
                 raw = next(raw_rows, None)
             numbers = raw[1] if raw and raw[0] == index else {}
-            yield [numbers.get(cell.coordinate, cell.value)
-                   if cell.data_type == "n" and cell.value is not None else cell.value
-                   for cell in cells]
+            yield [
+                xlsx_formatted_number(
+                    numbers.get(cell.coordinate, str(cell.value)), cell.number_format
+                )
+                if cell.data_type == "n" and cell.value is not None
+                else cell.value
+                for cell in cells
+            ]
 
 
 def inspect_xlsx(path, out):
@@ -444,7 +562,11 @@ def inspect_xlsx(path, out):
                     out.warn(f"лист {sheet.title}: формул без значения: {missing}; "
                              "нужен пересчёт в Excel или LibreOffice, пустоты не равны нулю")
                 name = sheet_filename(sheet.title, used)
-                count, columns = out.table(f"tables/{name}", lambda s=sheet: xlsx_rows(path, s))
+                count, columns = out.table(
+                    f"tables/{name}",
+                    lambda s=sheet: xlsx_rows(path, s),
+                    preserve_units=True,
+                )
                 out.write(f"Размер: {count} строк × {len(columns)} столбцов.")
         finally:
             formulas.close()
@@ -545,11 +667,16 @@ def inspect_csv(path, out, args):
     out.warn(f"кодировка: {encoding}, разделитель: {display}")
     out.write(f"Кодировка: {encoding}; разделитель: {display}.")
     if path.stat().st_size < 200 and not args.encoding:
-        out.warn("кодировка определена неуверенно: файл короче 200 байт; "
-                 "переопредели --encoding windows-1251 (или нужной кодировкой)")
-    factory = (lambda: csv_rows(path, encoding, delimiter)) if delimiter else (
-        lambda: single_column_rows(path, encoding))
-    count, columns = out.table("tables/data.csv", factory)
+        out.warn(
+            "кодировка определена неуверенно: файл короче 200 байт; "
+            "переопредели --encoding windows-1251 (или нужной кодировкой)"
+        )
+    factory = (
+        (lambda: csv_rows(path, encoding, delimiter))
+        if delimiter
+        else (lambda: single_column_rows(path, encoding))
+    )
+    count, columns = out.table("tables/data.csv", factory, preserve_units=True)
     out.summary.append(f"Строк с заголовком: {count}, столбцов: {len(columns)}")
     decimal_signs = sorted(set().union(*(col.decimals for col in columns if col.numeric)))
     out.write(f"Десятичный знак источника: {' и '.join(decimal_signs) or 'не найден'}; "
