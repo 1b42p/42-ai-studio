@@ -5,6 +5,7 @@ import { voiceoverFrames } from "../../evals/voiceover/media-fixture";
 import { seedQuestionFrames } from "../../evals/questions/media-fixture";
 import { seedMusicFrames } from "../../evals/music/media-fixture";
 import { seedPreviewFrames } from "../../evals/preview/media-fixture";
+import { seedDocumentImages } from "../../evals/documents/media-fixture";
 
 export const stubEvalEnvironment = JustBashSandbox.environment({
   autoInstall: false,
@@ -21,6 +22,7 @@ export const stubEvalEnvironment = JustBashSandbox.environment({
     await seedQuestionFrames(defaultFilesystem);
     await seedMusicFrames(defaultFilesystem);
     await seedPreviewFrames(defaultFilesystem);
+    await seedDocumentImages(defaultFilesystem);
     return defaultFilesystem;
   },
 });

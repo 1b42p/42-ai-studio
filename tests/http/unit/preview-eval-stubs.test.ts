@@ -7,10 +7,11 @@ import { canonicalStillPattern, frameName, frameNumbers, nominalFramePattern, pr
 import { inspectedVideo, previewEvidence, reviewedBeforeVideo } from "../../../evals/preview/observations";
 import { musicSession } from "../../../evals/music/fixtures";
 import { voiceoverSession } from "../../../evals/voiceover/fixtures";
+import { inspectVideoFile } from "../../../evals/voiceover/file-inspection";
 import { questionSession } from "../../../evals/questions/fixtures";
 import { videoSession } from "../../../evals/video/fixtures";
 import { webSession } from "../../../evals/web/fixtures";
-import { documentSession } from "../../../evals/documents/fixtures";
+import { documentPaths, documentSession } from "../../../evals/documents/fixtures";
 import type { EveEvalStreamEvent } from "eve/evals";
 
 const toolNames = ["bash", "read_file", "edit_file", "agent", "ask_question", "speak", "list_voices", "download_video", "read_page", "web_search", "set_session_preview"];
@@ -37,7 +38,7 @@ test.each([
   ["questions", (t: EveEvalContext) => questionSession(t)],
   ["video", (t: EveEvalContext) => videoSession(t, { caseId: "preview-isolation" })],
   ["web", (t: EveEvalContext) => webSession(t, [{ id: "pages", tool: "read_page", outcome: { response: {} } }, { id: "search", tool: "web_search", outcome: { response: {} } }])],
-  ["documents", (t: EveEvalContext) => documentSession(t, "/workspace/source/book.pdf")],
+  ["documents", (t: EveEvalContext) => documentSession(t, "report.pdf")],
 ] as const)("%s: все эффекты изолированы и не больше 100 native правил", async (name, create) => {
   const stubs = await capture(create);
   expect(stubs.length).toBeLessThanOrEqual(100);
@@ -46,6 +47,87 @@ test.each([
   if (name !== "preview-draft" && name !== "questions") {
     expect(stubs.find(stub => stub.tool === "ask_question" && stub.match === undefined)?.outcome).toEqual({ response: { status: "unavailable" } });
   }
+});
+
+test("Piper находит упакованный навык до синтеза", async () => {
+  const playback = new StubPlayback(parseToolStubs(await capture(t => voiceoverSession(t, true))));
+  const command = String.raw`for dir in "$HOME/.agents/skills/voiceover" /workspace/skills/voiceover; do
+  if test -r "$dir/references/piper.md" && test -r "$dir/scripts/piper_speak.py"; then
+    printf '%s\n' "$dir"
+    cat "$dir/references/piper.md"
+    exit 0
+  fi
+done
+exit 1`;
+  const call = (callId: string, command: string) => playback.call({ callId, tool: "bash", input: { command } });
+  expect(call("locate", command)).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringContaining("/root/.agents/skills/voiceover\n") } },
+  });
+  expect(call("unknown", command.replace("piper_speak.py", "unknown.py"))).toMatchObject({
+    kind: "stub",
+    outcome: { throw: { message: expect.stringContaining("Команда не поддержана") } },
+  });
+  expect(call("list-project", "ls -la /workspace/calm-morning && find /workspace/calm-morning/src /workspace/calm-morning/voice -maxdepth 2 -type f")).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringContaining("/workspace/calm-morning/voice/scene-01.txt") } },
+  });
+});
+
+test("Piper: проверка MP4 через test и stat требует тот же файл", async () => {
+  const playback = new StubPlayback(parseToolStubs(await capture(t => voiceoverSession(t, true))));
+  const path = "/workspace/calm-morning/out/calm-morning.mp4";
+  const command = "cd /workspace/calm-morning && test -s out/calm-morning.mp4 && stat -c 'size=%s bytes' out/calm-morning.mp4";
+  const result = playback.call({ callId: "inspect", tool: "bash", input: { command } });
+  expect(result).toMatchObject({ kind: "stub", outcome: { response: { exitCode: 0, stdout: "1052620 bytes\n" } } });
+  expect(inspectVideoFile(command, "size=1052620 bytes\n", path).nonempty).toBe(true);
+  expect(inspectVideoFile(command.replace("test -s out/calm-morning.mp4", "test -s out/other.mp4"), "size=1052620 bytes\n", path).nonempty).toBe(false);
+});
+
+test.each([
+  ["data.csv", "tables/data.csv", "Казань,1318.6"],
+  ["report.pdf", "tables/p1-1.csv", "Казань,20500.2"],
+  ["deck.pptx", "tables/s1-1.csv", "Казань,20500.2"],
+] as const)("запись %s возвращает файлы своего формата", async (name, table, value) => {
+  const playback = new StubPlayback(parseToolStubs(await capture((t) => documentSession(t, name))));
+  const { input, output } = documentPaths(name);
+  const command = `python3 "$HOME/.agents/skills/reading-documents/scripts/inspect_document.py" ${input} --out ${output}`;
+  expect(playback.call({ callId: "extract", tool: "bash", input: { command } })).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringContaining(`Результаты: ${output}\n`) } },
+  });
+  const combined = String.raw`printf '%s\n' "$HOME" && python3 -c 'import pdfplumber, pptx, openpyxl, charset_normalizer' && ` + command;
+  expect(playback.call({ callId: "combined-extract", tool: "bash", input: { command: combined } })).toMatchObject({
+    kind: "stub",
+    outcome: { response: { exitCode: 0, stdout: expect.stringMatching(/^\/root\n/u) } },
+  });
+  expect(playback.call({
+    callId: "prepare-output",
+    tool: "bash",
+    input: { command: `mkdir -p ${output} && ${command}` },
+  })).toMatchObject({ kind: "stub", outcome: { response: { exitCode: 0 } } });
+  expect(playback.call({ callId: "table", tool: "read_file", input: { filePath: `${output}/${table}` } })).toMatchObject({
+    kind: "stub",
+    outcome: { response: { content: expect.stringContaining(value) } },
+  });
+  expect(playback.call({
+    callId: "unlisted",
+    tool: "read_file",
+    input: { filePath: `${output}/tables/nonexistent.csv` },
+  })).toMatchObject({ kind: "stub", outcome: { throw: expect.any(Object) } });
+  expect(playback.call({ callId: "bad-output", tool: "bash", input: { command: `${command}-other` } })).toMatchObject({
+    kind: "stub", outcome: { throw: expect.any(Object) },
+  });
+});
+
+test("PPTX возвращает настоящую иллюстрацию из разбора", async () => {
+  const playback = new StubPlayback(parseToolStubs(await capture((t) => documentSession(t, "deck.pptx"))));
+  const { output } = documentPaths("deck.pptx");
+  const path = `${output}/images/s1-1.png`;
+  expect(playback.call({ callId: "drawing", tool: "read_file", input: { filePath: path } })).toMatchObject({
+    kind: "stub",
+    outcome: { response: { path, file: { mediaType: "image/png", width: expect.any(Number), height: expect.any(Number) } } },
+  });
 });
 
 test.each([[30, false], [120, true], [120, false]] as const)("native playback %s, draft=%s: полный причинный путь, не эмуляция изменяемой FS", async (seconds, draft) => {

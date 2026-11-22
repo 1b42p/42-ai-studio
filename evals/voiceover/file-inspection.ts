@@ -3,7 +3,7 @@ import { posix } from "node:path";
 const ARGUMENT = String.raw`("[^"\n$\\\x60]+"|'[^'\n]+'|[^\s"';&|<>$\\\x60]+)`;
 const SIZE_OPERATION = [
   String.raw`test\s+-s`,
-  String.raw`stat(?:\s+(?:-c\s*|--format(?:=|\s+))["']?(?:%s(?: bytes)?|%n %s bytes)["']?)?`,
+  String.raw`stat(?:\s+(?:-c\s*|--format(?:=|\s+))["']?(?:(?:size=)?%s(?: bytes)?|%n %s bytes)["']?)?`,
   String.raw`wc\s+(?:-c|--bytes)(?:\s*<)?`,
 ].join("|");
 
@@ -135,7 +135,7 @@ function sizeOutput(
   const size = operation.startsWith("wc")
     ? /^(\d+)(?:[\t ]+(.+))?$/u.exec(stdout.trim())
     : (/^([0-9]+)$/mu.exec(stdout) ??
-      /(?:^|\s)(\d+)\s+bytes$/u.exec(stdout.trim()) ??
+      /(?:^|\s|size=)(\d+)\s+bytes$/u.exec(stdout.trim()) ??
       /\bSize:\s*(\d+)\b/u.exec(stdout));
   return !!size && positiveBytes(size[1]) && (!size[2] || matchesPath(size[2]));
 }
@@ -186,15 +186,22 @@ export function inspectVideoFile(
     }
     parts.shift();
   }
-  const size = new RegExp(
+  const sizePattern = new RegExp(
     String.raw`^(${SIZE_OPERATION})\s+(?:--\s+)?${ARGUMENT}$`,
     "u",
-  ).exec(parts[0] ?? "");
+  );
+  let size = sizePattern.exec(parts[0] ?? "");
   if (size) {
     if (!matchesPath(size[2])) {
       return { nonempty: false, probeStdout: null };
     }
     parts.shift();
+    const measurement = size[1].startsWith("test") ? sizePattern.exec(parts[0] ?? "") : null;
+    if (measurement && !measurement[1].startsWith("test")) {
+      if (!matchesPath(measurement[2])) return { nonempty: false, probeStdout: null };
+      size = measurement;
+      parts.shift();
+    }
   }
   const probe = parts.length === 1 ? probeRequest(parts[0], matchesPath) : null;
   if ((parts.length > 0 && !probe) || (!listing && !size && !probe)) {
