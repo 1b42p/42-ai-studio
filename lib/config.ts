@@ -595,11 +595,14 @@ export function loadConfig(): AppConfig {
 }
 
 /** Shared by Next and the co-located Eve 0.83 process. An external World needs its own erasure adapter. */
-export function localEveStateDirectory(): string {
+export function localEveStateDirectory(): string;
+export function localEveStateDirectory(options: { optional: true }): string | null;
+export function localEveStateDirectory(options?: { optional: true }): string | null {
   loadDotenvFiles();
   const target = process.env.WORKFLOW_TARGET_WORLD;
   if ((target && target !== "local") || process.env.VERCEL_DEPLOYMENT_ID ||
       process.env.EVE_NEXT_PRODUCTION_ORIGIN) {
+    if (options?.optional) return null;
     throw new Error("The configured Eve storage does not use the local erasure adapter");
   }
   const devStateDir = process.env.NODE_ENV === "production" ? undefined : process.env.EVE_DEV_STATE_DIR;

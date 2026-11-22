@@ -9,7 +9,7 @@ import { getStorage } from "@/lib/s3";
 import { errorStatus } from "@/lib/sandbox/errors";
 import { recordSandboxTransition } from "@/lib/usage/sandbox";
 import { cancellableQuery as query } from "@/lib/db/cancellable-query";
-import { eraseStudioWorkflowData } from "@/lib/workflow/erase-session-data";
+import { eraseStudioWorkflowData, forgetStudioWorkflowErasure } from "@/lib/workflow/erase-session-data";
 import { enqueueLateUploadCleanup } from "./late-upload-cleanup";
 import { deleteSessionDaytonaMachines } from "./daytona-erasure";
 
@@ -38,6 +38,12 @@ interface DeletingSession {
 }
 
 class DeletionConflict extends Error {}
+
+async function forgetWorkflowErasure(appSessionId: string, userId: string, signal: AbortSignal) {
+  signal.throwIfAborted();
+  const stateDir = localEveStateDirectory({ optional: true });
+  if (stateDir !== null) await forgetStudioWorkflowErasure(stateDir, { appSessionId, userId });
+}
 
 /** ReservedSql имеет только запросы/release: транзакцией управляем явно. */
 async function transactionOnReserved<T>(
@@ -125,6 +131,7 @@ export async function deleteSessionData(
       if (!journal) return { status: "not_found", timings };
       const prefix = `u/${journal.userId}/s/${journal.id}/`;
       await timed("s3Final", () => getStorage().deletePrefix(prefix, { signal }));
+      await forgetWorkflowErasure(journal.id, journal.userId, signal);
       await timed("database", () => query(sql!`delete from session_deletions where id = ${appSessionId}`, signal));
       console.info("[session:delete] completed", { appSessionId, timings });
       return { status: "deleted", timings };
@@ -212,6 +219,9 @@ export async function deleteSessionData(
       signal.throwIfAborted();
     });
     await timed("s3Final", () => getStorage().deletePrefix(prefix, { signal }));
+    if (session.eveSessionId || session.startRequestedAt) {
+      await forgetWorkflowErasure(session.id, session.userId, signal);
+    }
     await query(sql`delete from session_deletions where id = ${appSessionId}`, signal);
     console.info("[session:delete] completed", { appSessionId, timings });
     return { status: "deleted", timings };

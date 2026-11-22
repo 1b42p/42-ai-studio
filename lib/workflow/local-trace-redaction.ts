@@ -49,22 +49,13 @@ export function redactOwnedTraceSpans(input: unknown, ownedIds: ReadonlySet<stri
 const TRACE_ID = /^[0-9a-f]{32}$/;
 const SEGMENT_FILE = /^[0-9a-f]{16}\.otlp\.json$/;
 
-function missing(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
-}
-
-async function unlinkIfPresent(file: string) {
-  await unlink(file).catch((error: unknown) => { if (!missing(error)) throw error; });
-}
-
-async function listDirectory(directory: string) {
+async function isTraceDirectory(directory: string) {
   const stat = await lstat(directory).catch((error: unknown) => {
-    if (missing(error)) return null;
+    if (isMissingFile(error)) return null;
     throw error;
   });
-  if (stat === null) return [];
-  if (!stat.isDirectory()) throw new Error("Invalid local trace directory");
-  return readdir(directory, { withFileTypes: true });
+  if (stat !== null && !stat.isDirectory()) throw new Error("Invalid local trace directory");
+  return stat !== null;
 }
 
 /** The local exporter must have drained before the caller enters this write phase. */
@@ -75,37 +66,38 @@ export async function eraseLocalTraceData(
 ): Promise<void> {
   if (ownedIds.size === 0) return;
   const conversationKeys = [...ownedIds].map((id) => createHash("sha256").update(id).digest("hex"));
-  for (const entry of await listDirectory(tracesDir)) {
+  if (!await isTraceDirectory(tracesDir)) return;
+  for (const entry of await readdir(tracesDir, { withFileTypes: true })) {
+    signal.throwIfAborted();
     if (!TRACE_ID.test(entry.name)) continue;
     if (!entry.isDirectory()) throw new Error("Invalid local trace identity");
     const tracePath = path.join(tracesDir, entry.name);
     const segments = path.join(tracePath, "segments");
-    for (const segment of await listDirectory(segments)) {
-      signal.throwIfAborted();
-      if (!SEGMENT_FILE.test(segment.name)) continue;
-      if (!segment.isFile()) throw new Error("Invalid local trace segment");
-      const file = path.join(segments, segment.name);
-      const result = redactOwnedTraceSpans(JSON.parse(await readFile(file, { encoding: "utf8", signal })), ownedIds);
-      if (!result.removed) continue;
-      if (result.kept === 0) {
-        await unlinkIfPresent(file);
-        continue;
+    if (await isTraceDirectory(segments)) {
+      for (const segment of await readdir(segments, { withFileTypes: true })) {
+        signal.throwIfAborted();
+        if (!SEGMENT_FILE.test(segment.name)) continue;
+        if (!segment.isFile()) throw new Error("Invalid local trace segment");
+        const file = path.join(segments, segment.name);
+        const result = redactOwnedTraceSpans(JSON.parse(await readFile(file, { encoding: "utf8", signal })), ownedIds);
+        if (!result.removed) continue;
+        if (result.kept === 0) await unlinkIfPresent(file);
+        else await replaceLocalJson(file, JSON.stringify(result.trace), signal);
       }
-
-      const staging = path.join(segments, `.${randomUUID()}.redaction`);
-      try {
-        await writeFile(staging, JSON.stringify(result.trace), { flag: "wx", mode: 0o600, signal });
-        await rename(staging, file);
-      } finally {
-        await unlinkIfPresent(staging);
-      }
+      await syncDirectory(segments);
     }
-    for (const key of conversationKeys) {
-      signal.throwIfAborted();
-      await unlinkIfPresent(path.join(tracePath, "index", "v1", "conversations", key));
+    const conversations = path.join(tracePath, "index", "v1", "conversations");
+    if (await isTraceDirectory(conversations)) {
+      for (const key of conversationKeys) {
+        signal.throwIfAborted();
+        await unlinkIfPresent(path.join(conversations, key));
+      }
+      await syncDirectory(conversations);
     }
   }
 }
-import { createHash, randomUUID } from "node:crypto";
-import { lstat, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+
+import { isMissingFile, replaceLocalJson, syncDirectory, unlinkIfPresent } from "./durable-redaction";

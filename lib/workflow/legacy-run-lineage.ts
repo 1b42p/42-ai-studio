@@ -2,7 +2,8 @@ import { zstdDecompressSync } from "node:zlib";
 
 const MAX_INPUT_BYTES = 32 * 1024 * 1024;
 const decoder = new TextDecoder("utf-8", { fatal: true });
-const RUN_ID = /^wrun_[0-9A-HJKMNP-TV-Z]{26}$/;
+export const LEGACY_RUN_ID = /^wrun_[0-9A-HJKMNP-TV-Z]{26}$/;
+export const LEGACY_EVE_SESSION_WORKFLOW = "workflow//eve//workflowEntry";
 
 type RecordValue = Record<string, unknown>;
 
@@ -13,7 +14,7 @@ function record(value: unknown): RecordValue | undefined {
 }
 
 function runId(value: unknown): string | undefined {
-  return typeof value === "string" && RUN_ID.test(value) ? value : undefined;
+  return typeof value === "string" && LEGACY_RUN_ID.test(value) ? value : undefined;
 }
 
 /** Reads only named fields from the flattened Workflow input; never revives objects or searches payload text. */
@@ -108,7 +109,7 @@ export function readLegacyRunLineage(value: unknown): LegacyRunLineage | undefin
   if (!run || !id) throw new Error("Invalid legacy Workflow run");
 
   switch (run.workflowName) {
-    case "workflow//eve//workflowEntry": {
+    case LEGACY_EVE_SESSION_WORKFLOW: {
       if (run.input === undefined && typeof run.expiredAt === "string") {
         // Native retention has already stripped inputs, but not Eve's title
         // or parent attributes. A known anchor or explicit parent still binds them.

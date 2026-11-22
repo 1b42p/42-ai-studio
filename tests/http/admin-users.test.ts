@@ -770,6 +770,26 @@ describe("удаление пользователя", () => {
     expect(output).not.toContain(String(target.telegramId));
   }, 120_000);
 
+  test("удаление аккаунта сначала завершает финальную очистку уже каскадированной сессии", async () => {
+    const operator = await createUser({ isOperator: true });
+    const target = await createUser();
+    const id = randomUUID();
+    const prefix = `u/${target.id}/s/${id}/`;
+    await getSqlClient()`insert into session_deletions (id, user_id) values (${id}, ${target.id})`;
+    await s3().put(`${prefix}message-files/late.txt`, "late");
+
+    const result = await deleteUserData(target.id, operator.id, {
+      storage: {
+        async deletePrefix() {
+          // The account-wide sweep must not hide a skipped session finalizer.
+          expect(await s3().listKeys(prefix)).toEqual([]);
+          return 0;
+        },
+      },
+    });
+    expect(result.status).toBe("deleted");
+  });
+
   test("оператор-цель — 409 и ничего не удалено", async () => {
     const operator = await createUser({ isOperator: true });
     const otherOperator = await createUser({ isOperator: true });

@@ -108,14 +108,27 @@ export async function deleteUserData(
       where id = ${userId}`;
     await sql`delete from auth_sessions where user_id = ${userId}`;
 
-    const [counted] = await sql<{ total: number }[]>`
-      select count(*)::int as total from app_sessions where user_id = ${userId}`;
-    const total = counted?.total ?? 0;
+    // Финальный S3 sweep и удаление журнала Workflow могут ещё ждать повтора
+    // после каскада app_sessions. Не удаляем их журнал вместе с владельцем.
+    const sessionCount = async (connection: postgres.ReservedSql) => {
+      const [row] = await connection<{ total: number }[]>`
+        select (
+          (select count(*) from app_sessions where user_id = ${userId}) +
+          (select count(*) from session_deletions where user_id = ${userId})
+        )::int as total`;
+      return row?.total ?? 0;
+    };
+    const total = await sessionCount(sql);
 
     const batch = await sql<SessionRow[]>`
-      select id from app_sessions
-      where user_id = ${userId}
-      order by (deleted_at is null) desc, created_at, id
+      select id from (
+        select id, created_at, deleted_at is null as fresh
+        from app_sessions where user_id = ${userId}
+        union all
+        select id, created_at, false as fresh
+        from session_deletions where user_id = ${userId}
+      ) as pending
+      order by fresh desc, created_at, id
       limit ${SESSIONS_PER_BATCH}`;
 
     const batchDeadline = Math.min(requestDeadline, Date.now() + BATCH_BUDGET_MS);
@@ -144,9 +157,7 @@ export async function deleteUserData(
       // `conflict` — сессию удаляет другой запрос; это пропуск без сбоя.
     }
 
-    const [remainingRow] = await sql<{ remaining: number }[]>`
-      select count(*)::int as remaining from app_sessions where user_id = ${userId}`;
-    const remaining = remainingRow?.remaining ?? 0;
+    const remaining = await sessionCount(sql);
 
     if (failed.size > 0) {
       console.warn("[admin:user] delete incomplete", {

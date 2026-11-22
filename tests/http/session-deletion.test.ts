@@ -226,7 +226,7 @@ describe("удаление всех данных сессии", () => {
     expect((await row(id))!.deletedAt).toBeNull();
   });
 
-  test("создающаяся eve-сессия даёт 409 до метки, старое окно не мешает удалению", async () => {
+  test("создающаяся eve-сессия даёт 409, старый запрос без проверяемого запуска не выдаёт успех", async () => {
     const user = await createUser();
     const { id } = await createSessionAs(user);
     await db().update(appSessions).set({ startRequestedAt: new Date() }).where(eq(appSessions.id, id));
@@ -235,7 +235,8 @@ describe("удаление всех данных сессии", () => {
     expect(await conflict.json()).toMatchObject({ error: { message: "Сессия ещё создаётся, повторите через несколько секунд." } });
     expect((await row(id))!.deletedAt).toBeNull();
     await db().update(appSessions).set({ startRequestedAt: new Date(Date.now() - 61_000) }).where(eq(appSessions.id, id));
-    expect((await remove(id, user)).status).toBe(204);
+    expect((await remove(id, user)).status).toBe(502);
+    expect((await row(id))!.deletedAt).toBeInstanceOf(Date);
     expect((await fakeSandbox.counters()).deleted).toBe(0);
   });
 

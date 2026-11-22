@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { inventoryOwnedLegacyRuns, type LocalWorkflowOwner } from "./legacy-local-inventory";
 import { eraseLegacyRunFiles } from "./legacy-local-files";
 import { eraseLocalTraceData } from "./local-trace-redaction";
+import { localErasureJournal } from "./local-erasure-journal";
 
 interface ErasureOptions {
   readonly stateDir: string;
@@ -20,8 +21,16 @@ interface ErasureOptions {
 export async function eraseStudioWorkflowData(options: ErasureOptions): Promise<void> {
   const { stateDir, owner, signal, resetSession } = options;
   const dataDir = path.join(stateDir, ".workflow-data");
-  const inventory = () => inventoryOwnedLegacyRuns(dataDir, owner, signal);
+  const journal = localErasureJournal(dataDir, owner);
+  const captured = await journal.read(signal);
+  const inventory = () => inventoryOwnedLegacyRuns(dataDir, owner, signal, { captured });
   let runs = await inventory();
+  if (!runs.length) {
+    // The caller skips truly never-started sessions. An expired start claim
+    // without a run cannot distinguish a failed start from a missing volume or
+    // a start request that has not reached Workflow yet.
+    throw new Error("Missing owned Eve root for a previously requested start");
+  }
   const reset = new Set<string>();
 
   while (runs.some((run) => !run.terminal)) {
@@ -35,12 +44,24 @@ export async function eraseStudioWorkflowData(options: ErasureOptions): Promise<
     runs = await inventory();
   }
 
-  // Do not scrub identifying run records until the separately persisted traces
-  // have been handled. On failure the scope can be recovered on the next try.
+  // Capture all verified IDs before the first scrub. Retrying on a different
+  // World cannot use this journal to bypass the on-disk root and run checks.
+  const sessionIds = runs.filter(({ id, sessionId }) => id === sessionId).map(({ id }) => id);
+  if (!sessionIds.length) throw new Error("Missing owned Eve root after reset");
+  await journal.write({ runIds: runs.map(({ id }) => id), sessionIds }, signal);
+
   await eraseLocalTraceData(
     path.join(stateDir, "traces", "v1"),
     new Set(runs.flatMap((run) => run.sessionId ? [run.id, run.sessionId] : [run.id])),
     signal,
   );
   await eraseLegacyRunFiles(dataDir, runs, signal);
+}
+
+/** Call only after the database has durably removed the application session. */
+export async function forgetStudioWorkflowErasure(
+  stateDir: string,
+  owner: Pick<LocalWorkflowOwner, "appSessionId" | "userId">,
+): Promise<void> {
+  await localErasureJournal(path.join(stateDir, ".workflow-data"), owner).forget();
 }
