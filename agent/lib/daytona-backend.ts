@@ -115,11 +115,10 @@ function wrap(sandbox: Sandbox): DaytonaMachine {
   };
 }
 
-// SDK 0.226.1 не принимает AbortSignal у get/delete. Изолируем только эту
-// операцию: terminate закрывает её HTTP/WebSocket и останавливает продолжения
-// SDK до освобождения блокировки. Уже принятый Daytona запрос отменить нельзя;
-// следующий вызов подтверждает удаление через get/404.
-const DELETE_WORKER = String.raw`
+// SDK 0.226.1 не принимает AbortSignal у list/get/delete. terminate закрывает
+// HTTP/WebSocket SDK до освобождения блокировки. Уже принятый Daytona запрос
+// отменить нельзя; следующий вызов подтверждает удаление через get/404.
+const ERASURE_WORKER = String.raw`
 const { parentPort, workerData } = require("node:worker_threads");
 (async () => {
   try {
@@ -129,6 +128,10 @@ const { parentPort, workerData } = require("node:worker_threads");
       requestTimeoutMs: Math.max(1, workerData.deadline - Date.now())
     });
     const sandbox = await client.get(workerData.sandboxId);
+    if (workerData.expectedSessionId && sandbox.labels?.studio_session !== workerData.expectedSessionId) {
+      parentPort.postMessage({ ok: false, status: 409 });
+      return;
+    }
     const remaining = workerData.deadline - Date.now();
     if (remaining <= 0) throw new Error("Deletion timed out");
     await sandbox.delete(remaining / 1000, true);
@@ -139,12 +142,15 @@ const { parentPort, workerData } = require("node:worker_threads");
 })();
 `;
 
+type ErasureOptions = { signal: AbortSignal; deadline: number };
+type DeleteMachineOptions = ErasureOptions & { expectedSessionId?: string };
+
 /** Ограниченное и полностью остановленное перед возвратом удаление SDK. */
 export async function deleteDaytonaMachine(
   keyId: string,
   secret: string,
   sandboxId: string,
-  options: { signal: AbortSignal; deadline: number },
+  options: DeleteMachineOptions,
 ): Promise<void> {
   const { signal, deadline } = options;
   signal.throwIfAborted();
@@ -152,18 +158,32 @@ export async function deleteDaytonaMachine(
   if (config.appTestMode) {
     const machine = await daytonaBackend(keyId, secret).get(sandboxId);
     signal.throwIfAborted();
+    if (options.expectedSessionId && machine.labels.studio_session !== options.expectedSessionId) {
+      throw new DaytonaConflictError("Sandbox no longer belongs to the session", 409);
+    }
     await (machine as import("@/lib/sandbox/fake").FakeMachine).delete(
       Math.max(0.001, (deadline - Date.now()) / 1000), true, signal,
     );
     signal.throwIfAborted();
     return;
   }
+  await runErasureWorker(secret, {
+    sandboxId, expectedSessionId: options.expectedSessionId,
+  }, options);
+}
+
+async function runErasureWorker(
+  secret: string,
+  request: { sandboxId: string; expectedSessionId?: string },
+  { deadline, signal }: ErasureOptions,
+): Promise<void> {
+  signal.throwIfAborted();
   const require = createRequire(resolve("package.json"));
-  const worker = new Worker(DELETE_WORKER, {
+  const worker = new Worker(ERASURE_WORKER, {
     eval: true,
     workerData: {
       modulePath: require.resolve("@daytona/sdk"),
-      apiUrl: config.daytonaApiUrl, secret, sandboxId, deadline,
+      apiUrl: loadConfig().daytonaApiUrl, secret, deadline, ...request,
     },
     stdout: true, stderr: true,
   });
@@ -175,13 +195,13 @@ export async function deleteDaytonaMachine(
     await new Promise<void>((resolve, reject) => {
       abort = () => reject(signal.reason);
       signal.addEventListener("abort", abort, { once: true });
-      worker.once("error", () => reject(new Error("Daytona deletion worker failed")));
-      worker.once("exit", () => reject(new Error("Daytona deletion worker exited")));
-      worker.once("message", (result: { ok: boolean; status?: number }) => {
+      worker.once("error", () => reject(new Error("Daytona erasure worker failed")));
+      worker.once("exit", () => reject(new Error("Daytona erasure worker exited")));
+      worker.once("message", (result: { ok: true } | { ok: false; status?: number }) => {
         if (result.ok) resolve();
         else if (result.status === 404) reject(new DaytonaNotFoundError("Sandbox not found", 404));
         else if (result.status === 409) reject(new DaytonaConflictError("Sandbox state change in progress", 409));
-        else reject(Object.assign(new Error("Daytona deletion failed"), { status: result.status }));
+        else reject(Object.assign(new Error("Daytona erasure request failed"), { status: result.status }));
       });
       if (signal.aborted) abort();
     });

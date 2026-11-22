@@ -652,13 +652,17 @@ describe("удаление пользователя", () => {
 
     const userTables = await getSqlClient()<{ table_name: string }[]>`select table_name
       from information_schema.columns
-      where table_schema = 'public' and column_name = 'user_id'`;
+      where table_schema = 'public' and column_name = 'user_id'
+        and table_name <> 'late_upload_cleanups'`;
     for (const { table_name } of userTables) {
       const rows = await getSqlClient()<{ count: number }[]>`
         select count(*)::int as count from ${getSqlClient()(table_name)}
         where user_id = ${fixture.target.id}`;
       expect(rows[0]!.count, table_name).toBe(0);
     }
+    // Единственное исключение — квитанция для позднего подписанного PUT.
+    expect(await getSqlClient()`select id from late_upload_cleanups where user_id = ${fixture.target.id}`)
+      .toEqual([{ id: fixture.sessions[0]!.id }]);
 
     const sessionTables = await getSqlClient()<{ table_name: string }[]>`select table_name
       from information_schema.columns

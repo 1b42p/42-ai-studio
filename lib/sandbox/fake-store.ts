@@ -524,9 +524,16 @@ export class FakeStore {
   }
 
   async listMachines(apiKey: string): Promise<FakeRecord[]> {
-    return this.transaction((data) => data.machines.filter((machine) =>
-      machine.state !== "destroyed" && organizationOf(data, machine.apiKey) === organizationOf(data, apiKey),
-    ));
+    return this.transaction((data) => {
+      const { rejection } = keyConfig(data, apiKey);
+      if (rejection) {
+        const status = rejection === "unauthorized" ? 401 : rejection === "forbidden" ? 403 : 503;
+        throw httpFailure(status, "Fake Daytona: key rejected");
+      }
+      return data.machines.filter((machine) =>
+        machine.state !== "destroyed" && organizationOf(data, machine.apiKey) === organizationOf(data, apiKey),
+      );
+    });
   }
 
   async states(appSessionId?: string): Promise<FakeMachineState[]> {
