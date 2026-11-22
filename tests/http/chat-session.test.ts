@@ -72,7 +72,21 @@ describe("GET /api/sessions/:id", () => {
       title: null,
       eveSessionId: null,
       streamCursor: 0,
+      starting: false,
     });
+  });
+
+  test("показывает серверное окно первой отправки после 15, но не после 60 секунд", async () => {
+    const user = await createUser();
+    const cookie = await loginAs(user);
+    const { id } = await createSessionAs(user);
+    for (const [age, starting] of [[30_000, true], [61_000, false]] as const) {
+      await db().update(appSessions).set({ startRequestedAt: new Date(Date.now() - age) })
+        .where(eq(appSessions.id, id));
+      const response = await fetchApp(`/api/sessions/${id}`, { headers: { cookie } });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ eveSessionId: null, starting });
+    }
   });
 
   test("чужая, несуществующая и не uuid — 404", async () => {

@@ -14,7 +14,7 @@ export interface MediaRetry {
 /**
  * Одна повторная загрузка медиа после ошибки (#8): истёкшая ссылка обновляется
  * тем же адресом с `?retry=1`, который маршрут игнорирует. Повторная ошибка
- * означает «недоступно»: карточка показывает скачивание.
+ * означает «недоступно»: карточка может предложить скачать файл отдельно.
  */
 export function useMediaRetry(mediaId: string | null | undefined): MediaRetry {
   const [attempt, setAttempt] = useState(0);

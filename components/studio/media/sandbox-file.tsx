@@ -98,7 +98,7 @@ function PendingFile() {
   );
 }
 
-function MissingFile({ title, name }: { title: string; name?: string }) {
+function MissingFile({ title, name, mediaId }: { title: string; name?: string; mediaId?: string | null }) {
   return (
     <Attachment className="w-full max-w-md" state="error">
       <AttachmentMedia variant="icon">
@@ -110,8 +110,15 @@ function MissingFile({ title, name }: { title: string; name?: string }) {
           <AttachmentDescription className="truncate">{name}</AttachmentDescription>
         )}
       </AttachmentContent>
+      {mediaId ? (
+        <AttachmentActions><DownloadButton mediaId={mediaId} /></AttachmentActions>
+      ) : null}
     </Attachment>
   );
+}
+
+function UnavailableMedia({ entry }: { entry: MessageFileView }) {
+  return <MissingFile title="Файл недоступен" name={entry.name} mediaId={entry.mediaId} />;
 }
 
 function FileCard({ entry }: { entry: MessageFileView }) {
@@ -179,7 +186,7 @@ function VideoFile({ entry, label }: { entry: MessageFileView; label?: string })
     video.current?.load();
   }, [src]);
 
-  if (failed || src === undefined) return <FileCard entry={entry} />;
+  if (failed || src === undefined) return <UnavailableMedia entry={entry} />;
 
   return (
     <MediaCard entry={entry} label={label}>
@@ -197,7 +204,7 @@ function VideoFile({ entry, label }: { entry: MessageFileView; label?: string })
 
 function ImageFile({ entry, label }: { entry: MessageFileView; label?: string }) {
   const { src, failed, onError } = useMediaRetry(entry.mediaId);
-  if (failed || src === undefined) return <FileCard entry={entry} />;
+  if (failed || src === undefined) return <UnavailableMedia entry={entry} />;
 
   return (
     <MediaCard entry={entry}>
@@ -213,7 +220,7 @@ function ImageFile({ entry, label }: { entry: MessageFileView; label?: string })
 
 function AudioFile({ entry, label }: { entry: MessageFileView; label?: string }) {
   const { src, failed, onError } = useMediaRetry(entry.mediaId);
-  if (failed || src === undefined) return <FileCard entry={entry} />;
+  if (failed || src === undefined) return <UnavailableMedia entry={entry} />;
 
   return (
     <Attachment className="w-full max-w-md">
@@ -240,6 +247,7 @@ function AudioFile({ entry, label }: { entry: MessageFileView; label?: string })
 }
 
 function ReadyFile({ entry, label }: { entry: MessageFileView; label?: string }) {
+  if (entry.mediaId === null) return <UnavailableMedia entry={entry} />;
   if (entry.contentType?.startsWith("video/")) return <VideoFile entry={entry} label={label} />;
   if (entry.contentType?.startsWith("audio/")) return <AudioFile entry={entry} label={label} />;
   if (entry.contentType?.startsWith("image/")) return <ImageFile entry={entry} label={label} />;

@@ -14,7 +14,13 @@ import {
 import { titleFromEvents, titleSearchKey, type TitleSourceEvent } from "./title";
 
 /** Сколько секунд после начала создания сессии eve разрешено её привязать. */
-export const SESSION_START_WINDOW_MS = 60_000;
+const SESSION_START_WINDOW_SECONDS = 60;
+
+export function isSessionStarting(session: Pick<AppSession, "eveSessionId" | "startRequestedAt">): boolean {
+  return session.eveSessionId === null &&
+    session.startRequestedAt !== null &&
+    Date.now() - session.startRequestedAt.getTime() < SESSION_START_WINDOW_SECONDS * 1000;
+}
 
 /** Событие, сохранённое в базе, в форме ответа API. */
 export interface StoredSessionEvent {
@@ -80,7 +86,7 @@ export async function claimSessionStart(
         isNull(appSessions.eveSessionId),
         or(
           isNull(appSessions.startRequestedAt),
-          lt(appSessions.startRequestedAt, sql`now() - interval '60 seconds'`),
+          lt(appSessions.startRequestedAt, sql`now() - make_interval(secs => ${SESSION_START_WINDOW_SECONDS})`),
         ),
       ),
     )
@@ -122,7 +128,7 @@ export async function findStartingAppSession(userId: string): Promise<AppSession
         eq(appSessions.userId, userId),
         isNull(appSessions.deletedAt),
         isNull(appSessions.eveSessionId),
-        gt(appSessions.startRequestedAt, sql`now() - interval '60 seconds'`),
+        gt(appSessions.startRequestedAt, sql`now() - make_interval(secs => ${SESSION_START_WINDOW_SECONDS})`),
       ),
     )
     .orderBy(sql`${appSessions.startRequestedAt} desc`)

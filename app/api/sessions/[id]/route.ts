@@ -7,7 +7,7 @@ import { getSqlClient } from "@/lib/db/client";
 import { deleteSessionData } from "@/lib/sessions/delete";
 import { errorResponse } from "@/lib/http/errors";
 import { isUuid } from "@/lib/sessions/access";
-import { findUserSession } from "@/lib/sessions/service";
+import { findUserSession, isSessionStarting } from "@/lib/sessions/service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 125;
@@ -31,6 +31,7 @@ export async function GET(
       title: session.title,
       eveSessionId: session.eveSessionId,
       streamCursor: session.streamCursor,
+      starting: isSessionStarting(session),
     },
     { headers: { "Cache-Control": "no-store" } },
   );
