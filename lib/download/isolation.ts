@@ -21,7 +21,10 @@ const RELAY = `
     client.on("error", () => upstream.destroy());
     upstream.on("error", () => client.destroy());
     client.on("close", () => upstream.destroy());
-    upstream.on("close", () => client.destroy());
+    upstream.on("close", () => {
+      // При штатном EOF pipe уже поставил FIN после данных: не обрываем очередь записи.
+      if (!client.writableEnded) client.destroy();
+    });
     client.pipe(upstream).pipe(client);
   });
   relay.on("error", () => process.exit(${BRIDGE_FAILURE}));
