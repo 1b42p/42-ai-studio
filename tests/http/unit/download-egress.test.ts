@@ -33,9 +33,10 @@ test("посредник проверяет адрес фактического 
       });
     }
     await expect(status("GET", "http://cdn.example.com/fragment.mp4")).resolves.toBe(403);
+    expect(proxy.blockedRequests).toBe(1);
     await expect(status("CONNECT", "media.example.com:443")).resolves.toBe(403);
     expect(resolved).toEqual(["cdn.example.com", "media.example.com"]);
-    expect(proxy.blocked).toBe(true);
+    expect(proxy.blockedRequests).toBe(2);
   } finally {
     await proxy.close();
   }

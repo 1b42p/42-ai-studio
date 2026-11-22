@@ -406,8 +406,11 @@ export async function runDownload(
         });
         const info = await runLimited(ctx.abortSignal, config.downloadTimeoutMs, config, async (signal) => {
           const runYtdlp: typeof runCaptured = async (input) => {
+            const blockedBefore = proxy.blockedRequests;
             const result = await runIsolated(input, proxy.socketPath);
-            if (proxy.blocked) throw downloadError("download_blocked_address");
+            if (result.exitCode !== 0 && proxy.blockedRequests > blockedBefore) {
+              throw downloadError("download_blocked_address");
+            }
             return result;
           };
           const metadata = await runYtdlp({

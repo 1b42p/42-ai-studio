@@ -22,10 +22,18 @@ function chat(initialEveSessionId: string | null = null) {
   );
 }
 
-test("после перезагрузки ждёт, пока сервер считает первую отправку активной", async () => {
+test("ждёт активную первую отправку, затем открывает редактор без повторной отправки", async () => {
   vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
   let starting = true;
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ eveSessionId: null, starting })));
+  const request = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    expect(init?.method ?? (input instanceof Request ? input.method : "GET")).toBe("GET");
+    const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
+    if (url.pathname === STATUS_URL) return Response.json({ eveSessionId: null, starting });
+    if (url.pathname === `${STATUS_URL}/files`) return Response.json({ files: [] });
+    if (url.pathname === `${STATUS_URL}/sandbox`) return Response.json({ state: "none" });
+    throw new Error("Неожиданный запрос");
+  });
+  vi.stubGlobal("fetch", request);
   await renderOnDesktop(chat());
 
   await vi.advanceTimersByTimeAsync(30_000);
@@ -35,8 +43,11 @@ test("после перезагрузки ждёт, пока сервер счи
 
   starting = false;
   await vi.advanceTimersByTimeAsync(1_000);
-  await expect.element(page.getByText("Не удалось открыть беседу")).toBeVisible();
-  await expect.element(page.getByRole("button", { name: "Повторить" })).toBeVisible();
+  vi.useRealTimers();
+  await expect.element(page.getByRole("textbox", { name: "Сообщение агенту" })).toBeEnabled();
+  expect(request.mock.calls.every(([input, init]) =>
+    (init?.method ?? (input instanceof Request ? input.method : "GET")) === "GET",
+  )).toBe(true);
 });
 
 test("сбой сети при проверке привязки и сбой чтения истории можно повторить без новой сессии", async () => {

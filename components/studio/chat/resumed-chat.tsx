@@ -178,8 +178,7 @@ export function ResumedChat({
         } else if (body.eveSessionId === null && body.starting === true) {
           timer = setTimeout(poll, START_POLL_MS);
         } else if (body.eveSessionId === null && body.starting === false) {
-          setError("Не удалось подтвердить первую отправку.");
-          setPhase("error");
+          setPhase("empty");
         } else {
           throw new Error("Некорректный статус сессии.");
         }

@@ -95,10 +95,10 @@ export async function startDownloadProxy(resolveDns?: ResolveDns) {
   const socketPath = path.join(directory, "proxy.sock");
   const clients = new Set<Socket>();
   const stop = new AbortController();
-  let blocked = false;
+  let blockedRequests = 0;
   const refusal = (error: unknown) => {
     if (error instanceof SafeFetchError && (error.reason === "blocked_address" || error.reason === "bad_url")) {
-      blocked = true;
+      blockedRequests += 1;
       return 403;
     }
     return 502;
@@ -146,7 +146,7 @@ export async function startDownloadProxy(resolveDns?: ResolveDns) {
   }
   return {
     socketPath,
-    get blocked() { return blocked; },
+    get blockedRequests() { return blockedRequests; },
     async close() {
       stop.abort();
       for (const client of clients) client.destroy();
