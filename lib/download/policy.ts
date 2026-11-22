@@ -59,10 +59,6 @@ export function sanitizeSiteText(value: unknown, limit = 200): string {
   return [...cleaned].slice(0, limit).join("");
 }
 
-export function cleanSiteReason(text: string): string {
-  return sanitizeSiteText(text.replace(/https?:\/\/\S+/gi, " "));
-}
-
 function finite(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
 }
@@ -182,12 +178,12 @@ export function maxFilesizeLine(stdout: string): { readonly actual: number; read
   return { actual: Number(match[1]), limit: Number(match[2]) };
 }
 
-export function lastErrorLine(stderr: string): string {
+function lastErrorLine(stderr: string): string {
   const lines = stderr.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith("ERROR:"));
   return lines.at(-1) ?? "";
 }
 
-export function errorDetail(line: string): string {
+function errorDetail(line: string): string {
   const bracket = /^ERROR:\s*\[[^\]]*]\s*[^:]*:\s*(.*)$/.exec(line);
   if (bracket !== null) return bracket[1] ?? "";
   return line.replace(/^ERROR:\s*/, "");

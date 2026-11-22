@@ -24,8 +24,8 @@ export type DownloadCode =
 const FIXED: Partial<Record<DownloadCode, string>> = {
   download_not_configured: "Скачивание видео не настроено на сервере. Сообщите оператору сервиса.",
   download_no_session: "Не удалось определить сессию для сохранения видео.",
-  download_bad_url: "Нужна обычная ссылка http или https на страницу с видео.",
-  download_unsupported_site: "Этот сайт не поддерживается. Прямые ссылки на файлы и страницы со встроенным плеером не скачиваются.",
+  download_bad_url: "Нужна обычная ссылка http или https на страницу с видео или видеофайл.",
+  download_unsupported_site: "Не удалось найти поддерживаемое видео. Попробуйте прямую ссылку на видеофайл или страницу с одним видео.",
   download_playlist: "Ссылка ведёт на список видео. Дайте ссылку на одно видео.",
   download_live: "Это прямая трансляция или ещё не вышедшее видео. Скачать можно только готовую запись.",
   download_unavailable: "Видео недоступно: оно удалено, скрыто или закрыто автором.",
@@ -52,7 +52,8 @@ export function downloadMessage(
   } = {},
 ): string {
   if (code === "download_blocked_address") {
-    return `Адрес «${details.host ?? ""}» относится к внутренней сети, скачивать с него нельзя.`;
+    if (!details.host) return "Один из адресов видео запрещён сетевой политикой.";
+    return `Адрес «${details.host}» относится к внутренней сети, скачивать с него нельзя.`;
   }
   if (code === "download_login_required") {
     const base = "Видео требует входа в аккаунт.";

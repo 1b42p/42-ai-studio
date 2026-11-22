@@ -33,24 +33,24 @@ export function childEnv(home: string): NodeJS.ProcessEnv {
 }
 
 export async function resolveExecutable(command: string): Promise<string | null> {
+  async function isExecutable(candidate: string): Promise<boolean> {
+    try {
+      if (!(await stat(candidate)).isFile()) return false;
+      await access(candidate, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   if (command.includes("/") || command.includes("\\")) {
     const absolute = path.resolve(command);
-    try {
-      await access(absolute, constants.X_OK);
-      return absolute;
-    } catch {
-      return null;
-    }
+    return await isExecutable(absolute) ? absolute : null;
   }
   for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
     if (dir.length === 0) continue;
-    const candidate = path.join(dir, command);
-    try {
-      await access(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      // следующий каталог PATH
-    }
+    const candidate = path.resolve(dir, command);
+    if (await isExecutable(candidate)) return candidate;
   }
   return null;
 }
