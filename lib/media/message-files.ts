@@ -26,6 +26,8 @@ export interface CaptureMessageFilesOptions {
 
 type PendingFile = { id: string; sandboxPath: string };
 
+class MessageFileGoneError extends Error {}
+
 function messageScope(appSessionId: string, messageId: string) {
   return and(eq(messageFiles.appSessionId, appSessionId), eq(messageFiles.messageId, messageId));
 }
@@ -76,9 +78,11 @@ async function finishFile(appSessionId: string, ownerId: string, id: string, res
       ...result, userId: ownerId, appSessionId, kind: "message_file",
     }).returning({ id: media.id });
     if (created === undefined) throw new Error("Строка media не создана");
-    await tx.update(messageFiles)
+    const [linked] = await tx.update(messageFiles)
       .set({ state: "ready", reason: null, mediaId: created.id, updatedAt: new Date() })
-      .where(eq(messageFiles.id, id));
+      .where(eq(messageFiles.id, id))
+      .returning({ id: messageFiles.id });
+    if (linked === undefined) throw new MessageFileGoneError();
   });
 }
 
@@ -168,7 +172,7 @@ async function publishFile(
   } catch (error) {
     // Если DELETE очистил префикс раньше завершения PUT, удаляем поздний
     // объект. Ошибка БД сама по себе объект не стирает: коммит мог состояться.
-    if (!(error instanceof MediaSessionGoneError)) throw error;
+    if (!(error instanceof MediaSessionGoneError || error instanceof MessageFileGoneError)) throw error;
     await storage.deleteObject(objectKey);
   }
 }
