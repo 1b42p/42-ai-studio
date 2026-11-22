@@ -4,11 +4,12 @@ import postgres from "postgres";
 import { Client } from "eve/client";
 
 import { signInternalToken } from "@/lib/auth/internal-tokens";
-import { loadConfig } from "@/lib/config";
+import { loadConfig, localEveStateDirectory } from "@/lib/config";
 import { getStorage } from "@/lib/s3";
 import { errorStatus } from "@/lib/sandbox/errors";
 import { recordSandboxTransition } from "@/lib/usage/sandbox";
 import { cancellableQuery as query } from "@/lib/db/cancellable-query";
+import { eraseStudioWorkflowData } from "@/lib/workflow/erase-session-data";
 import { enqueueLateUploadCleanup } from "./late-upload-cleanup";
 import { deleteSessionDaytonaMachines } from "./daytona-erasure";
 
@@ -130,22 +131,32 @@ export async function deleteSessionData(
     }
 
     await timed("eve", async () => {
-      if (!session.eveSessionId) return;
-      const stepSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
-      const token = await signInternalToken("eve_session_end", { sid: session.eveSessionId });
-      stepSignal.throwIfAborted();
-      const eve = new Client({
-        host: config.internalAppUrl, redirect: "error",
-        headers: { Authorization: `Bearer ${token}` },
-      }).sessions.attach(session.eveSessionId);
-      const cancelled = await eve.cancel({ signal: stepSignal });
-      if (cancelled.status !== "accepted" && cancelled.status !== "no_active_turn") {
-        throw new Error("Unexpected eve cancel result");
-      }
-      const reset = await eve.reset({ reason: "deleted_by_user", signal: stepSignal });
-      if (reset.status !== "reset" && reset.status !== "no_active_session") {
-        throw new Error("Unexpected eve reset result");
-      }
+      if (!session.eveSessionId && !session.startRequestedAt) return;
+      await eraseStudioWorkflowData({
+        stateDir: localEveStateDirectory(),
+        owner: {
+          appSessionId: session.id, userId: session.userId,
+          eveSessionIds: session.eveSessionId ? [session.eveSessionId] : [],
+        },
+        signal,
+        async resetSession(id, signal) {
+          const stepSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+          const token = await signInternalToken("eve_session_end", { sid: id });
+          stepSignal.throwIfAborted();
+          const eve = new Client({
+            host: config.internalAppUrl, redirect: "error",
+            headers: { Authorization: `Bearer ${token}` },
+          }).sessions.attach(id);
+          const cancelled = await eve.cancel({ signal: stepSignal });
+          if (cancelled.status !== "accepted" && cancelled.status !== "no_active_turn") {
+            throw new Error("Unexpected eve cancel result");
+          }
+          const reset = await eve.reset({ reason: "deleted_by_user", signal: stepSignal });
+          if (reset.status !== "reset" && reset.status !== "no_active_session") {
+            throw new Error("Unexpected eve reset result");
+          }
+        },
+      });
     });
 
     await timed("daytona", async () => {
