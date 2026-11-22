@@ -110,6 +110,67 @@ class DocumentTest(unittest.TestCase):
         self.inspect(path)
         self.assertEqual(self.rows("Продажи.csv")[1][1], "13010.1234567890123456789")
 
+    def test_xlsx_percent_uses_the_active_format_without_rounding_the_stored_number(
+        self,
+    ):
+        from openpyxl import Workbook
+
+        book = Workbook()
+        sheet = book.active
+        sheet.append(["Случай", "Значение", "Смешанный"])
+        for label, value, code in [
+            ("Встроенный", 0.25, "0.00%"),
+            ("Длинная дробь", 0.125, "0.00%"),
+            ("Обычное число", 0.25, "General"),
+            ("Отрицательное", -0.25, '0.00%;[Red]0.00;"-"'),
+            ("Литерал", 0.25, '0.00"%"'),
+            ("Условие", -0.25, "[<0]0.00%;0.00"),
+            ("Валюта", 12.5, "#,##0.00 [$₽-419]"),
+        ]:
+            sheet.append([label, value, None])
+            sheet.cell(sheet.max_row, 2).number_format = code
+        sheet["C2"] = 0.5
+        sheet["C2"].number_format = "0%"
+        sheet["C3"] = "неизвестно"
+        base = self.folder / "base.xlsx"
+        book.save(base)
+        path = self.folder / "formatted.xlsx"
+        with ZipFile(base) as source, ZipFile(path, "w", ZIP_DEFLATED) as dest:
+            for info in source.infolist():
+                data = source.read(info.filename)
+                if info.filename == "xl/worksheets/sheet1.xml":
+                    data = data.replace(
+                        b"<v>0.125</v>", b"<v>0.12512345678901234567890123456789</v>"
+                    )
+                dest.writestr(info, data)
+
+        self.inspect(path)
+        self.assertEqual(
+            [row[1:] for row in self.rows("Sheet.csv")[1:]],
+            [
+                ["25", "50%"],
+                ["12.512345678901234567890123456789", "неизвестно"],
+                ["0.25", ""],
+                ["-0.25", ""],
+                ["0.25", ""],
+                ["-25", ""],
+                ["12.5", ""],
+            ],
+        )
+        with (self.out / "units/Sheet.csv").open(newline="") as stream:
+            self.assertEqual(
+                list(csv.reader(stream)),
+                [
+                    ["row", "column", "unit"],
+                    ["2", "2", "%"],
+                    ["2", "3", "%"],
+                    ["3", "2", "%"],
+                    ["6", "2", "%"],
+                    ["7", "2", "%"],
+                    ["8", "2", "₽"],
+                ],
+            )
+
     def test_scatter_chart_keeps_both_axes(self):
         from pptx import Presentation
         from pptx.chart.data import XyChartData
@@ -135,6 +196,36 @@ class DocumentTest(unittest.TestCase):
                          ["Москва", "13010.1", "25", "2026-10-01"], ["Казань", "1318.6", "5", "2026-10-02"]])
         self.assertIn("убраны суффиксы %", self.overview())
         self.assertIn("Десятичный знак источника: ,", self.overview())
+
+    def test_csv_keeps_units_at_their_cell_coordinates_without_changing_values(self):
+        self.inspect(
+            self.write_csv(
+                'Название;Значение;Смешанный\n"Две\nстроки";13\u202f010,0100 ₽;2%\n'
+                "Казань;25,00%;неизвестно\nТула;12;3 €\nОмск;;\n"
+            )
+        )
+        self.assertEqual(
+            self.rows("data.csv")[1:],
+            [
+                ["Две\nстроки", "13010.0100", "2%"],
+                ["Казань", "25.00", "неизвестно"],
+                ["Тула", "12", "3 €"],
+                ["Омск", "", ""],
+            ],
+        )
+        with (self.out / "units/data.csv").open(newline="") as stream:
+            self.assertEqual(
+                list(csv.reader(stream)),
+                [
+                    ["row", "column", "unit"],
+                    ["2", "2", "₽"],
+                    ["2", "3", "%"],
+                    ["3", "2", "%"],
+                    ["4", "3", "€"],
+                ],
+            )
+        self.assertIn("`units/data.csv`", self.overview())
+        self.assertIn("13010.0100 ₽", self.overview())
 
     def test_bom_and_precision(self):
         self.inspect("bom.csv")

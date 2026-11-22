@@ -125,7 +125,7 @@ test("обе tools подменяются stubs без запроса к Tavily"
   const page = {
     url: "https://example.com/", finalUrl: "https://example.com/", title: "Подмена страницы", byline: null,
     siteName: null, publishedTime: null, lang: "ru", contentType: "text/plain", extraction: "raw",
-    content: "Текст подмены страницы.", offset: 0, nextOffset: null, totalChars: 22,
+    content: "Текст подмены страницы.", offset: 0, nextOffset: null, totalChars: 22, sourceTruncated: false,
   };
   const created = await client.sessions.create({
     message: '/tool web_search {"query":"stub"}',

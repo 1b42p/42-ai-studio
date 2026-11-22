@@ -65,10 +65,12 @@ export function WebToolSource({
   url,
   title,
   description,
+  wrapDescription = false,
 }: {
   url: URL | null;
   title: string;
   description: string;
+  wrapDescription?: boolean;
 }) {
   const line = (
     <TraceLine>
@@ -77,7 +79,9 @@ export function WebToolSource({
         {title}
         {url === null ? null : <span className="sr-only"> (откроется в новой вкладке)</span>}
       </TraceTitle>
-      <TraceDescription className="min-w-0 max-w-1/2 shrink truncate">{description}</TraceDescription>
+      <TraceDescription className={`min-w-0 max-w-1/2 shrink ${wrapDescription ? "wrap-break-word whitespace-normal" : "truncate"}`}>
+        {description}
+      </TraceDescription>
       {url === null ? null : <TraceIcon><ArrowUpRightIcon /></TraceIcon>}
     </TraceLine>
   );

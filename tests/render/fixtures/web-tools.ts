@@ -28,6 +28,7 @@ export const pageResult = {
   offset: 0,
   nextOffset: null,
   totalChars: 25000,
+  sourceTruncated: false,
 } as const;
 
 export interface WebToolScenario {

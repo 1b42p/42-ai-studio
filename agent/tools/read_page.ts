@@ -39,10 +39,12 @@ export default defineTool({
     offset: z.number(),
     nextOffset: z.number().nullable(),
     totalChars: z.number(),
+    sourceTruncated: z.boolean().describe("HTML отсечён до разбора; nextOffset не возвращает отброшенную часть."),
   }),
   label: {
     start: ({ url }) => `Чтение страницы: ${hostLabel(url)}`,
-    complete: (_input, output) => `Прочитана страница: ${output.title || output.host}`,
+    complete: (_input, output) =>
+      `${output.sourceTruncated || typeof output.nextOffset === "number" ? "Прочитана часть страницы" : "Прочитана страница"}: ${output.title || output.host}`,
   },
   async execute(input, ctx) {
     return readPage(input, { signal: ctx.abortSignal });

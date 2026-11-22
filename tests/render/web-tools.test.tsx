@@ -91,6 +91,15 @@ for (const [viewport, render] of [["телефон", renderOnPhone], ["комп�
     assertNoRawTool();
   });
 
+  test(`чтение: предел HTML виден даже без следующего фрагмента — ${viewport}`, async () => {
+    await render(view({ tool: "read_page", output: { ...pageResult, sourceTruncated: true, content: "Фрагмент" } }));
+    const notice = page.getByText("8 знаков, страница прочитана не полностью: превышен лимит HTML", { exact: true });
+    await expect.element(notice).toBeVisible();
+    const text = notice.element();
+    expect(text.scrollWidth).toBeLessThanOrEqual(text.clientWidth);
+    assertNoRawTool();
+  });
+
   test(`поиск: пустая выдача не становится ошибкой — ${viewport}`, async () => {
     await render(view({ tool: "web_search", output: { query: "Ненайденный запрос", results: [], requestId: "internal-id" } }));
     await expect.element(page.getByText("Ничего не найдено", { exact: true })).toBeVisible();
