@@ -118,6 +118,8 @@ export async function documentSession(t: EveEvalContext, name: DocumentName) {
       `${input}\n`,
     ),
     bashFixture("document-create-output", `^\\s*${createDirectory}\\s*$`, ""),
+    bashFixture("document-disk-space", String.raw`^\s*df\s+-h\s+/workspace\s*$`,
+      "Filesystem Size Used Avail Use% Mounted on\noverlay 5.0G 120M 4.9G 3% /workspace\n"),
     bashFixture("document-output-list", `^\\s*ls(?:\\s+-[alh]+)?\\s+${shellPath(output)}\\s*$`, `${Object.keys(recording.files).join("\n")}\n`),
     { id: "document-other-commands", tool: "bash", outcome: { throw: { message: "Для этапа чтения эта команда не предусмотрена." } } },
     blockedRead,
@@ -129,6 +131,9 @@ export function documentCases(name: DocumentName, kind: string, mediaType: strin
   const { input, output } = documentPaths(name);
   const overview = pathForms(`${output}/overview.md`);
   const kazan = name === "data.csv" ? /1\s*318[.,]6/u : /20\s*500[.,]2/u;
+  const slideTable = name === "deck.pptx"
+    ? new RegExp(`^${escapePattern(output)}/tables/s\\d+-\\d+\\.csv$`, "u")
+    : null;
 
   return Array.from({ length: 3 }, () => defineEval({
     description: `Агент читает приложенный ${kind} перед подготовкой ролика.`,
@@ -137,17 +142,19 @@ export function documentCases(name: DocumentName, kind: string, mediaType: strin
       const session = await documentSession(t, name);
       const turn = await session.send(
         `Хочу сделать ролик по приложенному файлу. Пока только прочитай текст и выпиши показатели по Москве и Казани. Если единицы в документе не указаны, так и скажи; ` +
-        `картинки и сам ролик пока не нужны.\nAttached file ${input} (${mediaType})`,
+        `картинки и сам ролик пока не нужны. Сохрани исходник и файлы разбора.\nAttached file ${input} (${mediaType})`,
       );
       t.succeeded();
-      const attachmentReads = new Set(turn.events.flatMap((event) =>
+      const optionalReads = new Set(turn.events.flatMap((event) =>
         event.type === "actions.requested" ? event.data.actions.flatMap((action) =>
           action.kind === "tool-call" && action.toolName === "read_file" &&
           typeof action.input === "object" && action.input !== null && "filePath" in action.input &&
-          action.input.filePath === input ? [action.callId] : []) : []));
+          typeof action.input.filePath === "string" && (
+            action.input.filePath === input || slideTable?.test(action.input.filePath)
+          ) ? [action.callId] : []) : []));
       const unexpectedFailure = turn.events.some((event) =>
         event.type === "action.result" && event.data.status === "failed" &&
-        !attachmentReads.has(event.data.result.callId));
+        !optionalReads.has(event.data.result.callId));
       t.check(unexpectedFailure, satisfies((value) => value === false, "нет ошибок обязательных действий"));
       t.loadedSkill(SKILL);
       t.calledTool("bash", { input: { command: (value: unknown) =>

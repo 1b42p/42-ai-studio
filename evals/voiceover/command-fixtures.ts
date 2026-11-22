@@ -232,7 +232,7 @@ function reviewStubs(): ToolStub[] {
       remotionCommand(
         "render",
         args,
-        `\\s*&&\\s*ls\\s+-lh\\s+${projectArgument("out/frames-1")}`,
+        `\\s*&&\\s*ls\\s+-l[ah]?\\s+${projectArgument("out/frames-1")}`,
       ),
       `${rendered}${detailedListing}\n`,
     ),

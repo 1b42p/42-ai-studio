@@ -120,20 +120,22 @@ function probeStubs(): ToolStub[] {
 
 export function videoInspectionStubs(): ToolStub[] {
   const size = data.probe.format.size;
+  const presence = `test\\s+-s\\s+${FILE}`;
+  const confirmed = `(?:${presence}\\s*&&\\s*)?`;
   return [
     ...probeStubs(),
     inspection("file-listing-bytes", `ls\\s+-l\\s+${FILE}`, listing(size)),
     inspection("file-listing-human", `ls\\s+-lh\\s+${FILE}`, listing("1.1M")),
-    inspection("file-presence", `test\\s+-s\\s+${FILE}`, ""),
-    inspection("file-size", `stat\\s+-c\\s+['"]%s['"]\\s+${FILE}`, `${size}\n`),
+    inspection("file-presence", presence, ""),
+    inspection("file-size", `${confirmed}stat\\s+-c\\s+['"]%s['"]\\s+${FILE}`, `${size}\n`),
     inspection(
       "file-size-bytes",
-      `stat\\s+-c\\s+['"]%s bytes['"]\\s+${FILE}`,
+      `${confirmed}stat\\s+-c\\s+['"](?:size=)?%s bytes['"]\\s+${FILE}`,
       `${size} bytes\n`,
     ),
     inspection(
       "file-size-name",
-      `stat\\s+-c\\s+['"]%n %s bytes['"]\\s+${FILE}`,
+      `${confirmed}stat\\s+-c\\s+['"]%n %s bytes['"]\\s+${FILE}`,
       `${VIDEO_PATH} ${size} bytes\n`,
     ),
     inspection(

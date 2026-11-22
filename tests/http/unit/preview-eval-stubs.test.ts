@@ -7,6 +7,7 @@ import { canonicalStillPattern, frameName, frameNumbers, nominalFramePattern, pr
 import { inspectedVideo, previewEvidence, reviewedBeforeVideo } from "../../../evals/preview/observations";
 import { musicSession } from "../../../evals/music/fixtures";
 import { voiceoverSession } from "../../../evals/voiceover/fixtures";
+import { inspectVideoFile } from "../../../evals/voiceover/file-inspection";
 import { questionSession } from "../../../evals/questions/fixtures";
 import { videoSession } from "../../../evals/video/fixtures";
 import { webSession } from "../../../evals/web/fixtures";
@@ -71,6 +72,16 @@ exit 1`;
     kind: "stub",
     outcome: { response: { exitCode: 0, stdout: expect.stringContaining("/workspace/calm-morning/voice/scene-01.txt") } },
   });
+});
+
+test("Piper: проверка MP4 через test и stat требует тот же файл", async () => {
+  const playback = new StubPlayback(parseToolStubs(await capture(t => voiceoverSession(t, true))));
+  const path = "/workspace/calm-morning/out/calm-morning.mp4";
+  const command = "cd /workspace/calm-morning && test -s out/calm-morning.mp4 && stat -c 'size=%s bytes' out/calm-morning.mp4";
+  const result = playback.call({ callId: "inspect", tool: "bash", input: { command } });
+  expect(result).toMatchObject({ kind: "stub", outcome: { response: { exitCode: 0, stdout: "1052620 bytes\n" } } });
+  expect(inspectVideoFile(command, "size=1052620 bytes\n", path).nonempty).toBe(true);
+  expect(inspectVideoFile(command.replace("test -s out/calm-morning.mp4", "test -s out/other.mp4"), "size=1052620 bytes\n", path).nonempty).toBe(false);
 });
 
 test.each([
